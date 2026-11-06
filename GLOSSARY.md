@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-11-06 (U-003: hover text, ADR-063 choice 6); 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -215,13 +215,17 @@ survives only in code names, `rejoin_ignore.json`)
 
 **Canonical:** `ordinary` · `primary` · `quiet` · `danger` (a button's *role*; the classes are
 `btn`, `btn-primary`, `btn-quiet`, `btn-danger`) · `Done` (ends a mode) · `Select all` /
-`Select none` (the selection helper)
+`Select none` (the selection helper) · `hover text` (what a button says it will do, on hover and
+on focus)
 **Definition:** What kind of thing a button does, which decides its look on every screen
 (ADR-063). *Ordinary* is most buttons. *Primary* is the one action a screen or a mode is for, at
 most one per bar; *Done* ends a mode and is that mode's primary, at the trailing end. *Quiet*
 changes only what is shown or selected. *Danger* removes something: its label names the act
 (*Delete*, *Remove*), it is red, and it always asks first, in a confirm that names what goes and
-how many. A selection is emptied by *Select none*. *Clear* is never the label of anything that
+how many. Every button has *hover text*: it completes "this will …", never repeats the label,
+shows on keyboard focus too, and holds nothing the user must know that is not also on the screen
+(ADR-063 choice 6). In the docs it is *hover text*; *tooltip* names the shared component that
+shows it. A selection is emptied by *Select none*. *Clear* is never the label of anything that
 removes or deselects: it stays only for emptying a text field or a filter, which change what is
 shown. The ordinary role is not called *secondary*: that reads as "less important", and most
 buttons are ordinary. (Not listed under Forbidden: the glossary gate reads only C- and D- entries

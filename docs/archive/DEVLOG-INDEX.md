@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-05 · class: living -->
+<!-- status: archived · updated: 2026-11-06 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-009.md
 
+- **2026-11-05** (2) — The concept view keeps its graph in sight (ROADMAP 111)
+- **2026-11-05** — Selection in both lists, and a button's look says what it does (ADR-063 proposed)
+- **2026-11-04** (7) — RG-012's sixth trap: the host must not hold the run's log open (0.7.2 gate)
+- **2026-11-04** (6) — The status bar says when files failed, and stays until dismissed (0.7.2)
+- **2026-11-04** (5) — A changed document is indexed once: `process_document` drops its superseded chunks (0.7.2 blocker)
+- **2026-11-04** (4) — ADR-061 built: an indexed library opens where it is, nothing written outside it (0.7.2, piece 5)
+- **2026-11-04** (3) — The release check sees every build input and every chat reply (review N1, KI-83)
+- **2026-11-04** (2) — The indexing screen: each file's outcome, Pause and Stop, a Re-index estimate (0.7.2, piece 4)
+- **2026-11-04** — The test suite sees CI's provider environment; `main` was red since ADR-060
+- **2026-11-02** (4) — The project review's routing applied to the tracked docs; archived paths re-pointed
+- **2026-11-02** (3) — ADR-060 built: other answer providers through one compatible client (0.7.2, piece 3)
 - **2026-11-02** (2) — ADR-060 accepted in a grill: who bills is a fact of its own
 - **2026-11-02** — ADR-060 proposed: other answer providers through one OpenAI-compatible adapter (0.7.2, piece 3)
 - **2026-11-01** (5) — Getting started is two rows; models live in Provider & model (0.7.2, piece 2)

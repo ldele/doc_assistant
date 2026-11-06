@@ -1,8 +1,340 @@
-<!-- status: archived · updated: 2026-11-05 · class: append-only -->
+<!-- status: archived · updated: 2026-11-06 · class: append-only -->
 
-# DEVLOG — archive 009 (2026-10-24 → 2026-11-02 (2))
+# DEVLOG — archive 009 (2026-10-24 → 2026-11-05 (2))
 
 Rotated DEVLOG entries — moved here from `docs/DEVLOG.md` once it held more than 20, **verbatim** per cpc ADR-023 rule 13b and cpc ADR-053. Newest entry on top. Append-only; never edited.
+
+## 2026-11-05 (2) — The concept view keeps its graph in sight (ROADMAP 111)
+
+**What changed.** In the Graph tab's concept view (`ConceptGraph.svelte`) the canvas now sits
+above the definition card, and nothing in the scrolling column shrinks (`flex-shrink: 0` on its
+children). The graph takes the layout's proportions up to `min(55vh, 520px)`. The view box has a
+30-unit margin, so a label below a node on the layout's edge shows. The coverage sentence and the
+concept's buttons wrap on a narrow pane instead of squeezing. Half of this landed in `54f77f9`,
+committed while the fix was being built; this entry covers both halves.
+
+**Why.** The user, 2026-11-05: text and other elements squash the graph until it cannot be seen.
+Measured on *BM25* at 1280×800: the canvas was a flex child with `overflow: hidden`, which gives
+it no minimum height, so the 827 px definition and the document list took its space and it was
+drawn 2 px tall. After the fix: 440 px at 1280×800; at 375 px, 216 px with no sideways scroll.
+*hard negatives* sat at y=496 of 520 and its label was cut until the margin.
+
+**Rejected.** A fixed height from `55vh` alone: at 375 px it left a 500 px box around a 216 px
+graph. Moving the definition into a tab: a layout decision for the graph re-pass (row 75), not
+a fix.
+
+**What it opens.** Pan moves in screen pixels while the graph is drawn in view-box units, so a
+drag and the graph move at different speeds when the canvas is scaled; it did before this change,
+and it is row 75's.
+
+## 2026-11-05 — Selection in both lists, and a button's look says what it does (ADR-063 proposed)
+
+**What changed.** The chat rail and the Library grid and list share one selection rule
+(`apps/desktop/src/lib/shell/selection.ts`, tested): a click or Ctrl/Cmd-click toggles a row, a
+Shift-click applies the clicked row's new state to the range from the last row clicked, and a
+Shift- or Ctrl-click outside select mode starts it (ROADMAP 78 and 80). Both select bars are
+rebuilt to four action roles defined once in `app.css` (`btn`, `btn-primary`, `btn-quiet`,
+`btn-danger`): *Select all* / *Select none* replaces the Library's *Clear* and the rail's
+*All*/*Clear*; *Done* is the primary at the trailing end of both bars (the rail had none); the
+rail's *Delete…* is red from the theme's `--danger` (it used an undefined `--danger-fg` with a
+fallback hex) and a *Cancel* on its confirm now keeps the selection. ADR-063 (proposed) records
+the roles and GLOSSARY U-003 names them. ROADMAP rows 110 to 112 hold the rest of the user's
+batch.
+
+**Why.** The user, 2026-11-05: Shift-click in Chat, Shift- and Ctrl-click in the Library, a
+*Clear* that might be a delete, a *Done* that does not read as finishing, one look per kind of
+button. In the running app *Clear* only emptied the selection; the rail's *Delete* left select
+mode before the confirm was answered, so *Cancel* lost the selection.
+
+**Rejected.** A *Delete* for the Library selection: the user asked to rename *Clear* if it
+deletes, and it never did; a bulk document delete still waits on its own decision (the comment
+in `App.svelte` says so). Fixing the five unconfirmed destructive actions now (*Remove key*,
+*Remove server*, *Remove* and *Remove all* on the ignore list, *Clear* on a definition): they
+apply a rule the user has not accepted yet, and their components are the ones row 110 restyles.
+Re-styling every button now: one PR per session, and choice 2 of ADR-063 is the user's.
+
+**What it opens.** ADR-063's five choices (the dark-theme primary is the open one), then row 110
+(the sweep), 111 (the squashed concept graph: the canvas is 2 px tall with a concept open) and
+112 (the library summary, gate first). `docs/decisions.md` needs ADR-063's row; it was left alone
+because ADR-062's row is staged there with an unstaged correction on top.
+
+## 2026-11-04 (7) — RG-012's sixth trap: the host must not hold the run's log open (0.7.2 gate)
+
+**What changed.** `docs/desktop-packaging.md` §5 gains trap 6, and `docs/RELEASE.md` §5 a line:
+never open `out\run-*\rg012.log` from the host while the sandbox writes it; list the folder until
+`turn-3-result.json` appears, then read the log. Both now bind Ollama to the Default Switch
+address instead of `0.0.0.0`, with the recipe. The 0.7.2 known limits gain one line (KI-85): an
+answer from a server that reports no token counts, such as Ollama on another computer, says
+*0 tokens* in its header.
+
+**Why.** The first RG-012 run on the 18:30 installer was watched with `tail -f` on its log; every
+later `Add-Content` in the sandbox failed, so the log stopped at *installer chosen* while the three
+turns ran and saved their answers. A run's log is never edited, so the gate ran again in a fresh
+sandbox and passed (preflight: packaging and citation ok, the cut run listed beside it as a
+failure). Ollama's firewall rule allows public networks, so `0.0.0.0` would have opened it to the
+Wi-Fi for the length of the run. The `0 tokens` header came from the chat rows driven in the same
+sandbox: since ADR-060 an Ollama on another computer is not local, and the header prints the sum
+of no counts.
+
+**Rejected.** Reading the log with a polling `grep`: it opens the file too, and a collision loses
+a line silently. Fixing the `0 tokens` header before the tag: the line under the answer is right,
+and a rebuild re-runs every installed-build gate.
+
+**What it opens.** KI-85's fix (print no count rather than a zero).
+
+## 2026-11-04 (6) — The status bar says when files failed, and stays until dismissed (0.7.2)
+
+**What changed.** A run that ends with failed files reads *Indexing done · 2 failed* (or *· 3 new ·
+1 failed*, *Indexing stopped · 16/22 done · 2 failed*) instead of *Indexing done · nothing new*,
+its bar turns red, and it stays on the status bar until dismissed, like an error or a stopped run
+already did. `failedCount` and `staysUntilDismissed` live in `core/ingest.ts` with the label, so
+`node:test` covers them; `IngestChip` and the rune module only read them.
+
+**Why.** Driving the installed 0.7.2 build in Windows Sandbox: two unreadable files failed, the
+indexing screen listed them with *Retry the 2 that failed*, and the status bar said *nothing new*;
+in the dev build the chip then went quiet after the 8 s linger. Once the screen is closed the bar is
+the only trace of the run, so it hid the failures twice over. The user asked for the fix before the
+tag. The count is the per-file one (`counts.failed`), the same the screen shows: the run's own
+tally (`errors`) counts an empty file as skipped, so it can read 2 where the screen lists 3.
+
+**Checked.** Three new `node:test` cases (361 pass), svelte-check clean; the dev build over a
+scratch data home with three failing files: *Indexing done · 3 failed*, red, still there 15 s
+later with its dismiss button. Gate 6 of ADR-056, re-run on the copy cleaned of the stale chunks
+(entry (5)): every case cites the same sources as the control; the local record holds the numbers.
+
+**Rejected.** Folding the failures into the screen only: the screen is closed most of the time.
+An amber bar for partial failure: red is the one failure colour the bar already has.
+
+**What it opens.** Settings' one-line run result still reads the run's tally (*2 errors* beside
+*3 failed*); KI-84 (an ingest run builds its own embedding model, ~1.8 GB committed) was filed
+from the same walkthrough.
+
+## 2026-11-04 (5) — A changed document is indexed once: `process_document` drops its superseded chunks (0.7.2 blocker)
+
+**What changed.** When a document keeps its identity (ADR-047, by path) but its text, and so its
+hash, moves, `process_document` now removes the previous hash's chunks from both stores once the
+new chunks and the row are written, unless another row still holds that hash. Before, only the CLI's
+full sweep (`cleanup_orphans_*`, run when neither a scope nor a file list is given) or the
+per-document re-run's own purge (`reingest._purge_superseded_chunks`) ever did. ADR-056 gate 3's
+local test (`tests/integration/test_letter_spacing_library.py`) lands in the same change.
+
+**Why.** Found by ADR-056's gate 6 on a copy of the development library: after the re-extraction
+the eval's comparability check reported the index's document count up by two. The two documents
+whose text changed kept their old chunks, letter-spaced, with no document row behind them. The app
+reaches the same state through *Ingest selected* and *Re-index* (both pass `files=` or `scope=`),
+which is how this release's one-time re-read happens, so every user's changed documents would have
+been searchable twice. A lie in the release's headline promise: a blocker by the runbook.
+
+**Checked.** `test_a_changed_file_ingested_by_selection_is_indexed_once`; the re-run and ingest
+suites (89). Gate 3 passed on the copy against a reference that applies ADR-056 points 1 and 6 (the
+two scanned-book places the accepted rule leaves spaced). Gate 6: keywords changed on one document
+exactly as predicted, the graph identical; the eval within noise of its control (numbers in the
+local record); to be run once more on the copy cleaned of the stale chunks.
+
+**Rejected.** Running the full sweep from the app's routes: it walks every source and re-hashes,
+which is what scoping exists to avoid.
+
+**What it opens.** Libraries indexed before this keep any stale chunks until a CLI full ingest; the
+copy shows how many a re-read leaves (two documents there).
+
+## 2026-11-04 (4) — ADR-061 built: an indexed library opens where it is, nothing written outside it (0.7.2, piece 5)
+
+**What changed.** The user accepted ADR-061 as proposed, and it is built in its order. **Choice 4
+first:** `stored_paths.py` decides whether a stored path may be acted on (cache under the cache
+folder, figure images under the figures folder, sources under the library's folders or a
+registered root), and `resolve_source_path`, `purge_document_record`, the text and crops re-runs,
+the orphan sweep and `load_figure_image_paths` ask it; the viewer says when a file is outside.
+**Choice 3:** `library_home.inspect_library` reads a candidate folder read-only (SQLite URI mode),
+served at `POST /api/libraries/inspect`. **Choices 2, 7, 9:** the shell keeps `library.json`, sets
+`DOC_DATA_DIR` at spawn, and restarts the backend on `open_library`; Settings > Documents > Corpus
+offers *Open another library…* and *Use the app's own library* in an installed build only; a
+stalled switch offers *Go back*. `config.chroma_base_for` lifts KI-11's rule out of `_chroma_base`
+so the check counts chunks where the app would read them. S-7 is done (`docs/security.md`).
+
+**Why.** The user's request of 2026-11-01, and the review's must-hold G1: a copied library's rows
+name the original's files, and four writes acted on them unchecked.
+
+**Checked.** `tests/integration/test_stored_paths_confined.py` drives delete, reveal, the viewer,
+a text re-run and the orphan sweep over a library whose rows name another folder, and the crops
+and figure-route cases sit beside their own tests; each leaves the other folder's files untouched.
+`tests/unit/test_library_home.py` covers the check, including that it changes no file. Three
+fixtures that kept "library" files outside the library's folders now say where those are. Driven
+in the browser over the real API with a stand-in shell: the copied scratch library read as the
+ADR's step 4 says, *Open* asked the shell for it, a stalled switch offered *Go back*, and the
+pending marker cleared when a backend answered. Rust: `cargo check`, `clippy`, `fmt`.
+
+**Rejected.** Gating the reads that only take text for keywords: on a copy they read the same text.
+Refusing every accented library path: one the installed app made opens fine (its stores are
+already relocated). Building the installer now to drive the restart: the release builds from the
+committed tree anyway.
+
+**What it opens.** The shell's restart is driven in the installed build at the release (piece 6).
+`_rerun_text` read `stats["errors"]`, never set, so a failed re-extraction reported success; fixed
+here with a test. Bringing a copy in and libraries from another computer stay open (ADR-061).
+
+## 2026-11-04 (3) — The release check sees every build input and every chat reply (review N1, KI-83)
+
+**What changed.** `scripts/release_preflight.py`: `SHIPPED_PATHS` gains `package-lock.json`,
+`public/`, `svelte.config.js`, `tsconfig.json`, Tauri's `capabilities/` and `nsis/`, and
+`apps/__init__.py` and `apps/cli.py` (the spec freezes every submodule of `apps`). A new
+`NOT_SHIPPED` names each other tracked file under `apps/` with its reason (`Cargo.lock`, the icon
+sources, the notes), and `unclassified_app_files` lists any file in neither. `check_dev_commands`
+reads `.ts` files and the string literals of `commands.py` (docstrings aside), with `python -m` and
+`scripts/….py`. Six chat replies in `commands.py` that named a script or `.env` now name the app's
+control, or say the pass is not in the app yet.
+
+**Why.** Both checks are release criteria for 0.7.2 (plan piece 6). The DOMPurify fix touched only
+the npm lock, which was in no list, so an older installer read as fresh; and the replies sent an
+installed-app user to a `scripts/` folder they do not have, past a check that read `.svelte` only.
+
+**Checked.** A test that every tracked file under `apps/` is in one list or the other (it is today);
+fake trees that plant a `python -m` reply, a `scripts/….py` reply and a `.ts` string and fail,
+while docstrings, comments and test files pass; the replies' own tests, rewritten to pin that no
+command is named.
+
+**Rejected.** Reading `.ts` comments as well: explaining a command to a maintainer is fine.
+Shipping `Cargo.lock`: cargo rewrites it during every build (the constant's own comment).
+
+**What it opens.** Similarity (`compute_doc_vectors`) has no in-app control; the reply now says so.
+
+## 2026-11-04 (2) — The indexing screen: each file's outcome, Pause and Stop, a Re-index estimate (0.7.2, piece 4)
+
+**What changed.** ROADMAP 31 (Track B's per-file outcome and retry), from the wireframe approved at
+rev 858 (`docs/wireframes/indexing.md`). A new `ingest/run.py` holds one run as the app sees it:
+each file's state (*waiting*, *reading*, *added*, *unchanged*, *failed*, *not started*) with what
+happened, and the controls. `ingest.main` takes an optional `run`, records each document on it, and
+asks it between two documents whether to wait or to end; `process_document` returns a
+`DocumentResult` (the old tally, the passage count, a failure's reason) and `process_one_document`
+keeps its string for its callers. A stop leaves the loop, so the post-run steps and the controller
+reload still run; the extraction warm-up cancels what it has not started. Routes: pause, resume,
+stop, a paged `GET /api/ingest/files`, `POST /api/ingest {rerun: failed|remaining}` from the
+server's own record of the last run, `GET /api/ingest/plan`, and `{only_new: true}`. The status
+gains `control` and `counts`, and a `stopped` state. The screen (`shell/IndexingScreen.svelte`)
+opens from the status bar and from Settings' *View indexing*. Three changes by the user's word
+during the build: the status bar reads *Indexing… 14/30 done*; Stop is red and asks first (the
+wireframe had no confirmation), Pause amber; and Re-index opens a confirmation with the counts, an
+estimate and *Only index new files* (`ingest/estimate.py`, `settings/ReindexConfirm.svelte`).
+
+**Why.** A run showed only its position, and a failure's reason reached the log alone. The user
+asked for the list, pause and stop on 2026-11-01, and for the rest while it was driven.
+
+**Checked.** Unit tests for the run object (two real threads for pause and stop); a real
+`ingest.main` over temp files: stop, pause and resume, a failed file's reason, a second run reading
+*unchanged*, a follow-up run over the rest; route tests for every control, the page, re-runs, the
+plan and `only_new`. Driven in the app on a new data home (`C:/Projects/pv-idx`, generated files, a
+dummy key): paused before and during a run, stopped while paused, *Index the remaining*, *Retry*,
+the Stop question and its Escape, the Re-index question before and after a run measured its speed;
+light, dark, 375 px, no failed request since the page load. Pause was asked at 14 done and took
+effect after the 15th, read in the server log.
+
+**Rejected.** Discarding the file in flight on Pause (the user asked to check): extraction, 14.7 s
+mean cold (`docs/performance.md`), is one library call that cannot be interrupted in-process, so
+dropping the file would save only its embedding, about 11 s on the shipped CPU build; the wait is
+named instead. A per-document constant for the estimate: the speed is measured per machine, and
+none is shown before a run measures it. Sending the follow-up runs' paths from the client: the
+server already holds them, and a paused run would otherwise ship 10,000 paths per click.
+
+**What it opens.** The run's record is in memory: a restart forgets the last run's list. A document
+recorded with no passages shows as failed but counts as added in the tally. Row 77 (parallel
+extraction in the frozen build) is still to observe on the installed build at the release.
+
+## 2026-11-04 — The test suite sees CI's provider environment; `main` was red since ADR-060
+
+**What changed.** `tests/conftest.py` gains an autouse fixture that clears `config.ANTHROPIC_API_KEY`
+and unpins `REVIEWER_PROVIDER`, as CI has them. `test_compatible_turn.py` reads the answer's request
+and then the review's: both passages come from one paper, so the answer is flagged and the reviewer
+follows the chat provider to the same server (ADR-011).
+
+**Why.** CI failed six tests on `afb3313` and `20d52db` (`too many values to unpack`) that passed
+here. Here `.env` pins the reviewer to Anthropic, so the fake server saw one request; and with the
+key in `.env`, that whole-turn test built a real Anthropic client and called it on each flagged
+answer, a billed call from the suite (KI-4's shape).
+
+**Rejected.** Pinning the reviewer in the test alone: the next whole-turn test would meet the same
+`.env`. Asserting one request: the review is the behaviour ADR-011 decided.
+
+**What it opens.** Nothing pins that a test cannot reach a paid API in general; this closes the one
+door found.
+
+## 2026-11-02 (4) — The project review's routing applied to the tracked docs; archived paths re-pointed
+
+**What changed.** The tracked half of the 2026-11-02 project review (its §8), checked against the code
+first. `docs/decisions.md` indexes ADR-058 and ADR-059, which no index, row or plan cited.
+`docs/ROADMAP.md`: row 109 (the installed app makes its own derived layers, `gate first`), row 106's
+spec names ADR-059 and ADR-058, and five rows' paths point at `docs/archive/local/`.
+`docs/security.md`: §2 says what the gates really cover (`scripts/` is not type-checked or scanned;
+pre-commit's mypy and bandit see `src/` only), that the f-string SQL includes one `INSERT…SELECT`,
+and that S-6's rule by method holds only while no GET has a side effect; S9 is widened to *reveal*,
+*delete*, `purge_document_record` and `/api/figures/{id}`; new findings S15 (three GETs with side
+effects), S16 (`Cargo.lock` and the packaging extra unaudited) and S17 (CI's uv floats, no
+`permissions:`), with steps S-15 and S-16; S-7 moves into 0.7.2's piece 5; §5 no longer names a test
+file as if it existed. `knowledge-layer.md`, `local-only.md` and `specs/feature-add-documents.md`
+cite the archived plans at their new path, and six ADRs carry an appended note instead (append-only).
+
+**Why.** A review the docs do not carry is lost at the next session. And the archived plans were
+still cited at paths that no longer exist.
+
+**Checked.** Six of the review's claims re-read in the code before any text was written: the delete
+path that unlinks a stored cache path, the dead keyword index at 0 documents, the developer commands
+in chat replies, the unindexed ADRs, the release check's file list, and the model-list route now a
+POST. Each security line checked against `ci.yml`, `.pre-commit-config.yaml`, `migrations.py`,
+`launch_token.py`, `routers/chat.py` and `library/add.py`; 445 packages in `Cargo.lock`. No moved path
+is cited unannotated in a tracked doc (a grep: the docs gate reads backticked paths in `docs/**` by
+markdown links only, the review's N12).
+
+**Rejected.** Editing the ADRs' own lines: they are append-only, so each gains a note. Putting the
+review's other additions to 0.7.2 into the tracked docs: they are plan decisions, and they live in the
+local plan.
+
+**What it opens.** S-7 in piece 5, with the review's must-hold that no write over an opened library
+touches a path outside its data home. Row 109 for release B. Steps S-15 and S-16.
+
+## 2026-11-02 (3) — ADR-060 built: other answer providers through one compatible client (0.7.2, piece 3)
+
+**What changed.** New `providers.py`: the six presets of the wireframe as rows (LM Studio, OpenAI,
+Google Gemini, Mistral, Groq, OpenRouter), servers of your own in `settings.json`, where the text
+goes per model (`route_of`, with Ollama's `remote_host`), who bills (`Billing`: a vendor, nobody, not
+known, or the user's word), model lists kept in memory, and the prompt-cut note. New
+`compatible.py`: our own client over `httpx`, sending `model`, `messages` and `stream` and nothing
+else, reading only `delta.content`, with a LangChain chat model for answers and an `LLMClient` for
+reviews. Keys for these providers are bound to their address in `credentials.json` (`keys`) and never
+read from the environment. `config.PAID_PROVIDERS` is gone: the CLI guard trips on billed or not known
+and names the host and who bills. `build_chat_model` and `make_client` raise on an unknown id instead
+of answering on Ollama. Routes keyed by provider (`/api/setup/providers/{id}/key|models|billing`,
+`/api/setup/servers`) replace `/api/setup/anthropic-key`. The answer record gains
+`answer_route_json` (additive), and the cost line says who bills instead of pricing every turn at
+Haiku's rates. Provider & model draws one form for presets and servers: *Test connection*, the
+*This server does not bill me* tick, the address-change warning, a model box over the server's list.
+
+**Why.** The user, 2026-11-01: more options than Claude and Ollama, by the norm. ADR-060 and its
+amendment are the contract. OpenAI's address and Mistral's model-list path were confirmed against
+the vendors' docs before their rows went in; OpenRouter's model list answers without a key (checked),
+so its row checks a key on `GET /key`.
+
+**Proved at $0.** Fake-server tests (`tests/fixtures/compatible_server.py`): the body, the stream
+reader on recorded streams, model lists on every status, the address and billing tables, every preset
+row through a key-guarded route, and a whole turn through the real `ChatController` with provenance
+and the cost line. Live, on a new data home holding two public RAG papers: a server of your own at
+Ollama's `http://localhost:11434/v1` answered the ADR's question on `llama3.1:8b` with a valid
+citation; the card read *stay on this computer* and *Billing not known*, then *Not billed (your
+word)* once ticked. `qwen3.5:9b` through `/v1` keeps its reasoning in a separate field (nothing
+inline, so no known issue), and its first visible token came after 32 s warm. No paid call was made.
+
+**Departures from the ADR.** `*.localhost` is not *this computer*: the OS resolves it, and
+`lab.localhost` did not resolve on this machine, so the sentence could not promise it. The models
+route is a POST, so the launch token covers a call that sends a key (the whole-project review's
+point). Local probes connect within 0.5 s: Windows retries a port nobody listens on, and LM Studio's
+probe took 4 s.
+
+**Rejected.** `langchain-openai` (ADR-060's Options). Returning an unprobed setup state from the
+billing tick to make it faster: an unprobed Ollama row reads *Ready*.
+
+**What it opens.** The RG-012 turn in the frozen build (test 9) belongs to the release. A paid message
+per preset waits for the user's word. `remote_host` is pinned by a test on the documented shape only;
+a real Ollama cloud model needs a sign-in. On Windows, `localhost` tries `::1` first, so a server
+listening on IPv4 only costs about 2.2 s per connection: Ollama's own probe takes 2.38 s at
+`localhost` and 0.22 s at `127.0.0.1` (older than this change). The status bar shows a server's id,
+not its name.
 
 ## 2026-11-02 (2) — ADR-060 accepted in a grill: who bills is a fact of its own
 

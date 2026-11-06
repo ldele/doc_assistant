@@ -17,6 +17,7 @@
     ingestLabel,
     ingestRun,
   } from '../lib/core/ingest.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   const status = $derived(ingestRun.status)
   const pct = $derived(fraction(status))
@@ -37,7 +38,7 @@
       onclick={() => (ingestRun.panelOpen = !ingestRun.panelOpen)}
       aria-haspopup="dialog"
       aria-expanded={ingestRun.panelOpen}
-      title={ingestRun.panelOpen ? 'Close the indexing screen' : 'Open the indexing screen'}
+      use:tooltip={ingestRun.panelOpen ? 'Close the indexing screen' : 'Open the indexing screen'}
       type="button"
     >
       <!-- Determinate whenever the backend has counted the batch; indeterminate only in the brief
@@ -50,7 +51,7 @@
     </button>
 
     {#if !running}
-      <button class="ingest-x" onclick={dismissIngest} title="Dismiss" type="button">
+      <button class="ingest-x" onclick={dismissIngest} aria-label="Dismiss" use:tooltip={'Hide this note from the status bar'} type="button">
         <Icon name="x" size={12} />
       </button>
     {/if}

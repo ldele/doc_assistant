@@ -8,6 +8,7 @@
   import Icon from '../../shell/Icon.svelte'
   import { rerunLabel } from '../../lib/library/reingest'
   import { openRerun } from '../../lib/library/reingest.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     blocks,
@@ -52,11 +53,11 @@
       viewerOpen = !viewerOpen
       if (!viewerOpen) viewerPage = null
     }}
-    title="Show the document itself beside this page"
+    use:tooltip={'Show the document itself beside this page'}
   >
     <Icon name="book-open" size={13} /> Source
   </button>
-  <button class="rerun" type="button" onclick={() => openRerun([docId], rerunLabel(doc))} title="Re-run part of ingestion for this document">
+  <button class="rerun" type="button" onclick={() => openRerun([docId], rerunLabel(doc))} use:tooltip={'Re-run part of ingestion for this document'}>
     <Icon name="rotate-ccw" size={13} /> Re-run…
   </button>
 </nav>

@@ -21,6 +21,7 @@
   import { enterSelectMode, exitSelectMode, library } from '../../lib/library/documents.svelte'
   import { addSelectionToFolder, openManageFolders } from '../../lib/library/folders.svelte'
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     /** The whole list: *Select* shows only when it has documents. */
@@ -52,7 +53,7 @@
 
 <div class="libnav">
   {#if libraryDocId !== null || libraryCollection.kind !== 'all'}
-    <button class="libback" onclick={onLibraryBack} aria-label="Back" title="Back">
+    <button class="libback" onclick={onLibraryBack} aria-label="Back" use:tooltip={'Go back to where you were in the library'}>
       <Icon name="arrow-left" size={15} />
     </button>
   {/if}
@@ -85,7 +86,8 @@
         onclick={() => (libPrefs.sortOpen = !libPrefs.sortOpen)}
         aria-haspopup="menu"
         aria-expanded={libPrefs.sortOpen}
-        title="Sort documents"
+        aria-label="Sort documents"
+        use:tooltip={'Change the order of the documents'}
         type="button"><Icon name="arrow-up-down" size={15} /></button
       >
       {#if libPrefs.sortOpen}
@@ -120,7 +122,7 @@
         onclick={() => setLibraryView('grid')}
         aria-label="Grid view"
         aria-pressed={!showSummary && libPrefs.view === 'grid'}
-        title="Grid view"
+        use:tooltip={'Show the documents as tiles'}
         type="button"><Icon name="layout-grid" size={15} /></button
       >
       <button
@@ -128,7 +130,7 @@
         onclick={() => setLibraryView('list')}
         aria-label="List view"
         aria-pressed={!showSummary && libPrefs.view === 'list'}
-        title="List view"
+        use:tooltip={'Show the documents as a list'}
         type="button"><Icon name="list" size={15} /></button
       >
       <!-- ROADMAP 112: a third layout, for the library or the open folder. Navigation, not an
@@ -142,7 +144,7 @@
             libPrefs.summaryOpen = true
           }}
           aria-pressed={showSummary}
-          title={summaryScope.folder === null
+          use:tooltip={summaryScope.folder === null
             ? 'What went wrong at indexing, and what is known about your documents'
             : 'What went wrong at indexing, and what is known about this folder'}
           type="button">Summary</button
@@ -155,7 +157,7 @@
         class:active={library.selectMode}
         aria-pressed={library.selectMode}
         onclick={() => (library.selectMode ? exitSelectMode() : enterSelectMode())}
-        title="Select documents to add to a folder"
+        use:tooltip={'Select documents, then add them to a folder or re-run them'}
         type="button"
       >
         <Icon name="square-check-big" size={14} /> Select
@@ -171,7 +173,7 @@
       class="addbtn"
       onclick={openChooser}
       disabled={!canAccept() || accept.picking}
-      title={unavailableReason() ?? 'Add documents'}
+      use:tooltip={unavailableReason() ?? 'Choose files or a folder to add to your library'}
       type="button"
     >
       <Icon name="plus" size={14} /> Add documents

@@ -17,6 +17,7 @@
   import { sourceKeyName } from '../../lib/library/accept'
   import { hiddenLine, selectedRows, tickAll, tickable } from '../../lib/library/addselection'
   import { ingestRun, noteIngestStarted } from '../../lib/core/ingest.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     /** Absolute paths staged by the accept surface (AD1). */
@@ -325,9 +326,9 @@
           class="secondary"
           onclick={undoAll}
           disabled={undoing || indexing}
-          title={indexing
+          use:tooltip={indexing
             ? 'Available when indexing finishes — undoing now would delete a file the indexer is reading.'
-            : 'Undo all'}
+            : 'Take every file this review added back out of the library'}
           type="button"
         >
           {undoing ? 'Undoing…' : 'Undo all'}

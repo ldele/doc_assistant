@@ -50,6 +50,7 @@
     readScope,
     silentLine,
   } from '../../lib/graph/signals'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     conceptId,
@@ -165,7 +166,7 @@
     <h3>Definition</h3>
     <div class="defactions">
       {#if isConcept && view?.can_undo}
-        <button class="ghost sm" onclick={() => run(() => undoDefinition(conceptId))} disabled={busy} type="button" title="Take back the last change">
+        <button class="ghost sm" onclick={() => run(() => undoDefinition(conceptId))} disabled={busy} type="button" use:tooltip={'Take back the last change'}>
           <Icon name="rotate-ccw" size={13} /> Undo
         </button>
       {/if}
@@ -230,7 +231,7 @@
                 onclick={() => (openReasons = openReasons === c.id ? null : c.id)}
                 aria-expanded={openReasons === c.id}
                 type="button"
-                title="Why this grade"
+                use:tooltip={'Show or hide why this wording got this grade'}
               >
                 {gradeLabel(c.grade)}
               </button>
@@ -249,7 +250,7 @@
                 <button class="ghost sm" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button">
                   <Icon name="check" size={13} /> Use this
                 </button>
-                <button class="ghost sm" onclick={() => startWriting(c)} disabled={busy} type="button" title="Start your own definition from this wording">
+                <button class="ghost sm" onclick={() => startWriting(c)} disabled={busy} type="button" use:tooltip={'Start your own definition from this wording'}>
                   Edit into my own
                 </button>
                 <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Dismiss</button>

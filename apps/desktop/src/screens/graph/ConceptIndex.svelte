@@ -12,6 +12,7 @@
   import { shownLabel } from '../../lib/graph/labels'
   import GapList from './GapList.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     nodes,
@@ -141,7 +142,7 @@
         aria-pressed={gapsOnly}
         onclick={() => (gapsOnly = !gapsOnly)}
         type="button"
-        title="Hide every concept the gap detector found nothing wrong with, leaving only the worklist."
+        use:tooltip={'Hide every concept the gap detector found nothing wrong with, leaving only the worklist.'}
       >
         Gaps only <span class="count">{gapConceptCount}</span>
       </button>
@@ -154,7 +155,7 @@
         aria-pressed={showUnderConnected}
         onclick={() => (showUnderConnected = !showUnderConnected)}
         type="button"
-        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+        use:tooltip={'Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it.'}
       >
         Include under-connected
       </button>
@@ -194,7 +195,7 @@
             aria-selected={m.id === offGraphId}
             onclick={() => onSelectOffGraph(m.id, shownLabel(m))}
             type="button"
-            title="A word your library uses that you have not taken on as a concept — open it to see how the library uses it"
+            use:tooltip={'A word your library uses that you have not taken on as a concept — open it to see how the library uses it'}
           >
             <span class="dot hollow" aria-hidden="true"></span>
             <span class="clabel">{shownLabel(m)}</span>

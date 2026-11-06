@@ -11,6 +11,7 @@
   import { getDocumentFigures } from '../../lib/core/api'
   import { API_BASE } from '../../lib/core/api/_base'
   import FigureViewer from './FigureViewer.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { docId }: { docId: string } = $props()
 
@@ -86,7 +87,7 @@
             <button
               class="zoom"
               type="button"
-              title="View full size"
+              use:tooltip={'Open this figure full size'}
               onclick={() => (viewerIndex = viewable.findIndex((v) => v.id === fig.id))}
             >
               <img src={imageUrl(fig.id)} alt={fig.caption ?? `Figure on page ${fig.page}`} loading="lazy" />

@@ -28,6 +28,7 @@
     type CardRow,
     type SummaryTarget,
   } from '../../lib/library/summary'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     /** The open folder, or `null` for the whole library. */
@@ -139,7 +140,7 @@
         class="meter nav"
         disabled={opening !== null}
         onclick={() => show(issue)}
-        title="Open the {r.tail}"
+        use:tooltip={`Open the ${r.tail}`}
         type="button"
       >
         {@render meterBody()}

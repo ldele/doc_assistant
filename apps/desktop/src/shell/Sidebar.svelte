@@ -19,6 +19,7 @@
   } from '../lib/library/library'
   import { openManageFolders } from '../lib/library/folders.svelte'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     mode,
@@ -182,7 +183,7 @@
          active/count. Parked in a pinned footer *outside* the scrolling rail: it is a destination
          rather than an index entry, so it should not drift away as the concept list scrolls. -->
     <div class="railfoot">
-      <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
+      <button class="treerow" onclick={onOpenTaxonomy} type="button" use:tooltip={'Open Taxonomy: organise concepts and documents into research fields'}>
         <span class="treeicon"><Icon name="tag" size={14} /></span>
         <span class="treelabel">Taxonomy</span>
       </button>

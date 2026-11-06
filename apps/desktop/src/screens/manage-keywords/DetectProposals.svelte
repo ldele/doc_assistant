@@ -4,6 +4,7 @@
   // Owns nothing — the proposals and the run are App's, and every click is handed straight up.
   import type { KeywordFamilyProposal } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     proposals,
@@ -53,7 +54,7 @@
             class="iconbtn"
             onclick={() => onDismissProposal(p.canonical)}
             aria-label="Dismiss proposal for {p.canonical}"
-            title="Dismiss"
+            use:tooltip={'Hide this proposal; nothing is merged'}
             type="button"
           >
             <Icon name="x" size={14} />

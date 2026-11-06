@@ -7,6 +7,7 @@
   import type { DocumentSpacing, SpacingRow } from '../../lib/core/types'
   import { removeRunEntry, setRunSpacing, sourcePageUrl } from '../../lib/core/api'
   import { gapsOf, glyphsOf, shownText, writeWithGaps } from '../../lib/library/spacing'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -92,7 +93,7 @@
           class:open={gaps[i]}
           aria-pressed={gaps[i]}
           aria-label={gaps[i] ? `Join ${g} and ${glyphs[i + 1]}` : `Break between ${g} and ${glyphs[i + 1]}`}
-          title={gaps[i] ? 'A space: click to join' : 'Joined: click to break here'}
+          use:tooltip={gaps[i] ? 'A space: click to join' : 'Joined: click to break here'}
           disabled={busy}
           onclick={() => toggle(i)}
         ></button>{/if}{/each}

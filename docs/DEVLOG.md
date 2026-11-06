@@ -42,6 +42,39 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (4) — ROADMAP 110 (a): the primary's fill, one tooltip, and checks that fail
+
+**What changed.** The first of ROADMAP 110's four pieces. `app.css` gains `--accent-fill` and
+`--accent-fill-fg` in all four palette blocks (`#6b5fd6` with white in the dark theme, 5.0:1;
+the accent itself in the light, 8.2:1), and `btn-primary` uses them; its hover now darkens toward
+black in both themes. One tooltip, `apps/desktop/src/lib/shell/tooltip.ts`, is a Svelte action
+over one shared `role="tooltip"` element: it shows on hover and on keyboard focus, Esc dismisses
+it, the pointer can move onto it, and the button's `aria-describedby` points at it while it
+shows. All 73 native `title`s on buttons moved onto it (about 30 rewritten to say what the button
+will do rather than repeat its label), and three icon-only buttons whose only name was that
+`title` gained an `aria-label`. `src/ui-rules.test.ts` holds ADR-063's three checks as ratchets
+at today's counts, per file, with reasons in `src/ui-rules.allow.ts`, plus a fourth with no
+allow-list (no `title` on a button). ADR-063 gains *As built*; ROADMAP 110 lists the four pieces.
+
+**Why.** ADR-063 choices 2, 6 and 8 and its *Enforced by*, accepted by the user on 2026-11-06;
+the user picked this piece first from the proposed split. Seen working in the running app over an
+invented library (a new data home, no `.env`, no key): dark, light and 375 px, a disabled button
+included. `npm test` 401/401, `svelte-check` 0 errors, `npm audit --audit-level=high` clean.
+
+**Rejected.** Moving only the 26 `title`s the ADR counted: its regex stopped at an arrow
+function's `=>`, and a real scanner finds 73, so the rest would have kept two kinds of hover text.
+Keeping a native `title` beside the tooltip as a fallback: two texts on one hover. Showing the
+tooltip on every focus: a click focuses a button too, and a dialog focuses one by script on
+opening, so it shows only after a navigation key moved the focus. Letting Esc through to the
+dialog underneath: the tooltip is the top layer (the WAI-ARIA pattern), so the first Esc closes
+it alone. A total count per check: a file could break a rule while another improved, so each
+file has its own entry, and an entry above the measured count also fails.
+
+**What it opens.** Pieces (b) roles and confirms, (c) hover text on the 237 buttons left, (d)
+dialog frame, shared stylesheet and colours, each lowering its list. 50 `title`s on elements that
+are not buttons reach a mouse only (ADR-063 *As built*). The corrected counts replace the ADR's
+26, 286, 312 and 45 with 73, 237, 310 and 49.
+
 ## 2026-11-06 (3) — ADR-063 accepted as proposed
 
 **What changed.** ADR-063 is accepted with all eight choices as recommended: the four action roles,

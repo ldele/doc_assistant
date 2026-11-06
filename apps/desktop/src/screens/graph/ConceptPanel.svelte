@@ -28,6 +28,7 @@
   import { broadSummary, shownLabel } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
   import Definition from './Definition.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     graph,
@@ -252,7 +253,7 @@
           class="ghost sm"
           onclick={() => onManageConcept(offGraphConcept.id, offGraphConcept.label)}
           type="button"
-          title="Take this term on as a concept in Manage keywords"
+          use:tooltip={'Take this term on as a concept in Manage keywords'}
         >
           <Icon name="pencil" size={13} /> Manage keywords
         </button>
@@ -279,12 +280,12 @@
       </div>
       <div class="eh-actions">
         <span class="eh-meta">{selectedNode.degree} link{selectedNode.degree === 1 ? '' : 's'} · {docCount(selectedNode)} doc{docCount(selectedNode) === 1 ? '' : 's'}</span>
-        <button class="ghost sm" onclick={resetView} type="button" title="Reset zoom & pan">Reset view</button>
+        <button class="ghost sm" onclick={resetView} type="button" use:tooltip={'Put the graph back to its first zoom and position'}>Reset view</button>
         <button
           class="ghost sm"
           onclick={() => onManageConcept(selectedNode.id, selectedNode.label)}
           type="button"
-          title="Edit this concept in Manage keywords"
+          use:tooltip={'Edit this concept in Manage keywords'}
         >
           <Icon name="pencil" size={13} /> Edit
         </button>
@@ -292,7 +293,7 @@
           class="ghost sm"
           onclick={() => onPlaceConcept(selectedNode.id, selectedNode.label)}
           type="button"
-          title="Place this concept in the field taxonomy"
+          use:tooltip={'Place this concept in the field taxonomy'}
         >
           <Icon name="tag" size={13} /> Place
         </button>

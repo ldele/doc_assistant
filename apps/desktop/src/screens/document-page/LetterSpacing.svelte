@@ -15,6 +15,7 @@
   import { markRemovedSpaces, rowCaption, shownText, splitRows } from '../../lib/library/spacing'
   import { rerunLabel } from '../../lib/library/reingest'
   import { openRerun } from '../../lib/library/reingest.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -171,7 +172,7 @@
                       class="ghost small"
                       type="button"
                       disabled={busy || data.keep_all}
-                      title={data.keep_all ? 'Every run of this document is kept: turn that off first' : ''}
+                      use:tooltip={data.keep_all ? 'Every run of this document is kept: turn that off first' : 'Give this run back to the rule, so your choice for it no longer applies'}
                       onclick={() => act(() => removeRunEntry(docId, row.spaced))}
                     >
                       Remove

@@ -6,6 +6,7 @@
   import type { ConversationSummary } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
   import { isSelectClick, pick, selectAllLabel, selectAllOrNone } from '../../lib/shell/selection'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     conversations,
@@ -281,7 +282,8 @@
       class="sortbtn"
       class:on={selectMode}
       onclick={() => (selectMode ? exitSelect() : enterSelect())}
-      title={selectMode ? 'Leave select mode' : 'Select chats to delete'}
+      aria-label="Select chats"
+      use:tooltip={selectMode ? 'Leave select mode' : 'Select chats to archive or delete them together'}
       aria-pressed={selectMode}
       type="button"><Icon name="check" size={15} /></button
     >
@@ -292,7 +294,7 @@
         onclick={() => (sortOpen = !sortOpen)}
         aria-haspopup="menu"
         aria-expanded={sortOpen}
-        title="Sort: {SORT_LABELS[sortKey]}"
+        use:tooltip={`Change the order of the list (now: ${SORT_LABELS[sortKey]})`}
         aria-label="Sort conversations"
         type="button"><Icon name="arrow-up-down" size={15} /></button
       >
@@ -374,14 +376,14 @@
         <button
           class="act"
           class:on={c.pinned}
-          title={c.pinned ? 'Unpin' : 'Pin'}
+          use:tooltip={c.pinned ? 'Move this chat back among the others' : 'Keep this chat in the pinned section at the top'}
           aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
           onclick={() => onPin(c.session_id, !c.pinned)}
           type="button"><Icon name="pin" size={14} /></button
         >
         <button
           class="act"
-          title="More"
+          use:tooltip={'Pin, rename, archive or delete this chat'}
           aria-label="Conversation options"
           aria-haspopup="menu"
           onclick={(e) => openMenu(c.session_id, e)}

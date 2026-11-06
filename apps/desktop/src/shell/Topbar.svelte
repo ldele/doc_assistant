@@ -12,6 +12,7 @@
   import { GRAPH_TAB_ENABLED } from '../lib/core/features'
   import { canAccept, openChooser, unavailableReason } from '../lib/library/accept.svelte'
   import appMark from '../assets/brand/app-mark.png'
+  import { tooltip } from '../lib/shell/tooltip'
 
   interface Props {
     canBack: boolean
@@ -47,7 +48,7 @@
         aria-label="Menu"
         aria-haspopup="menu"
         aria-expanded={shell.appMenuOpen}
-        title="Menu"
+        use:tooltip={'Open the app menu'}
         type="button"><Icon name="menu" size={17} /></button
       >
       {#if shell.appMenuOpen}
@@ -61,7 +62,7 @@
             role="menuitem"
             onclick={() => { shell.appMenuOpen = false; openChooser() }}
             disabled={!canAccept()}
-            title={unavailableReason() ?? 'Add documents'}
+            use:tooltip={unavailableReason() ?? 'Choose files or a folder to add to your library'}
             type="button"
           >
             <Icon name="plus" size={15} /> Add documents…
@@ -96,19 +97,19 @@
       onclick={toggleSidebarCollapsed}
       aria-label={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       aria-pressed={sidebarPrefs.collapsed}
-      title={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      use:tooltip={sidebarPrefs.collapsed ? 'Show the sidebar again' : 'Hide the sidebar to give this screen more room'}
       type="button"><Icon name="panel-left" size={16} /></button
     >
     <button
       class="tb-btn only-mobile"
       onclick={() => (shell.sidebarOpen = true)}
       aria-label="Open sidebar"
-      title="Open sidebar"
+      use:tooltip={'Show the sidebar over this screen'}
       type="button"><Icon name="panel-left" size={16} /></button
     >
     <!-- Search sits with the sidebar toggle, ahead of back/forward: it opens a navigation overlay,
          so it belongs with the other navigation affordances rather than with Settings. -->
-    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
+    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" use:tooltip={'Find a chat or a document by its words (Ctrl/⌘ K)'} type="button">
       <Icon name="search" size={16} />
     </button>
     <button
@@ -116,7 +117,7 @@
       onclick={onNavBack}
       disabled={!canBack}
       aria-label="Back"
-      title="Back"
+      use:tooltip={'Go back to the screen before this one'}
       type="button"><Icon name="arrow-left" size={16} /></button
     >
     <button
@@ -124,7 +125,7 @@
       onclick={onNavForward}
       disabled={!canForward}
       aria-label="Forward"
-      title="Forward"
+      use:tooltip={'Go forward again'}
       type="button"><Icon name="arrow-right" size={16} /></button
     >
   </div>
@@ -171,7 +172,7 @@
         <span class="wordmark">proven<span class="wm-accent">ote</span></span>
       </div>
     </div>
-    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" title="Settings" type="button">
+    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" use:tooltip={'Open Settings: provider and model, documents, retrieval'} type="button">
       <Icon name="settings" size={17} />
     </button>
   </div>

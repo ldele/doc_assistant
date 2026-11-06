@@ -12,6 +12,7 @@
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
   import { docLabel, filterDocs, typeGroups } from '../../lib/library/library'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     folders,
@@ -224,7 +225,7 @@
             class:on={unfiledOnly}
             aria-pressed={unfiledOnly}
             onclick={() => (unfiledOnly = !unfiledOnly)}
-            title="Only documents not yet in any folder (plus this folder's members)"
+            use:tooltip={'Only documents not yet in any folder (plus this folder\'s members)'}
             type="button"
           >
             Unfiled

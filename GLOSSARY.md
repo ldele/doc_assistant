@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (U-003: hover text, ADR-063 choice 6); 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-11-06 (U-003: hover text, ADR-063 choice 6; its tooltip and checks, ROADMAP 110 (a)); 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -233,7 +233,8 @@ and would file these words under the entry above, so every *Clear* in the repo w
 **Forbidden:** —
 **Authoritative in:** `docs/decisions/ADR-063-a-buttons-look-says-what-it-does.md` +
 `apps/desktop/src/app.css` (the classes) + `apps/desktop/src/lib/shell/selection.ts` (the selection
-helper)
+helper) + `apps/desktop/src/lib/shell/tooltip.ts` (the tooltip) + `apps/desktop/src/ui-rules.test.ts`
+(the checks)
 
 ## U-004 — the screens, and what each is called
 

@@ -19,6 +19,12 @@
   --fg-2: #6b6559;
   --accent: #4a3fa6;
   --accent-fg: #ffffff;
+  /* The primary button's fill and its text (ADR-063 choice 2): white text in both themes. In the
+     light theme the fill is the accent itself (white on it is 8.2:1); in the dark theme it is a
+     deeper violet (white on #6b5fd6 is 5.0:1, where white on the bright dark accent is 2.8:1, below
+     WCAG's 4.5:1), so --accent keeps its brightness for links, rings and selection. */
+  --accent-fill: #4a3fa6;
+  --accent-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -106,6 +112,8 @@
   --fg-2: #a79e8b;
   --accent: #9a8ff0;
   --accent-fg: #1b1813;
+  --accent-fill: #6b5fd6;
+  --accent-fill-fg: #ffffff;
   --accent-wordmark: #a596ff;
   --danger: #f2857a;
   --lavender: #b0a4ff;
@@ -143,6 +151,8 @@
   --fg-2: #6b6559;
   --accent: #4a3fa6;
   --accent-fg: #ffffff;
+  --accent-fill: #4a3fa6;
+  --accent-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -184,6 +194,8 @@
     --fg-2: #a79e8b;
     --accent: #9a8ff0;
     --accent-fg: #1b1813;
+    --accent-fill: #6b5fd6;
+    --accent-fill-fg: #ffffff;
     --accent-wordmark: #a596ff;
     --danger: #f2857a;
     --lavender: #b0a4ff;
@@ -288,14 +300,16 @@ body {
   cursor: default;
 }
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--accent-fill-fg);
   font-weight: 600;
 }
+/* Hover darkens in both themes. Mixing toward --fg (as before the fill pair) lightens it in the
+   dark theme and drops white text to 3.9:1; toward black it is 6.4:1 (dark) and 9.9:1 (light). */
 .btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
-  border-color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+  background: color-mix(in srgb, var(--accent-fill) 85%, black);
+  border-color: color-mix(in srgb, var(--accent-fill) 85%, black);
 }
 .btn-quiet {
   background: none;
@@ -315,4 +329,30 @@ body {
 .btn-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-color: var(--danger);
+}
+
+/* The shared tooltip: a button's hover text (lib/shell/tooltip.ts, ADR-063 choice 6). Inverse ink,
+   so it reads as a note on top of the screen in both themes (16:1 light, 14:1 dark). It takes the
+   pointer (WCAG 2.2 SC 1.4.13: the pointer can move onto it), and it sits above every dialog. */
+.app-tooltip {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  max-width: min(36ch, calc(100vw - 16px));
+  padding: var(--space-1) var(--space-2);
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  box-shadow: var(--shadow-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+.app-tooltip[hidden] {
+  display: none;
 }

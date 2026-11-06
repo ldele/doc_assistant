@@ -8,6 +8,7 @@
   import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../../lib/core/ingest.svelte'
   import { onDestroy } from 'svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let rows = $state<SourceFile[]>([])
   let loading = $state(false)
@@ -128,7 +129,7 @@
         {#if counts.excluded > 0}· {counts.excluded} excluded{/if}
       {/if}
     </p>
-    <button class="rescan" onclick={scan} disabled={loading || busy} title="Rescan the folder">
+    <button class="rescan" onclick={scan} disabled={loading || busy} use:tooltip={'Read the folder again and list what is in it now'}>
       <Icon name="rotate-ccw" size={14} /> Rescan
     </button>
   </div>
@@ -167,7 +168,7 @@
             class="excl"
             onclick={() => toggleExclude(r)}
             disabled={busy}
-            title={r.excluded ? 'Include in whole-folder indexing' : 'Exclude from whole-folder indexing'}
+            use:tooltip={r.excluded ? 'Include in whole-folder indexing' : 'Exclude from whole-folder indexing'}
           >
             {r.excluded ? 'Excluded' : 'Exclude'}
           </button>

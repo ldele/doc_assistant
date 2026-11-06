@@ -13,6 +13,7 @@
   import Icon from '../../shell/Icon.svelte'
   import { GAP_META, filterGapRows, gapVisible, orderGaps } from '../../lib/graph/gaps'
   import { shownLabel } from '../../lib/graph/labels'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { onSelectConcept }: { onSelectConcept?: (conceptId: string) => void } = $props()
 
@@ -117,7 +118,7 @@
         aria-pressed={showUnderConnected}
         onclick={() => (showUnderConnected = !showUnderConnected)}
         type="button"
-        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+        use:tooltip={'Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it.'}
       >
         Include under-connected
       </button>
@@ -128,7 +129,7 @@
           aria-pressed={showDismissed}
           onclick={() => (showDismissed = !showDismissed)}
           type="button"
-          title="Dismissed gaps stay recoverable — this shows them again without un-dismissing them."
+          use:tooltip={'Dismissed gaps stay recoverable — this shows them again without un-dismissing them.'}
         >
           Show dismissed <span class="count">{dismissedCount}</span>
         </button>
@@ -149,7 +150,7 @@
               class="conceptlink"
               type="button"
               onclick={() => onSelectConcept?.(it.concept_id)}
-              title="Show this concept in the graph"
+              use:tooltip={'Show this concept in the graph'}
             >
               {shownLabel(it)}
             </button>

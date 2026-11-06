@@ -17,6 +17,7 @@
   import { shell } from '../../lib/shell/shell.svelte'
   import { outstandingSteps } from '../../lib/settings/setup'
   import type { ConversationDetail, LibraryFolder } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     viewing: string | null
@@ -153,7 +154,7 @@
         class="compare"
         onclick={onCompare}
         disabled={chat.sending || chat.comparing || chat.input.trim() === ''}
-        title="See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)"
+        use:tooltip={'See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)'}
         type="button"
       >
         {chat.comparing ? 'Comparing…' : 'Test override'}

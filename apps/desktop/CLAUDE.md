@@ -34,7 +34,7 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   DOM and state disagree, read the rune module from the page (DEVLOG 2026-07-26, -07-28, -08-31 (3)).
 - Product name: ADR-012 (wordmark only — never rename the package). Dev: `just app`.
 
-**Tests:** `npm test` (`node:test`, zero deps; pure `.ts` only) + `svelte-check` + live preview are
-the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
+**Tests:** `npm test` (`node:test`, zero deps; pure `.ts` only) + `svelte-check` + live preview are the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
+A button takes `use:tooltip={…}` (`lib/shell/tooltip.ts`), never `title`; `src/ui-rules.test.ts` fails one without it, a local `.primary`/`.ghost`/`.danger`, a literal colour (ADR-063).
 
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

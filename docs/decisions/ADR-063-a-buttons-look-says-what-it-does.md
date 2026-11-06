@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
 
 # ADR-063 — A button's look says what it does: four action roles, and a delete always asks first
 
@@ -226,3 +226,47 @@ High on the roles: they are the four kinds of button the app already has, named.
 a contrast calculation, not yet a look the user has seen. High on choices 6 to 8: they restate the
 user's words of 2026-11-06 and the standards they point to; the counts behind them are from a
 regex, so a tag split across lines in an unusual way may be miscounted by one or two.
+
+## As built — ROADMAP 110 piece (a), 2026-11-06
+
+ROADMAP 110 is cut in four pieces, one per session (the user picked the order on 2026-11-06):
+(a) the fill pair, the tooltip and the checks; (b) the button roles, the five confirms, *Source*
+and *Re-run…*; (c) hover text on the rest of the buttons; (d) the dialog frame, the shared
+stylesheet and the colours. Piece (a) is built:
+
+- **Choice 2.** `--accent-fill` / `--accent-fill-fg` in all four palette blocks of `app.css`:
+  `#4a3fa6` in the light theme (white on it 8.2:1), `#6b5fd6` in the dark (5.0:1); `btn-primary`
+  uses them. Its hover now mixes the fill toward black: toward `--fg`, as before, it lightened in
+  the dark theme and dropped white text to 3.9:1 (now 6.4:1 dark, 9.9:1 light).
+- **Choice 6.** One tooltip, `apps/desktop/src/lib/shell/tooltip.ts`, a Svelte action
+  (`use:tooltip={text}`) over one shared `role="tooltip"` element styled in `app.css` (inverse ink,
+  16:1 light, 14:1 dark). Driven in the running app: Esc hides it without moving the pointer or
+  the focus, the pointer can cross onto it, and it stays until both leave; the button's
+  `aria-describedby` points at it while it shows; it works on a disabled button, so a reason
+  still shows; it stays inside the window at 375 px. Three calls the ADR left open: focus shows
+  it only when a navigation key (Tab, an arrow, Home, End) moved the focus, so a click or a
+  dialog's scripted focus does not pop it up; the first Esc dismisses the tooltip alone (it is
+  the top layer, as in the WAI-ARIA pattern) and the next reaches the dialog underneath; touch
+  shows nothing, and pressing the button hides it.
+- **Every native `title` on a button moved onto it: 73, not 26.** About 30 texts only repeated
+  their label (*Back*, *Zoom in*, *Settings*, *More*, *Dismiss*) and were rewritten to finish
+  "this will …". Three icon-only buttons had the `title` as their only name, so they gained an
+  `aria-label` (the indexing note's ×, Chat history's select toggle, the Library's sort).
+- **The checks:** `apps/desktop/src/ui-rules.test.ts`, allow-lists in `ui-rules.allow.ts`, every
+  entry a ratchet at the count below with the piece that brings it down. The test fails when a
+  file goes over its entry and when it goes under (lower the entry), so the list stays the truth.
+  A fourth check has no allow-list: a `<button>` never carries `title`.
+
+**The counts, corrected.** The regex behind *In practice* stopped at the `>` of an arrow
+function (`onclick={() => …}`), so it missed every `title` written after one. The checks read
+each tag with a scanner that skips `{…}` and quoted values. On 2026-11-06, before the move:
+310 buttons (two of the 312 were in comments), 73 with a `title`; after it, **237 buttons in 59
+files have no hover text**. Local role classes: **28 files, 48 class names** (ADR-064's pass 2 split
+some of the 16). Literal colours: **49 in 20 files**, the 45 plus four named colours (`green`,
+`gray` in the two figure views), which check 3 counts too.
+
+**Left open by piece (a).** 50 `title` attributes on elements that are not buttons, in 31 files
+(35 on a `span`: a truncated file name, a marker's meaning). All but one (the Chat tab's scope
+`<select>`) are on elements that cannot take focus, so what they say reaches a mouse only, which
+choice 6's last sentence rules out for anything the user must know. They are outside the button
+rule; piece (c) or (d) decides each: on the screen, or the tooltip on a focusable element.

@@ -11,6 +11,7 @@
   import { deletionLosses, formToAdd, markKey, shownBreadth } from '../../lib/library/library'
   import { shownName } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     family: f,
@@ -99,7 +100,7 @@
         <Icon name="x" size={14} />
       </button>
     {:else}
-      <button class="famname" onclick={startRename} type="button" title="Rename">
+      <button class="famname" onclick={startRename} type="button" use:tooltip={'Change this name'}>
         {name}
       </button>
       <!-- The library filter's count: documents that carry the keyword. The graph counts
@@ -119,7 +120,7 @@
         aria-label={f.graph_include
           ? `Take ${name} off the concept graph`
           : `Take ${name} on as a concept`}
-        title={f.graph_include
+        use:tooltip={f.graph_include
           ? 'A concept, on the graph — click to make it a term again'
           : 'A term — click to take it on as a concept'}
         type="button"
@@ -130,7 +131,7 @@
         class="iconbtn danger"
         onclick={() => void onAskDelete(f)}
         aria-label="Delete {name}"
-        title="Delete…"
+        use:tooltip={'Delete this and its forms, after you confirm'}
         type="button"
       >
         <Icon name="x" size={14} />
@@ -182,7 +183,7 @@
               aria-pressed={mark === 'exact'}
               disabled={saving}
               onclick={() => void onSetMark(f, alias, 'exact')}
-              title="Exact: “{alias}” always means {name}, so its documents count."
+              use:tooltip={`Exact: “${alias}” always means ${name}, so its documents count.`}
               type="button"
             >
               exact
@@ -193,7 +194,7 @@
               aria-pressed={mark === 'broad'}
               disabled={saving}
               onclick={() => void onSetMark(f, alias, 'broad')}
-              title="Broad: “{alias}” also means other things, so its documents are listed beside {name} and not counted in it."
+              use:tooltip={`Broad: “${alias}” also means other things, so its documents are listed beside ${name} and not counted in it.`}
               type="button"
             >
               broad
@@ -206,7 +207,7 @@
             class="formx"
             onclick={() => onRemoveMember(f.id, alias)}
             aria-label="Remove “{alias}” from {name}"
-            title="Remove this form"
+            use:tooltip={'Remove this form'}
             type="button"
           >
             <Icon name="x" size={11} />
@@ -217,7 +218,7 @@
           class="chip"
           onclick={() => onRemoveMember(f.id, alias)}
           type="button"
-          title="Remove “{alias}” from this family"
+          use:tooltip={`Remove “${alias}” from this family`}
         >
           <span>{alias}</span>
           <Icon name="x" size={11} />

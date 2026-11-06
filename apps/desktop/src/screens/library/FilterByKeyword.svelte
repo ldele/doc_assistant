@@ -11,6 +11,7 @@
   import { authorLabel, familyByCanonical, splitRareFacets } from '../../lib/library/library'
   import { openManageKeywords } from '../../lib/library/keywords.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     facets,
@@ -100,7 +101,7 @@
             type="button"
             aria-pressed={f.selected}
             disabled={!f.available && !f.selected}
-            title={fam && fam.aliases.length > 0
+            use:tooltip={fam && fam.aliases.length > 0
               ? `Also matches: ${fam.aliases.join(', ')}`
               : !f.available && !f.selected
                 ? `No documents match “${f.value}” with the current filters`

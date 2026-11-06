@@ -19,6 +19,7 @@
   import { formsChangedNotice, shownLabel } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
   import ConceptPanel from './ConceptPanel.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     graph,
@@ -206,7 +207,7 @@
             onclick={onRebuild}
             disabled={rebuilding}
             type="button"
-            title="Build the graph again from your library and your keywords as they are now. A few seconds, no model."
+            use:tooltip={'Build the graph again from your library and your keywords as they are now. A few seconds, no model.'}
           >
             <Icon name="rotate-ccw" size={13} />
             {rebuilding ? 'Rebuilding…' : 'Rebuild'}
@@ -221,7 +222,7 @@
           class="ghost sm"
           onclick={onCurateVocabulary}
           type="button"
-          title="Mark forms, rename or add concepts"
+          use:tooltip={'Mark forms, rename or add concepts'}
         >
           <Icon name="pencil" size={13} /> Manage keywords
         </button>

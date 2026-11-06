@@ -12,6 +12,7 @@
   import { openManageFoldersForDoc } from '../../lib/library/folders.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { isSelectClick } from '../../lib/shell/selection'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     documents,
@@ -139,7 +140,7 @@
           onmousedown={noTextSelect}
           onclick={(e) => onBodyClick(d.id, e)}
           type="button"
-          title={d.filename}
+          use:tooltip={selectMode ? `${isSel ? 'Deselect' : 'Select'} ${d.filename}` : `Open ${d.filename}`}
           aria-label={docLabel(d)}
           aria-pressed={selectMode ? isSel : undefined}
         >
@@ -179,7 +180,7 @@
         {#if !selectMode}
           <button
             class="tileact"
-            title="More options"
+            use:tooltip={'Edit metadata, show the file, add to a folder or delete'}
             aria-label="Document options"
             aria-haspopup="menu"
             onclick={(e) => openMenu(d.id, e)}
@@ -201,7 +202,7 @@
           onmousedown={noTextSelect}
           onclick={(e) => onBodyClick(d.id, e)}
           type="button"
-          title={d.filename}
+          use:tooltip={selectMode ? `${isSel ? 'Deselect' : 'Select'} ${d.filename}` : `Open ${d.filename}`}
           aria-label={docLabel(d)}
           aria-pressed={selectMode ? isSel : undefined}
         >
@@ -229,7 +230,7 @@
         {#if !selectMode}
           <button
             class="rowact"
-            title="More options"
+            use:tooltip={'Edit metadata, show the file, add to a folder or delete'}
             aria-label="Document options"
             aria-haspopup="menu"
             onclick={(e) => openMenu(d.id, e)}

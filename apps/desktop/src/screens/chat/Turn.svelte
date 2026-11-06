@@ -6,6 +6,7 @@
   import SourceEvaluation from './SourceEvaluation.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { usageLabel } from '../../lib/chat/usage'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     question,
@@ -74,7 +75,7 @@
                   class="citelink"
                   class:active={activeCitationN === s.n}
                   onclick={() => onCitationClick?.(s.n)}
-                  title="Open this source in the side panel"
+                  use:tooltip={'Open this source in the side panel'}
                 >
                   {s.citation}
                 </button>

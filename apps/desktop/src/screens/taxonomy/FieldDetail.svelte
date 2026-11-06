@@ -16,6 +16,7 @@
   // graph uses, so `Cre` here is `Cre` there. Fields and documents carry no written form.
   import { shownLabel, shownName } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     pane,
@@ -124,7 +125,7 @@
               class="okbtn"
               onclick={() => acceptProposal(p)}
               type="button"
-              title="Accept — keep this as your own placement"
+              use:tooltip={'Accept — keep this as your own placement'}
             >
               <Icon name="check" size={13} /> Accept
             </button>
@@ -132,7 +133,7 @@
               class="nobtn"
               onclick={() => rejectProposal(p)}
               type="button"
-              title="Reject — remove this proposal"
+              use:tooltip={'Reject — remove this proposal'}
             >
               <Icon name="x" size={13} /> Reject
             </button>
@@ -187,7 +188,7 @@
               class="chip"
               onclick={() => removeConcept(c.id)}
               type="button"
-              title="Remove “{shownLabel(c)}” from this field"
+              use:tooltip={`Remove “${shownLabel(c)}” from this field`}
             >
               <span>{shownLabel(c)}</span>
               <Icon name="x" size={11} />

@@ -4,6 +4,7 @@
   // two-pane overlay, plus the currently-*selected* keywords as removable chips (the "selected on top"
   // idea). Dumb by design — App owns the selection; this renders + emits open/remove/clear.
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     selected,
@@ -34,7 +35,7 @@
           <button
             class="chip"
             type="button"
-            title="Remove “{k}” filter"
+            use:tooltip={`Stop filtering by “${k}”`}
             aria-label="Remove {k} filter"
             onclick={() => onRemove(k)}
           >

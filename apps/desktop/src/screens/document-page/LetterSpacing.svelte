@@ -297,7 +297,7 @@
     max-height: 56px;
     object-fit: contain;
     object-position: left center;
-    background: #ffffff;
+    background: var(--paper);
     border-radius: 4px;
     border: 1px solid var(--border);
   }

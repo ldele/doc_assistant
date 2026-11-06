@@ -6,6 +6,7 @@
   // Same house style as ConfirmDialog (scrim + centred card, Escape and Cancel back out), but its
   // own component: it loads a plan and carries a checkbox, which the generic dialog does not.
   import { getIngestPlan } from '../../lib/core/api/sources'
+  import Dialog from '../../shell/Dialog.svelte'
   import type { IngestPlan } from '../../lib/core/types'
   import {
     confirmDisabled,
@@ -29,32 +30,14 @@
   let plan = $state<IngestPlan | null>(null)
   let loadError = $state<string | null>(null)
   let onlyNew = $state(false)
-  let cardEl = $state<HTMLDivElement | null>(null)
 
   getIngestPlan()
     .then((p) => (plan = p))
     .catch((e: unknown) => (loadError = String(e)))
-
-  $effect(() => {
-    cardEl?.focus()
-  })
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div
-  class="modal"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="reindex-title"
-  tabindex="-1"
-  bind:this={cardEl}
->
-  <h2 id="reindex-title">Re-index this folder?</h2>
+<Dialog labelledby="reindex-title" width="32rem" {onClose}>
+  <h2 class="dialog-title" id="reindex-title">Re-index this folder?</h2>
   <p class="folder mono" title={folder}>{folder}</p>
 
   {#if loadError}
@@ -81,7 +64,7 @@
     <p class="muted small">You can pause or stop the run at any time; what finishes stays.</p>
   {/if}
 
-  <div class="mactions">
+  <div class="dialog-actions">
     <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without indexing'}>Cancel</button>
     <button
       class="btn btn-primary"
@@ -93,37 +76,9 @@
       {plan ? confirmLabel(plan, onlyNew) : 'Re-index'}
     </button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 32rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    outline: none;
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .folder {
     margin: 0;
     font-size: var(--text-meta);
@@ -170,12 +125,5 @@
   }
   .mono {
     font-family: var(--font-mono, ui-monospace, monospace);
-  }
-  .mactions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
   }
 </style>

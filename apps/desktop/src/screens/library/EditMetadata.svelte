@@ -6,6 +6,7 @@
   import type { LibraryDocument } from '../../lib/core/types'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
 
   let {
@@ -37,21 +38,15 @@
     const year = t === '' ? null : Number.parseInt(t, 10)
     onSave({ title, authors, year: Number.isNaN(year as number) ? null : year })
   }
-  function onKey(e: KeyboardEvent): void {
-    // While the confirm is up, its own Esc closes it; this editor stays.
-    if (e.key === 'Escape' && !confirmingReset) onClose()
-  }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
     node.select()
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Edit document metadata">
-  <div class="mhead">
-    <h2>Edit metadata</h2>
+<Dialog label="Edit document metadata" {onClose}>
+  <div class="dialog-head">
+    <h2 class="dialog-title">Edit metadata</h2>
     <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close without saving'}>
       <Icon name="x" size={16} />
     </button>
@@ -83,7 +78,7 @@
     <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without saving'}>Cancel</button>
     <button class="btn btn-primary" onclick={save} type="button" use:tooltip={'Keep these values for this document'}>Save</button>
   </div>
-</div>
+</Dialog>
 
 {#if confirmingReset}
   <ConfirmDialog
@@ -100,38 +95,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 31rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .mhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .iconbtn {
     display: inline-flex;
     align-items: center;

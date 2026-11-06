@@ -2,16 +2,11 @@
   import type { SourceView } from '../../lib/core/types'
   import SourceCard from './SourceCard.svelte'
   import Icon from '../../shell/Icon.svelte'
-  import { fade, fly } from 'svelte/transition'
+  import Dialog from '../../shell/Dialog.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
 
-  // Same drawer mechanics as Settings.svelte (fly/scrim, reduced-motion collapse, focus trap,
-  // Esc-to-close) — one interaction vocabulary for every slide-over in the app, not a second one.
-  const animate =
-    typeof window !== 'undefined' && window.matchMedia
-      ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : true
-  const DUR = animate ? 180 : 0
+  // A side panel on the shared frame (shell/Dialog.svelte), like Settings: the slide, the backdrop,
+  // Esc and the Tab trap are the frame's; the resize handle is this panel's own.
 
   let {
     source,
@@ -61,64 +56,15 @@
     window.addEventListener('pointerup', onUp)
   }
 
-  let panelEl = $state<HTMLDivElement | null>(null)
   let closeEl = $state<HTMLButtonElement | null>(null)
 
   // No input field here (unlike Settings), so land focus on the close control.
   $effect(() => {
     closeEl?.focus()
   })
-
-  function onWindowKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
-
-  // Honour aria-modal: keep Tab inside the dialog instead of walking out into the UI the modal
-  // has told assistive tech is inert. (Settings.svelte:117-136, copy-adapted.)
-  function onPanelKey(e: KeyboardEvent): void {
-    if (e.key !== 'Tab' || !panelEl) return
-    const focusable = Array.from(
-      panelEl.querySelectorAll(
-        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ) as HTMLElement[]
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
-
-<div class="scrim" onclick={onClose} role="presentation" transition:fade={{ duration: DUR }}></div>
-
-<div
-  class="resize-handle"
-  style="right: {width}px"
-  role="separator"
-  aria-orientation="vertical"
-  aria-label="Resize source panel"
-  onpointerdown={startResize}
-></div>
-
-<div
-  class="panel"
-  role="dialog"
-  aria-modal="true"
-  aria-label={`Source ${source.n}`}
-  tabindex="-1"
-  style="width: {width}px"
-  bind:this={panelEl}
-  onkeydown={onPanelKey}
-  transition:fly={{ x: width, opacity: 1, duration: DUR }}
->
+<Dialog shape="side" label={`Source ${source.n}`} width="min({width}px, 92vw)" slide={width} scroll {onClose}>
   <header>
     <strong>Source [{source.n}]</strong>
     <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close" use:tooltip={'Close the source panel'}>
@@ -126,28 +72,19 @@
     </button>
   </header>
   <SourceCard {source} {onOpenInDocument} />
-</div>
+  {#snippet edge()}
+    <div
+      class="resize-handle"
+      style="right: {width}px"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize source panel"
+      onpointerdown={startResize}
+    ></div>
+  {/snippet}
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 10;
-  }
-  .panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    max-width: 92vw;
-    z-index: 11;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
-    padding: 0 1.2rem 1.2rem;
-    overflow-y: auto;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
-  }
   /* Drag the left edge to resize; sits just outside the panel's overflow so scrolling won't clip it. */
   .resize-handle {
     position: fixed;
@@ -156,7 +93,6 @@
     width: 6px;
     margin-right: -3px;
     cursor: col-resize;
-    z-index: 12;
     background: transparent;
     transition: background 0.15s ease;
   }

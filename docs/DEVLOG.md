@@ -42,6 +42,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (7) — ROADMAP 110 (d): one dialog frame, and no colour outside the tokens
+
+**What changed.** `shell/Dialog.svelte` is the one dialog frame: backdrop, frame, *Esc*, focus in
+and back, *Tab* kept inside, as a centred card, a side panel or a screen. The 20 components that
+drew a modal of their own render it, and a list of open dialogs (`lib/shell/dialogs.ts`, tested)
+makes *Esc* close the one in front and puts a dialog opened from another above it, which replaced
+three hand-written *Esc* guards and the fixed layers. The 36 literal colours are tokens
+(`--scrim`, `--paper`, `--shadow-side`, the fallbacks dropped). `src/shared.css` holds the dialog's
+title, head and buttons. `ui-rules.test.ts` gains checks 4 (no `aria-modal` outside the frame)
+and 5 (rules copied between components: 211 → 179, a ratchet).
+
+**Why.** ADR-063 choice 8 and the user's go-ahead for piece (d) on 2026-11-06. The frame is markup
+and *Esc* handling as well as style, so it is a component, not a class. Seen live over an invented
+library: the nested confirm's layer, focus and two *Esc*s, the rename field, Settings, Indexing,
+the source panel's handle, light, dark and 375 px. `npm test` 409/409, `svelte-check` 0, build ok.
+
+**Rejected.** The native `<dialog>` with `showModal()`: its top layer would sit above the shared
+tooltip, which must show over every dialog. Centring with `transform`: it makes a fixed element
+inside the frame measure from the frame. A per-file list for the copied rules: 60 files long, and
+a total that may only fall says the same. Moving `.hint`, `.err` and `.iconbtn` now: three
+variants each, so unifying them changes spacing on many screens; left to the change that touches
+each.
+
+**What it opens.** Behaviour that changed and the user has not seen: the dark theme's backdrop
+now darkens the screen behind a centred dialog (it lightened it), the review closes on *Esc*, and
+focus returns to the opener. Still with the user: the 20 marker meanings, three button looks check
+1 cannot see, the staged bar's *Clear*, the × in *Manage folders*.
+
 ## 2026-11-06 (6) — ROADMAP 110 (c): every button says what it does
 
 **What changed.** The 236 buttons in 59 files that had no hover text have it, on the shared

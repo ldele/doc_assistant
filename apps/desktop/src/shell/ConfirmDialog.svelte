@@ -1,8 +1,9 @@
 <script lang="ts">
   // Generic in-app confirmation dialog — the standard replacement for the native window.confirm()
-  // (which renders an OS "localhost:1420 says" chrome that breaks the app's look). Modeled on
-  // DeleteDocument's house style: scrim + centered card, Esc / scrim-click / Cancel back out,
-  // the confirm action carries the danger (red) styling by default since these gate destructive acts.
+  // (which renders an OS "localhost:1420 says" chrome that breaks the app's look). A card on the
+  // shared frame (Dialog: Esc, a click on the backdrop and Cancel back out); the confirm action
+  // carries the danger (red) styling by default since these gate destructive acts.
+  import Dialog from './Dialog.svelte'
   import Icon from './Icon.svelte'
   import { tooltip } from '../lib/shell/tooltip'
 
@@ -34,28 +35,22 @@
   $effect(() => {
     cancelEl?.focus()
   })
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
 <!-- The WAI-ARIA alert dialog pattern (ADR-063 choice 7): it interrupts to confirm an act, its title
      names it and its body describes it, and focus starts on Cancel, the act that changes nothing.
      The confirm is the dialog's one action (`btn-primary`); when it removes something it is also
      `btn-danger`, which app.css fills red. -->
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div
-  class="modal"
+<Dialog
   role={tone === 'danger' ? 'alertdialog' : 'dialog'}
-  aria-modal="true"
-  aria-labelledby="{uid}-title"
-  aria-describedby="{uid}-body"
+  labelledby="{uid}-title"
+  describedby="{uid}-body"
+  width="28rem"
+  {onClose}
 >
-  <h2 id="{uid}-title">{title}</h2>
+  <h2 class="dialog-title" id="{uid}-title">{title}</h2>
   <p class="body" id="{uid}-body">{body}</p>
-  <div class="mactions">
+  <div class="dialog-actions">
     <button class="btn" bind:this={cancelEl} onclick={onClose} type="button" disabled={busy} use:tooltip={'Close and change nothing'}>{cancelLabel}</button>
     <button
       class="btn btn-primary"
@@ -69,47 +64,13 @@
       {busy ? 'Working…' : confirmLabel}
     </button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 28rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .body {
     margin: 0;
     font-size: 0.85rem;
     color: var(--fg-2);
     line-height: 1.6;
-  }
-  .mactions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
   }
 </style>

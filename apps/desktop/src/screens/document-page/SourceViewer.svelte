@@ -466,7 +466,7 @@
     flex: none;
     height: auto;
     border: 1px solid var(--border);
-    background: #fff;
+    background: var(--paper);
   }
   .sfoot {
     flex: none;

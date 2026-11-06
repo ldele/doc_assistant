@@ -19,6 +19,7 @@
   import type { ReingestOptions, ReingestStatus } from '../../lib/core/types'
   import { getReingestOptions, getReingestStatus, startReingest } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { costSummary, fraction, needsConfirmation, orderedParts, outcomesByDocument } from '../../lib/library/reingest'
   import { tooltip } from '../../lib/shell/tooltip'
 
@@ -106,18 +107,10 @@
     polling = false
     onFinished()
   }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !running) onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-
-<div class="scrim" onclick={() => !running && onClose()} role="presentation"></div>
-
-<div class="modal" role="dialog" aria-modal="true" aria-labelledby="reingest-title">
-  <h2 id="reingest-title">Re-run ingestion</h2>
+<Dialog labelledby="reingest-title" width="36rem" height="86vh" locked={running} {onClose}>
+  <h2 class="dialog-title" id="reingest-title">Re-run ingestion</h2>
   <p class="target" title={label}>{label}</p>
 
   {#if loadError}
@@ -214,38 +207,9 @@
       </button>
     </div>
   {/if}
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 36rem);
-    max-height: 86vh;
-    overflow-y: auto;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .target {
     margin: 0;
     font-weight: 600;
@@ -322,7 +286,7 @@
     margin: 0;
   }
   .err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
     font-size: 0.78rem;
     margin: 0.2rem 0 0;
   }
@@ -367,7 +331,7 @@
     color: var(--warn-fg, var(--fg));
   }
   .repline.err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .reppart {
     flex: none;

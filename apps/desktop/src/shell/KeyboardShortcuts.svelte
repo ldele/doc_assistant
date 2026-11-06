@@ -2,6 +2,7 @@
   // Keyboard-shortcuts help, opened from the toolbar app menu (☰). Read-only reference; the scrim +
   // centered card + Esc-to-close shell matches ConfirmDialog / the other hand-rolled modals.
   import Icon from './Icon.svelte'
+  import Dialog from './Dialog.svelte'
   import { tooltip } from '../lib/shell/tooltip'
 
   let { onClose }: { onClose: () => void } = $props()
@@ -16,16 +17,10 @@
     { keys: ['Shift', 'Enter'], label: 'New line in the composer' },
     { keys: ['Esc'], label: 'Close a dialog, menu, or the search overlay' },
   ]
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-  <div class="mhead">
+<Dialog label="Keyboard shortcuts" width="30rem" gap="var(--space-3)" {onClose}>
+  <div class="dialog-head">
     <h2><Icon name="keyboard" size={18} /> Keyboard shortcuts</h2>
     <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the shortcuts list'}>
       <Icon name="x" size={16} />
@@ -41,36 +36,9 @@
       </li>
     {/each}
   </ul>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 30rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  .mhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
   h2 {
     margin: 0;
     font-size: var(--text-title);

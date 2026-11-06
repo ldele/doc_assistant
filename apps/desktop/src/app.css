@@ -37,6 +37,10 @@
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
+  /* The backdrop behind a dialog (shell/Dialog.svelte, ADR-063 choice 8): it dims the screen in
+     both themes. Until 2026-11-06 the centred dialogs mixed --fg into it, which in the dark theme
+     lightened the screen behind a darker card, and the side panels used black: two looks. */
+  --scrim: rgb(35 32 27 / 0.32);
 
   /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
      cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
@@ -57,6 +61,13 @@
 
   --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
   --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
+  /* A side panel's shadow (a drawer, the narrow window's sidebar): the same in both themes, as
+     it was when each panel wrote its own. */
+  --shadow-side: 0 0 24px rgb(0 0 0 / 0.18);
+
+  /* The backing of a page image, a crop or a figure: white in both themes, because a scan or a
+     figure with a transparent background was drawn for white paper. */
+  --paper: #ffffff;
 
   /* Font stacks. --font-serif on reading surfaces (answers, chunks, excerpts, content headings);
      --font-sans on chrome. Both degrade gracefully to system faces until the local woff2 load
@@ -128,6 +139,7 @@
   --warn-border: #5a4a22;
   --ok-fg: #79c98d;
   --ok-border: #345f3f;
+  --scrim: rgb(0 0 0 / 0.5);
 
   /* Community palette — dark values (brighter, on warm charcoal). See :root for the rationale. */
   --comm-0: hsl(210 62% 67%);
@@ -169,6 +181,7 @@
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
+  --scrim: rgb(35 32 27 / 0.32);
 
   /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
      cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
@@ -214,6 +227,7 @@
     --warn-border: #5a4a22;
     --ok-fg: #79c98d;
     --ok-border: #345f3f;
+    --scrim: rgb(0 0 0 / 0.5);
 
     /* Community palette — dark values (OS-dark, no explicit data-theme). See :root. */
     --comm-0: hsl(210 62% 67%);

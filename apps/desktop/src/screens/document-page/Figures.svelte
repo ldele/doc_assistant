@@ -153,7 +153,7 @@
     gap: 0.75rem;
   }
   .card {
-    border: 1px solid var(--border, #3a3a3a);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.5rem;
     overflow: hidden;
@@ -183,7 +183,7 @@
     height: auto;
     max-height: 180px;
     object-fit: contain;
-    background: #fff;
+    background: var(--paper);
     border-radius: 3px;
   }
   .noimage {
@@ -192,7 +192,7 @@
     place-items: center;
     font-size: 0.75rem;
     opacity: 0.5;
-    border: 1px dashed var(--border, #3a3a3a);
+    border: 1px dashed var(--border);
     border-radius: 3px;
   }
   .meta {
@@ -214,10 +214,10 @@
     white-space: nowrap;
   }
   .badge.ok {
-    background: color-mix(in srgb, green 25%, transparent);
+    background: color-mix(in srgb, var(--ok-fg) 25%, transparent);
   }
   .badge.off {
-    background: color-mix(in srgb, gray 25%, transparent);
+    background: color-mix(in srgb, var(--fg-2) 25%, transparent);
   }
   .caption {
     font-size: 0.75rem;

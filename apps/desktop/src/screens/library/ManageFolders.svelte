@@ -12,6 +12,7 @@
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
   import { docLabel, filterDocs, typeGroups } from '../../lib/library/library'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
 
   let {
@@ -111,19 +112,14 @@
     onSelect(id)
   }
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Manage folders">
+<Dialog label="Manage folders" width="48rem" height="min(86vh, 700px)" gap="var(--space-3)" {onClose}>
   <div class="mhead">
-    <h2>Manage folders</h2>
+    <h2 class="dialog-title">Manage folders</h2>
     <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close Manage folders'}>
       <Icon name="x" size={16} />
     </button>
@@ -162,7 +158,11 @@
                   use:autofocus
                   onkeydown={(e) => {
                     if (e.key === 'Enter') commitRename()
-                    if (e.key === 'Escape') editingId = null
+                    if (e.key === 'Escape') {
+                      // The rename, not the dialog: Dialog leaves an Esc that is already handled.
+                      e.preventDefault()
+                      editingId = null
+                    }
                   }}
                   onblur={commitRename}
                 />
@@ -275,42 +275,14 @@
       </span>
     </p>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 42;
-  }
-  .modal {
-    position: fixed;
-    z-index: 43;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 48rem);
-    max-height: min(86vh, 700px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
   .mhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex: none;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
   }
   .iconbtn {
     display: inline-flex;
@@ -517,11 +489,5 @@
     border-top: 1px solid var(--border);
     font-size: 0.75rem;
     color: var(--fg-2);
-  }
-  @media (max-width: 640px) {
-    .modal {
-      width: 94vw;
-      max-height: 90vh;
-    }
   }
 </style>

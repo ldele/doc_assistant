@@ -13,7 +13,6 @@
     getUpdateStatus,
   } from '../../lib/core/api'
   import { onDestroy, tick } from 'svelte'
-  import { fade, fly } from 'svelte/transition'
   import Icon from '../../shell/Icon.svelte'
   import {
     libraryState,
@@ -23,6 +22,7 @@
     type LibraryState,
   } from '../../lib/core/tauri'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../../lib/core/ingest.svelte'
   import GettingStarted from './GettingStarted.svelte'
   import Documents from './Documents.svelte'
@@ -35,13 +35,6 @@
   import { outstandingSteps } from '../../lib/settings/setup'
   import { shell } from '../../lib/shell/shell.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
-
-  // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
-  const animate =
-    typeof window !== 'undefined' && window.matchMedia
-      ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : true
-  const DUR = animate ? 180 : 0
 
   // `onCorpusChanged` re-reads /api/health after a provider switch. The end of an ingest reaches App
   // through `ingestRun.completedRuns`, which also holds when this panel has been closed.
@@ -269,53 +262,15 @@
       libraryError = String(e)
     }
   }
-
-  function onWindowKey(e: KeyboardEvent): void {
-    // The Re-index confirmation handles its own Escape: it closes the question, not Settings.
-    if (e.key === 'Escape' && !reindexOpen && !libraryToOpen && !confirmOwnLibrary) onClose()
-  }
-
-  // Honour aria-modal: keep Tab inside the dialog instead of walking out into the UI the modal
-  // has told assistive tech is inert.
-  function onPanelKey(e: KeyboardEvent): void {
-    if (e.key !== 'Tab' || !panelEl) return
-    const focusable = Array.from(
-      panelEl.querySelectorAll(
-        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ) as HTMLElement[]
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
-
-<div
-  class="scrim"
-  onclick={onClose}
-  role="presentation"
-  transition:fade={{ duration: DUR }}
-></div>
-
-<div
-  class="panel"
-  role="dialog"
-  aria-modal="true"
-  aria-label="Settings"
-  tabindex="-1"
-  bind:this={panelEl}
-  onkeydown={onPanelKey}
-  transition:fly={{ x: 760, opacity: 1, duration: DUR }}
->
+<!-- A side panel on the shared frame (shell/Dialog.svelte): it slides in (instantly when the system
+     asks for reduced motion), Esc closes it, and Tab stays inside. The questions it opens below
+     (Re-index, Open library, the own-library confirm) are dialogs of their own, so Esc answers
+     them first. Wider than the 420px it was: the rail costs a column, and the controls it navigates
+     to were already cramped in one. Still a drawer, not a page: `96vw` keeps the backdrop reachable,
+     which is how most people close this. -->
+<Dialog shape="side" label="Settings" width="min(52rem, 96vw)" slide={760} bind:frame={panelEl} {onClose}>
   <header>
     <strong>Settings</strong>
     <button class="x" onclick={onClose} aria-label="Close" use:tooltip={'Close Settings'}>
@@ -403,7 +358,7 @@
       </div>
     </div>
   {/if}
-</div>
+</Dialog>
 
 {#if libraryToOpen}
   <OpenLibrary folder={libraryToOpen} onClose={() => (libraryToOpen = null)} />
@@ -429,31 +384,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 10;
-  }
-  .panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    /* Wider than the 420px it was: the rail costs a column, and the controls it navigates to were
-       already cramped in one. Still a drawer, not a page — `96vw` keeps the scrim reachable, which
-       is how most people close this. */
-    width: min(52rem, 96vw);
-    z-index: 11;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
-    padding: 0 1.2rem 1.2rem;
-    /* The PANE scrolls, not the panel: the rail has to stay put or it stops being navigation. */
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
-  }
   header {
     flex: none;
     background: var(--bg);

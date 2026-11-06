@@ -4,6 +4,7 @@
   // asks the shell to restart the backend on that folder, then reloads the window; the start-up
   // gate waits for the new backend, and offers *Go back* if it never answers (choice 7).
   import { inspectLibrary } from '../../lib/core/api/libraries'
+  import Dialog from '../../shell/Dialog.svelte'
   import { markLibrarySwitch, openLibrary } from '../../lib/core/tauri'
   import type { LibraryInspection } from '../../lib/core/types'
   import { inspectionSummary, sourcesLine } from '../../lib/settings/library'
@@ -15,16 +16,11 @@
   let loadError = $state<string | null>(null)
   let opening = $state(false)
   let openError = $state<string | null>(null)
-  let cardEl = $state<HTMLDivElement | null>(null)
 
   $effect(() => {
     inspectLibrary(folder)
       .then((f) => (found = f))
       .catch((e: unknown) => (loadError = String(e)))
-  })
-
-  $effect(() => {
-    cardEl?.focus()
   })
 
   async function open(): Promise<void> {
@@ -40,23 +36,10 @@
       opening = false
     }
   }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !opening) onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={() => !opening && onClose()} role="presentation"></div>
-<div
-  class="modal"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="open-library-title"
-  tabindex="-1"
-  bind:this={cardEl}
->
-  <h2 id="open-library-title">Open this library?</h2>
+<Dialog labelledby="open-library-title" width="34rem" locked={opening} {onClose}>
+  <h2 class="dialog-title" id="open-library-title">Open this library?</h2>
   <p class="folder mono" title={folder}>{folder}</p>
 
   {#if loadError}
@@ -88,7 +71,7 @@
     <p class="err" role="alert">{openError}</p>
   {/if}
 
-  <div class="mactions">
+  <div class="dialog-actions">
     <button class="btn" onclick={onClose} type="button" disabled={opening} use:tooltip={'Stay in this library'}>Cancel</button>
     <button
       class="btn btn-primary"
@@ -100,37 +83,9 @@
       {opening ? 'Opening…' : 'Open this library'}
     </button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 34rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    outline: none;
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   p {
     margin: 0;
     font-size: 0.85rem;
@@ -151,9 +106,6 @@
     border: 1px solid var(--warn-border);
     color: var(--warn-fg);
   }
-  .muted {
-    color: var(--fg-2);
-  }
   .small {
     font-size: var(--text-meta);
   }
@@ -162,12 +114,5 @@
   }
   .mono {
     font-family: var(--font-mono, ui-monospace, monospace);
-  }
-  .mactions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
   }
 </style>

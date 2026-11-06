@@ -119,7 +119,7 @@
   .error {
     margin: 0.4rem 0 0;
     font-size: 0.78rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .proplist {
     display: flex;

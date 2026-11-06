@@ -5,8 +5,8 @@
 // it down; an exception holds a reason of its own, also written in a comment where it lives
 // (ADR-063 choice 8). A count may only fall. The check fails when a file goes over its entry (a
 // new break: fix it, do not raise the number) and when it goes under (lower the entry, or delete
-// it at zero, so the list stays the truth). Check 1 is exceptions only since piece (b), and
-// check 2 is empty since piece (c).
+// it at zero, so the list stays the truth). Check 1 is exceptions only since piece (b), check 2
+// is empty since piece (c), check 3 is empty and check 4 is the frame alone since piece (d).
 //
 // Measured with the scanner in ui-rules.test.ts, which reads a tag past an arrow function's `=>`
 // (ADR-063's regex counts of 2026-11-06 did not, and missed 47 button titles) and counts named
@@ -16,8 +16,6 @@ export interface Allowed {
   count: number
   why: string
 }
-
-const SWEEP_COLOURS = 'ratchet, 2026-11-06: ROADMAP 110 (d) moves these colours to tokens in app.css'
 
 const MENU_ROW =
   "a menu row (`.menuitem.danger`), not a button bar: the WAI-ARIA menu pattern keeps its rows' look; red names the act and a confirm follows"
@@ -44,24 +42,27 @@ export const LOCAL_BUTTON_CLASSES: Record<string, Allowed> = {
 export const BUTTONS_WITHOUT_HOVER_TEXT: Record<string, Allowed> = {}
 
 /** Check 3: literal colours (hex, rgb(), hsl(), a named colour) in a component's styles.
- *  49 in 20 files on 2026-11-06. */
-export const LITERAL_COLOURS: Record<string, Allowed> = {
-  'screens/chat/ChunkContextView.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/chat/SourcePanel.svelte': { count: 2, why: SWEEP_COLOURS },
-  'screens/document-page/EditSpacing.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/document-page/FigureViewer.svelte': { count: 3, why: SWEEP_COLOURS },
-  'screens/document-page/Figures.svelte': { count: 5, why: SWEEP_COLOURS },
-  'screens/document-page/LetterSpacing.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/document-page/RerunIngestion.svelte': { count: 2, why: SWEEP_COLOURS },
-  'screens/document-page/SourceViewer.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/library/AddDocumentsChooser.svelte': { count: 6, why: SWEEP_COLOURS },
-  'screens/library/AddDocumentsReview.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/manage-keywords/DetectProposals.svelte': { count: 1, why: SWEEP_COLOURS },
-  'screens/settings/Settings.svelte': { count: 2, why: SWEEP_COLOURS },
-  'screens/taxonomy/FieldDetail.svelte': { count: 4, why: SWEEP_COLOURS },
-  'screens/taxonomy/Taxonomy.svelte': { count: 1, why: SWEEP_COLOURS },
-  'shell/Indexing.svelte': { count: 1, why: SWEEP_COLOURS },
-  'shell/IngestChip.svelte': { count: 1, why: SWEEP_COLOURS },
-  'shell/Sidebar.svelte': { count: 2, why: SWEEP_COLOURS },
-  'shell/StatusBar.svelte': { count: 1, why: SWEEP_COLOURS },
+ *  49 in 20 files on 2026-11-06, 36 in 18 after piece (b); piece (d) moved the rest onto tokens in
+ *  app.css the same day (`--scrim`, `--paper`, `--shadow-side`, and the fallbacks of tokens that
+ *  already existed), so the list is empty. A component that needs a colour the tokens lack adds a
+ *  token, in both themes. */
+export const LITERAL_COLOURS: Record<string, Allowed> = {}
+
+/** Check 4: elements that carry `aria-modal`, a modal dialog a component draws for itself. 20 on
+ *  2026-11-06, each with its own backdrop (four looks of it) and its own Esc; piece (d) moved them
+ *  all onto the frame the same day. */
+export const MODAL_FRAMES: Record<string, Allowed> = {
+  'shell/Dialog.svelte': {
+    count: 1,
+    why: 'the one dialog frame: every dialog renders it, so its backdrop, Esc and focus rules are written once',
+  },
+}
+
+/** Check 5: rules a component writes that another component also writes, word for word (each copy
+ *  past the first). One number, not a list: a new copy fails the check, so the second component to
+ *  need a rule moves it to shared.css. 211 on 2026-11-06; 179 after piece (d) the same day, which
+ *  moved the dialog frame's copies (backdrop, frame, title, head, buttons) and the plainest `.muted`. */
+export const COPIED_RULES: Allowed = {
+  count: 179,
+  why: 'ratchet, 2026-11-06: the copies left after ROADMAP 110 (d); a change that touches a copy moves it to shared.css',
 }

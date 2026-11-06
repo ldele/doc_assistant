@@ -15,6 +15,7 @@
   // Once anything is staged, `stagePaths` closes this dialog and the review sheet (AD2) takes over.
 
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { scanZoteroLibrary } from '../../lib/core/api'
   import { pickPaths } from '../../lib/core/tauri'
   import { accept, closeChooser, pickDocuments, stagePaths } from '../../lib/library/accept.svelte'
@@ -70,109 +71,83 @@
     })
     if (chosen && chosen.length > 0) await importFromZotero(chosen[0])
   }
-
-  function onKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape') closeChooser()
-  }
-
-  // Move focus into the dialog on open, so Escape and Tab act on it rather than on whatever was
-  // focused behind the scrim. `tabindex="-1"` makes the container focusable without putting it in
-  // the tab order itself.
-  let dialogEl: HTMLDivElement | null = $state(null)
-  $effect(() => {
-    dialogEl?.focus()
-  })
 </script>
 
-<svelte:window on:keydown={onKeydown} />
-
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<div class="scrim" role="presentation" onclick={closeChooser}>
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-  <div
-    class="dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="addchooser-title"
-    tabindex="-1"
-    bind:this={dialogEl}
-    onclick={(e) => e.stopPropagation()}
-  >
-    <div class="head">
-      <h2 id="addchooser-title">Add documents</h2>
-      <button class="x" onclick={closeChooser} aria-label="Close" type="button" use:tooltip={'Close without adding anything'}>
-        <Icon name="x" size={16} />
-      </button>
-    </div>
-
-    <div class="zone" class:over={accept.dragging}>
-      <Icon name="file-text" size={26} />
-      <strong>{accept.dragging ? 'Drop them now' : 'Drag files or folders here'}</strong>
-      {#if accept.accepts}
-        <span class="formats">{formatLine(accept.accepts.extensions)}</span>
-        <span class="formats">{limitLine(accept.accepts)}</span>
-      {/if}
-    </div>
-
-    <p class="or"><span>or</span></p>
-
-    <div class="routes">
-      <button
-        class="route"
-        onclick={() => void pickDocuments()}
-        disabled={accept.picking}
-        type="button"
-        use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick files to add; you review them before anything is copied'}
-      >
-        <Icon name="file-text" size={15} />
-        Choose files…
-      </button>
-      <button
-        class="route"
-        onclick={() => void pickDocuments({ directory: true })}
-        disabled={accept.picking}
-        type="button"
-        use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick a folder; its documents are listed for review first'}
-      >
-        <Icon name="folder" size={15} />
-        Choose a folder…
-      </button>
-      <button
-        class="route"
-        onclick={() => void importFromZotero()}
-        disabled={zoteroBusy || accept.picking}
-        type="button"
-        use:tooltip={'List the files your reference library has attached, for review first'}
-      >
-        <Icon name="library" size={15} />
-        {zoteroBusy ? 'Reading your library…' : 'Import from Zotero…'}
-      </button>
-    </div>
-
-    {#if zoteroError}
-      <!-- Not having Zotero, or keeping it elsewhere, is an ordinary state of the world. The
-           server's message is already a sentence written for a person, so it is shown verbatim
-           and followed by the one action that can fix it. -->
-      <p class="zotero err" role="alert">
-        {zoteroError}
-        {#if askedForFolder}
-          <button class="inline" onclick={() => void chooseZoteroFolder()} type="button" use:tooltip={'Point to the folder where your reference library keeps its data'}>
-            Choose the folder…
-          </button>
-        {/if}
-      </p>
-    {:else if zoteroNote}
-      <p class="zotero">{zoteroNote}</p>
-    {/if}
-
-    <!-- Said before anything is chosen, because it is the answer to "what is about to happen to my
-         files?" — the placement choice itself lives in the review sheet, where it can be changed. -->
-    <p class="note">
-      Nothing is copied or indexed yet. You will see what would happen to each file, and choose
-      whether to copy them or leave them where they are, before anything is applied.
-    </p>
+<Dialog labelledby="addchooser-title" width="30rem" padding="0.9rem 1rem 1rem" gap="0" onClose={closeChooser}>
+  <div class="head">
+    <h2 id="addchooser-title">Add documents</h2>
+    <button class="x" onclick={closeChooser} aria-label="Close" type="button" use:tooltip={'Close without adding anything'}>
+      <Icon name="x" size={16} />
+    </button>
   </div>
-</div>
+
+  <div class="zone" class:over={accept.dragging}>
+    <Icon name="file-text" size={26} />
+    <strong>{accept.dragging ? 'Drop them now' : 'Drag files or folders here'}</strong>
+    {#if accept.accepts}
+      <span class="formats">{formatLine(accept.accepts.extensions)}</span>
+      <span class="formats">{limitLine(accept.accepts)}</span>
+    {/if}
+  </div>
+
+  <p class="or"><span>or</span></p>
+
+  <div class="routes">
+    <button
+      class="route"
+      onclick={() => void pickDocuments()}
+      disabled={accept.picking}
+      type="button"
+      use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick files to add; you review them before anything is copied'}
+    >
+      <Icon name="file-text" size={15} />
+      Choose files…
+    </button>
+    <button
+      class="route"
+      onclick={() => void pickDocuments({ directory: true })}
+      disabled={accept.picking}
+      type="button"
+      use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick a folder; its documents are listed for review first'}
+    >
+      <Icon name="folder" size={15} />
+      Choose a folder…
+    </button>
+    <button
+      class="route"
+      onclick={() => void importFromZotero()}
+      disabled={zoteroBusy || accept.picking}
+      type="button"
+      use:tooltip={'List the files your reference library has attached, for review first'}
+    >
+      <Icon name="library" size={15} />
+      {zoteroBusy ? 'Reading your library…' : 'Import from Zotero…'}
+    </button>
+  </div>
+
+  {#if zoteroError}
+    <!-- Not having Zotero, or keeping it elsewhere, is an ordinary state of the world. The
+         server's message is already a sentence written for a person, so it is shown verbatim
+         and followed by the one action that can fix it. -->
+    <p class="zotero err" role="alert">
+      {zoteroError}
+      {#if askedForFolder}
+        <button class="inline" onclick={() => void chooseZoteroFolder()} type="button" use:tooltip={'Point to the folder where your reference library keeps its data'}>
+          Choose the folder…
+        </button>
+      {/if}
+    </p>
+  {:else if zoteroNote}
+    <p class="zotero">{zoteroNote}</p>
+  {/if}
+
+  <!-- Said before anything is chosen, because it is the answer to "what is about to happen to my
+       files?" — the placement choice itself lives in the review sheet, where it can be changed. -->
+  <p class="note">
+    Nothing is copied or indexed yet. You will see what would happen to each file, and choose
+    whether to copy them or leave them where they are, before anything is applied.
+  </p>
+</Dialog>
 
 <style>
   .zotero {
@@ -182,7 +157,7 @@
     color: var(--fg-2);
   }
   .zotero.err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .inline {
     font: inherit;
@@ -192,24 +167,6 @@
     padding: 0;
     cursor: pointer;
     text-decoration: underline;
-  }
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: grid;
-    place-items: center;
-    background: rgb(0 0 0 / 0.45);
-    padding: 1rem;
-  }
-  .dialog {
-    width: min(30rem, 100%);
-    outline: none; /* focused programmatically for Escape/Tab, not as a visible affordance */
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius, 10px);
-    box-shadow: var(--shadow-lg, 0 18px 50px rgb(0 0 0 / 0.4));
-    padding: 0.9rem 1rem 1rem;
   }
   .head {
     display: flex;
@@ -249,8 +206,8 @@
     transition: border-color 120ms ease, background 120ms ease;
   }
   .zone.over {
-    border-color: var(--accent, #7c6cf0);
-    background: color-mix(in srgb, var(--accent, #7c6cf0) 10%, transparent);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     color: var(--fg);
   }
   .zone strong {
@@ -297,7 +254,7 @@
     cursor: pointer;
   }
   .route:hover:not(:disabled) {
-    border-color: var(--accent, #7c6cf0);
+    border-color: var(--accent);
   }
   .route:disabled {
     opacity: 0.55;

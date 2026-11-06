@@ -98,7 +98,7 @@
     position: absolute;
     inset: 0 auto 0 0;
     width: 0;
-    background: var(--accent, #7c6cf0);
+    background: var(--accent);
     border-radius: 2px;
     transition: width 220ms ease;
   }

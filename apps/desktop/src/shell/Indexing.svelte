@@ -9,7 +9,6 @@
   // **The list is paged.** At 10,000 documents the status poll carries counts only (the filters'
   // numbers); the rows come from the files route, a page at a time, refreshed on each poll while
   // the screen is open.
-  import { fade } from 'svelte/transition'
 
   import { getIngestFiles } from '../lib/core/api/sources'
   import {
@@ -26,12 +25,10 @@
   import { FILE_STATE_LABEL, READING_DETAIL } from '../lib/core/ingest'
   import type { IngestFile, IngestGroup } from '../lib/core/types'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import Dialog from './Dialog.svelte'
   import Icon from './Icon.svelte'
   import { tooltip } from '../lib/shell/tooltip'
 
-  const animate =
-    typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const DUR = animate ? 150 : 0
   /** Rows per page. A screen holds a few dozen; this many keeps scrolling smooth without a pager. */
   const PAGE = 200
 
@@ -52,7 +49,6 @@
   let actionError = $state<string | null>(null)
   let acting = $state(false)
   let confirmingStop = $state(false)
-  let dialogEl = $state<HTMLDivElement | null>(null)
 
   /** What a stop keeps and what it leaves, in numbers, for the confirmation (the user, 2026-11-04). */
   const stopBody = $derived.by(() => {
@@ -93,10 +89,6 @@
       })
   })
 
-  $effect(() => {
-    dialogEl?.focus()
-  })
-
   function close(): void {
     ingestRun.panelOpen = false
   }
@@ -119,49 +111,15 @@
     limit = PAGE
   }
 
-  function onWindowKey(e: KeyboardEvent): void {
-    // The stop confirmation handles its own Escape: it closes the question, not this screen.
-    if (e.key === 'Escape' && !confirmingStop) close()
-  }
-
   function confirmStop(): void {
     confirmingStop = false
     void act(() => controlRun('stop'))
   }
-
-  // Honour aria-modal: keep Tab inside the dialog (the same rule Settings keeps).
-  function onDialogKey(e: KeyboardEvent): void {
-    if (e.key !== 'Tab' || !dialogEl) return
-    const focusable = Array.from(
-      dialogEl.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    ) as HTMLElement[]
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
-
-<div class="scrim" onclick={close} role="presentation" transition:fade={{ duration: DUR }}></div>
-
-<div
-  class="screen"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="indexing-title"
-  tabindex="-1"
-  bind:this={dialogEl}
-  onkeydown={onDialogKey}
-  transition:fade={{ duration: DUR }}
->
+<!-- A screen on the shared frame (shell/Dialog.svelte): it fades in, Esc closes it, Tab stays
+     inside. The stop question below is a dialog of its own, so Esc answers it first. -->
+<Dialog shape="screen" labelledby="indexing-title" width="72rem" height="52rem" onClose={close}>
   <header>
     <div class="titles">
       <h2 id="indexing-title" aria-live="polite">{runTitle(status)}</h2>
@@ -300,7 +258,7 @@
   {/if}
 
   <footer>{runFooter(status)}</footer>
-</div>
+</Dialog>
 
 {#if confirmingStop}
   <ConfirmDialog
@@ -315,29 +273,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 30;
-  }
-  .screen {
-    position: fixed;
-    z-index: 31;
-    inset: 0;
-    margin: auto;
-    width: min(72rem, calc(100vw - 2rem));
-    height: min(52rem, calc(100vh - 2rem));
-    display: flex;
-    flex-direction: column;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-2);
-    overflow: hidden;
-    outline: none;
-  }
   header {
     flex: none;
     display: flex;

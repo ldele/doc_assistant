@@ -90,7 +90,11 @@
         aria-label="Rename {name}"
         onkeydown={(e) => {
           if (e.key === 'Enter') commitRename()
-          if (e.key === 'Escape') cancelRename()
+          if (e.key === 'Escape') {
+            // The rename, not Manage keywords: Dialog leaves an Esc that is already handled.
+            e.preventDefault()
+            cancelRename()
+          }
         }}
       />
       <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button" use:tooltip={'Keep the new name'}>

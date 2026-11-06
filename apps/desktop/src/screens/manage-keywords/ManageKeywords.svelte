@@ -35,6 +35,7 @@
     withoutKey,
   } from '../../lib/library/library'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import Concepts from './Concepts.svelte'
   import DetectProposals from './DetectProposals.svelte'
   import FamilyRow from './FamilyRow.svelte'
@@ -234,19 +235,23 @@
     onSetOnGraph(id, false)
   }
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key !== 'Escape') return
-    // Escape answers the open question before it closes the view.
+  // Escape answers the open question before it closes the view.
+  function onEscape(): void {
     if (deleteAsk !== null) keepFamily()
     else onClose()
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Manage keyword families">
+<Dialog
+  label="Manage keyword families"
+  width="48rem"
+  height="min(86vh, 700px)"
+  gap="var(--space-3)"
+  {onClose}
+  {onEscape}
+>
   <div class="mhead">
-    <h2>Manage keywords</h2>
+    <h2 class="dialog-title">Manage keywords</h2>
     <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close Manage keywords'}>
       <Icon name="x" size={16} />
     </button>
@@ -306,42 +311,14 @@
 
     <Terms {terms} {famSplit} {termsShown} {famQuery} bind:showInherited {familyRow} />
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 42;
-  }
-  .modal {
-    position: fixed;
-    z-index: 43;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 48rem);
-    max-height: min(86vh, 700px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
   .mhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex: none;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
   }
   .iconbtn {
     display: inline-flex;
@@ -366,11 +343,5 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-  }
-  @media (max-width: 640px) {
-    .modal {
-      width: 94vw;
-      max-height: 90vh;
-    }
   }
 </style>

@@ -341,8 +341,8 @@
     padding: 0.14rem 0.5rem;
   }
   .chip:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   /* A proposal is never styled as a placement the user made: dashed edge, its own two actions. */
   .chip.proposed,
@@ -432,8 +432,8 @@
     color: var(--accent);
   }
   .nobtn:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   .nomembers {
     font-size: 0.76rem;

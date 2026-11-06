@@ -11,6 +11,7 @@
   // in `extractors.get_format_status`, and a second copy in TypeScript would drift from it.
 
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from '../../lib/core/api/documents'
   import type { AddMode, AddResult } from '../../lib/core/api/documents'
@@ -198,8 +199,17 @@
   }
 </script>
 
-<div class="backdrop" role="presentation" onclick={onClose}></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label="Add documents">
+<!-- Esc and the backdrop close it like the header's ×; once files are added, like Done, so the
+     library hears about them. Nothing closes it while it adds or undoes. -->
+<Dialog
+  label="Add documents"
+  width="52rem"
+  height="min(78vh, 900px)"
+  padding="1rem 1.1rem 0.9rem"
+  gap="0.6rem"
+  locked={applying || undoing}
+  onClose={() => (applied ? keepAndClose() : onClose())}
+>
   <header>
     <h2>Add documents</h2>
     <button class="close" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the review'}>
@@ -355,7 +365,7 @@
       </button>
     {/if}
   </footer>
-</div>
+</Dialog>
 
 {#if confirmingUndo && applied}
   {@const n = applied.added.length}
@@ -374,29 +384,6 @@
 {/if}
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(20, 19, 15, 0.35);
-    z-index: 70;
-  }
-  .sheet {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 71;
-    width: min(52rem, calc(100vw - 2rem));
-    max-height: min(78vh, 900px);
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    padding: 1rem 1.1rem 0.9rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-  }
   header {
     display: flex;
     align-items: center;

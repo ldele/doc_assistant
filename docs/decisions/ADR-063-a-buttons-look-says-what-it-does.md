@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (c), hover text on every button and the 50 other titles sorted; piece (b), the roles across the app, the five confirms and two more; piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (d), one dialog frame, no literal colours, the shared stylesheet; piece (c), hover text on every button and the 50 other titles sorted; piece (b), the roles across the app, the five confirms and two more; piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
 
 # ADR-063 — A button's look says what it does: four action roles, and a delete always asks first
 
@@ -354,3 +354,68 @@ rule; piece (c) or (d) decides each: on the screen, or the tooltip on a focusabl
   drops a list (nothing is added or deleted), but U-003 retires the word for a removal. A
   definition option's *Dismiss* acts at once, as the gap list's does; both can be undone from the
   same screen. Each is piece (d)'s or the user's call.
+
+## As built — ROADMAP 110 piece (d), 2026-11-06
+
+- **One dialog frame (choice 8).** `shell/Dialog.svelte` draws the backdrop and the frame, closes on
+  *Esc* and a click on the backdrop, starts focus inside (on what the dialog's content focuses, else
+  on the frame), keeps *Tab* inside, and hands focus back to what opened it when it closes (the
+  WAI-ARIA dialog pattern). It has three shapes: a `card` centred on the window, a `side` panel
+  along the right edge (Settings, a source) and a `screen` that takes most of the window
+  (Indexing). All 20 components that drew a modal of their own render it now: the 14 with a
+  `.modal` (ConfirmDialog among them), the figure viewer, both add-documents dialogs, the source
+  panel, Settings and Indexing. What a dialog shows stays its own.
+- **The list of open dialogs** (`lib/shell/dialogs.ts`, tested) settles what spans dialogs. *Esc*
+  closes the one in front, and only it, so the guards Settings, Indexing and Edit metadata kept
+  against the questions they open are gone. A dialog opened from another sits at the next layer
+  (40, then 2 more per dialog under it), which replaces the fixed 40/41 and 42/43, and also the
+  10/11 (Settings, a source) and 30/31 (Indexing) that the menus at 20 to 31 could cover. The
+  frame is centred without a transform, so a `position: fixed` inside it measures from the window.
+- **What changed for the user:**
+  - *Esc* in a rename field (Manage folders, Manage keywords) cancels the rename and the dialog
+    stays. It used to close the dialog as well.
+  - The add-documents review closes on *Esc*; it had no *Esc* before. Once files are added, *Esc*
+    and the backdrop finish like *Done*, so the library hears about them, and nothing closes it
+    while it adds or undoes.
+  - Every dialog keeps *Tab* inside it (only the three panels did) and gives focus back.
+  - One backdrop, `--scrim`. In the light theme it is the cards' backdrop as before. In the dark
+    theme it now darkens the screen: the 11 centred dialogs mixed `--fg` into it, which there laid
+    a light veil behind a darker card, while the panels used black.
+- **Colours: 36 in 18 files to 0.** New tokens in `app.css`: `--scrim` (per theme), `--shadow-side`
+  (the side panels and the narrow window's sidebar) and `--paper` (the white behind a page image, a
+  crop or a figure, in both themes). The fallbacks written after existing tokens went
+  (`var(--danger, #c0392b)` and the like). The status bar's ready dot read `var(--ok, #2e9e5b)`,
+  and `--ok` was never defined, so it was always that fallback green; it is `--ok-fg` now. The
+  figure badges' `green` and `gray` became mixes of `--ok-fg` and `--fg-2`.
+- **The shared stylesheet** is `src/shared.css`, loaded once after `app.css`. It holds a dialog's
+  title, head row and buttons (`.dialog-title`, `.dialog-head`, `.dialog-actions`, written word for
+  word in up to 11 files) and the plain `.muted`. A fifth style check counts the rules still copied
+  between components: 211 before this piece, 179 after. It is one number, a ratchet: a new copy
+  fails, so the second component to need a rule moves it there. The rest (`.hint` in three
+  variants, `.err`, `.iconbtn`, the search row) is left to the change that next touches each.
+- **Checks.** Check 3's list is empty. Check 4 fails an element with `aria-modal` anywhere but
+  `shell/Dialog.svelte`, and check 5 counts the copies. `layout.test.ts` lets a screen take
+  `Dialog` from `shell/`, beside `Icon` and `ConfirmDialog`.
+- **Seen in the running app** over an invented library (API on 8011, the dev server on 5733):
+  - the search near the top of the window, focus in its field, *Esc* closing it and focus back on
+    the button;
+  - the confirm over *Edit metadata* at the next layer, focus on *Cancel*, *Tab* wrapping, the
+    first *Esc* closing only the confirm (focus back on *Reset to default…*), the second the
+    editor;
+  - *Esc* in the folder rename field;
+  - Keyboard shortcuts, About, the add-documents chooser, Taxonomy, Manage keywords and Re-run
+    ingestion, each centred, with focus inside, closing on *Esc*;
+  - Settings full height at 884px, Indexing at 72rem, the source panel's resize handle above its
+    frame and dragged from 420 to 580px;
+  - light and dark, and 375px (a card at 94vw, Settings at 96vw, the sidebar's backdrop).
+
+  The browser pane was hidden, which freezes a transition where it starts: the side panels'
+  slide-in was seen to begin (760px off), and their layout was checked with reduced motion.
+- **Not seen live:** Filter by keyword (its open flag is App's own state), the figure viewer and
+  *Edit spacing* (an invented library has no figures or spacing rows), the add-documents review
+  (it needs files on disk), *Open library* and *Re-index folder* (they need an existing folder).
+  Each is the same frame, moved the same way; `svelte-check` and the build pass.
+- **Still open, with the user:** the 20 markers whose meaning lives only in a `title`, the three
+  button looks check 1 cannot see, the staged bar's *Clear*, and the × in *Manage folders*.
+  `.iconbtn` (10 files) looks the same as `btn btn-quiet btn-icon`; moving it is the same kind of
+  sweep as the copies and is left with them.

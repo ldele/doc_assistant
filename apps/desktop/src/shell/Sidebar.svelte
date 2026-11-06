@@ -397,7 +397,7 @@
       z-index: 20;
       transform: translateX(-100%);
       transition: transform 0.2s ease;
-      box-shadow: 4px 0 20px rgba(0, 0, 0, 0.2);
+      box-shadow: var(--shadow-side);
     }
     .sidebar.open {
       transform: translateX(0);
@@ -406,7 +406,7 @@
       display: block;
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.35);
+      background: var(--scrim);
       z-index: 15;
     }
   }

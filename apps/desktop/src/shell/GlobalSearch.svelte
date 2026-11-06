@@ -9,6 +9,7 @@
   import type { SearchResults } from '../lib/shell/search'
   import { authorLabel } from '../lib/library/library'
   import Icon from './Icon.svelte'
+  import Dialog from './Dialog.svelte'
   import { tooltip } from '../lib/shell/tooltip'
 
   let {
@@ -53,9 +54,8 @@
   }
 
   function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') {
-      onClose()
-    } else if (e.key === 'ArrowDown') {
+    // Esc is the dialog's (shell/Dialog.svelte); the arrows and Enter move through the results.
+    if (e.key === 'ArrowDown') {
       if (flat.length === 0) return
       e.preventDefault()
       active = (active + 1) % flat.length
@@ -104,8 +104,14 @@
 </script>
 
 <svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Search chats and documents">
+<Dialog
+  label="Search chats and documents"
+  width="48rem"
+  height="min(76vh, 560px)"
+  top
+  padding="var(--space-3)"
+  {onClose}
+>
   <div class="searchrow">
     <Icon name="search" size={16} />
     <input
@@ -187,33 +193,10 @@
       {/if}
     {/if}
   </div>
-</div>
+</Dialog>
 
 <style>
   /* Modal shell — same tokens as FilterByKeyword (scrim + centred dialog). */
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 12vh;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(94vw, 48rem);
-    max-height: min(76vh, 560px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
   .searchrow {
     display: flex;
     align-items: center;

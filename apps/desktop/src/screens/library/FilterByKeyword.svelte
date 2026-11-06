@@ -11,6 +11,7 @@
   import { authorLabel, familyByCanonical, splitRareFacets } from '../../lib/library/library'
   import { openManageKeywords } from '../../lib/library/keywords.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
 
   let {
@@ -55,9 +56,6 @@
   })
   const rareHidden = $derived(query.trim() === '' && !showRare ? split.rare.length : 0)
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
   }
@@ -69,11 +67,9 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Filter documents by keyword">
-  <div class="mhead">
-    <h2>Filter by keyword</h2>
+<Dialog label="Filter documents by keyword" width="52rem" height="min(84vh, 620px)" gap="var(--space-3)" {onClose}>
+  <div class="dialog-head">
+    <h2 class="dialog-title">Filter by keyword</h2>
     <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the keyword filter'}>
       <Icon name="x" size={16} />
     </button>
@@ -160,42 +156,9 @@
       </div>
     </section>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 52rem);
-    max-height: min(84vh, 620px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  .mhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .iconbtn {
     display: inline-flex;
     align-items: center;

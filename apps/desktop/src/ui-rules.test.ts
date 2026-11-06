@@ -1,10 +1,13 @@
-// The style rules of ADR-063, held by three checks (its *Enforced by*), each with an allow-list in
+// The style rules of ADR-063, held by five checks (its *Enforced by*), each with an allow-list in
 // `ui-rules.allow.ts` whose every entry gives its reason:
 //   1. a component defines its own `.primary`, `.ghost` or `.danger` (the roles live in app.css);
 //   2. a `<button>` has no hover text (`use:tooltip`, lib/shell/tooltip.ts);
-//   3. a literal colour (hex, rgb(), hsl()) appears in a component's styles (tokens live in app.css).
-// Plus one with no allow-list: a `<button>` never carries the native `title` (the tooltip replaces
-// it, WCAG 2.2 SC 1.4.13). Reads the source tree as text; it imports nothing from the app.
+//   3. a literal colour (hex, rgb(), hsl()) appears in a component's styles (tokens live in app.css);
+//   4. a component draws a modal dialog of its own (the frame is shell/Dialog.svelte);
+//   5. a style rule is written word for word in more than one component (shared.css takes it).
+// Plus two with no allow-list: a `<button>` never carries the native `title` (the tooltip replaces
+// it, WCAG 2.2 SC 1.4.13), and an icon-only one has an `aria-label`. Reads the source tree as text;
+// it imports nothing from the app.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -14,8 +17,10 @@ import { fileURLToPath } from 'node:url'
 import {
   type Allowed,
   BUTTONS_WITHOUT_HOVER_TEXT,
+  COPIED_RULES,
   LITERAL_COLOURS,
   LOCAL_BUTTON_CLASSES,
+  MODAL_FRAMES,
 } from './ui-rules.allow.ts'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
@@ -194,12 +199,51 @@ function literalColours(text: string): number {
   return [...css.matchAll(LITERAL_COLOUR)].length + [...values.matchAll(NAMED_COLOUR)].length
 }
 
+/** Elements (lowercase tags, not components) that carry `aria-modal`: a modal dialog drawn here. */
+export function modalFrames(text: string): number {
+  const markup = markupOf(text)
+  let n = 0
+  for (const m of markup.matchAll(/<[a-z][\w-]*(?=[\s>/])/g)) {
+    const end = tagEnd(markup, m.index + 1)
+    if (end >= 0 && attributeNames(markup.slice(m.index, end + 1)).includes('aria-modal')) n++
+  }
+  return n
+}
+
+/**
+ * Each rule of a component's styles as one line, `selector {declarations}`, with the declarations
+ * sorted and spaced alike, so the same rule written twice reads the same. A rule inside `@media`
+ * counts as its own; the `@media` line itself is not a rule.
+ */
+export function rulesOf(text: string): string[] {
+  const out = new Set<string>()
+  for (const m of styleOf(text).matchAll(/([^{}@;]+)\{([^{}]*)\}/g)) {
+    const selector = m[1].trim().replace(/\s+/g, ' ')
+    const body = m[2]
+      .split(';')
+      .map((d) => d.trim().replace(/\s+/g, ' ').replace(/\s?:\s?/, ': '))
+      .filter(Boolean)
+      .sort()
+      .join('; ')
+    if (selector && body) out.add(`${selector} {${body}}`)
+  }
+  return [...out]
+}
+
+/** The rules more than one component writes, with the files that write each. */
+function copiedRules(): Map<string, string[]> {
+  const by = new Map<string, string[]>()
+  for (const [f, text] of source) for (const r of rulesOf(text)) by.set(r, [...(by.get(r) ?? []), f])
+  return new Map([...by].filter(([, fs]) => fs.length > 1))
+}
+
 const measure = {
   localButtonClasses: (text: string): number =>
     new Set([...styleOf(text).matchAll(LOCAL_CLASS)].map((m) => m[1])).size,
   buttonsWithoutHoverText: (text: string): number =>
     buttonsOf(text).filter((b) => !b.attrs.includes('use:tooltip')).length,
   literalColours,
+  modalFrames,
 }
 
 function counts(of: (text: string) => number): Map<string, number> {
@@ -249,6 +293,26 @@ test('3. no literal colour in a component style (beyond its allow-list)', () => 
   holds('literal colours', counts(measure.literalColours), LITERAL_COLOURS)
 })
 
+test('4. only the shared frame draws a modal dialog (shell/Dialog.svelte)', () => {
+  wellFormed(MODAL_FRAMES)
+  holds('modal dialogs drawn by a component', counts(measure.modalFrames), MODAL_FRAMES)
+})
+
+test('5. a rule is written once: copies between components only fall (shared.css takes them)', () => {
+  const copied = copiedRules()
+  const total = [...copied.values()].reduce((n, fs) => n + fs.length - 1, 0)
+  const sample = [...copied]
+    .slice(0, 8)
+    .map(([r, fs]) => `${r.slice(0, 90)}  in ${fs.join(', ')}`)
+    .join('\n')
+  assert.ok(
+    total <= COPIED_RULES.count,
+    `${total} copied rules, allowed ${COPIED_RULES.count}: a rule another component already writes ` +
+      `goes in shared.css (ADR-063 choice 8). Some copies:\n${sample}`,
+  )
+  assert.ok(total >= COPIED_RULES.count, `${total} copied rules, listed ${COPIED_RULES.count}: lower COPIED_RULES.count`)
+})
+
 test('a <button> never carries the native title (the tooltip replaces it)', () => {
   const bad = [...source].flatMap(([f, text]) =>
     buttonsOf(text)
@@ -281,4 +345,11 @@ test('the scanner reads a tag past an arrow function and a quoted ">"', () => {
     1,
   )
   assert.equal(measure.localButtonClasses('<style>.ghost, .ghost.sm, .btn-danger, .primary-x {}</style>'), 1)
+  assert.equal(
+    measure.modalFrames('<Dialog aria-modal="true">x</Dialog>\n<div class="m" role="dialog" aria-modal="true" onclick={() => a > b}>'),
+    1,
+  )
+  assert.deepEqual(rulesOf('<style>a { color: red;  margin: 0 }\n@media (x) { a {margin:0;color:red;} }</style>'), [
+    'a {color: red; margin: 0}',
+  ])
 })

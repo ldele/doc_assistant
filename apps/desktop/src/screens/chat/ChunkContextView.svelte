@@ -164,7 +164,7 @@
     color: var(--fg-2);
   }
   .note.err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .muted {
     color: var(--fg-2);

@@ -4,21 +4,26 @@
   // page) and *Re-run…* (the Re-run ingestion dialog) at the trailing end. It sits above the
   // document, outside its scrolling area. The list of blocks and the anchors it jumps to are
   // DocumentPage's (the block order); *Source* writes DocumentPage's split state, bound here.
+  import type { LibraryDocument } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import { rerunLabel } from '../../lib/library/reingest'
+  import { openRerun } from '../../lib/library/reingest.svelte'
 
   let {
     blocks,
+    docId,
+    doc,
     viewerOpen = $bindable(),
     viewerPage = $bindable(),
-    onReingest,
   }: {
     /** The blocks in page order: each `id` is an element id on the page. */
     blocks: { id: string; label: string }[]
+    /** The open document, and its row in the list: what *Re-run…* re-runs, and its name. */
+    docId: string
+    doc: LibraryDocument | null
     /** Whether the source pane is open; closing it forgets the page it was asked for. */
     viewerOpen: boolean
     viewerPage: number | null
-    /** Open the re-run picker for this document (ADR-048), with these parts ticked. */
-    onReingest: (parts: string[]) => void
   } = $props()
 
   // Instant, not smooth: with Chunks expanded the document view can be tens of thousands of
@@ -51,7 +56,7 @@
   >
     <Icon name="book-open" size={13} /> Source
   </button>
-  <button class="rerun" type="button" onclick={() => onReingest([])} title="Re-run part of ingestion for this document">
+  <button class="rerun" type="button" onclick={() => openRerun([docId], rerunLabel(doc))} title="Re-run part of ingestion for this document">
     <Icon name="rotate-ccw" size={13} /> Re-run…
   </button>
 </nav>

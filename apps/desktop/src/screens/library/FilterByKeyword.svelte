@@ -5,9 +5,11 @@
   // real selection immediately, so this shares App's `facetList` (from `keywordFacets`) + `previewDocs`
   // (the faceted+sorted grid docs). Reuses the EditMetadata modal shell (scrim + centered dialog,
   // Esc-to-close, autofocused control). Dumb by design — App owns the selection + the filter math.
+  // *Manage keywords…* is a door to that view, so it opens it through `keywords.svelte.ts`.
   import type { KeywordFacet } from '../../lib/library/library'
   import type { KeywordFamily, LibraryDocument } from '../../lib/core/types'
   import { authorLabel, familyByCanonical, splitRareFacets } from '../../lib/library/library'
+  import { openManageKeywords } from '../../lib/library/keywords.svelte'
   import Icon from '../../shell/Icon.svelte'
 
   let {
@@ -19,7 +21,6 @@
     onToggle,
     onClear,
     onClose,
-    onManage,
   }: {
     facets: KeywordFacet[]
     previewDocs: LibraryDocument[]
@@ -31,7 +32,6 @@
     onToggle: (value: string) => void
     onClear: () => void
     onClose: () => void
-    onManage: () => void
   } = $props()
 
   let query = $state('')
@@ -135,7 +135,7 @@
             <Icon name="x" size={12} /> Clear {selectedCount} selected
           </button>
         {/if}
-        <button class="managebtn" onclick={onManage} type="button">Manage keywords…</button>
+        <button class="managebtn" onclick={openManageKeywords} type="button">Manage keywords…</button>
       </div>
     </section>
 

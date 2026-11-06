@@ -6,16 +6,22 @@
   import type { IgnoreListEntry, IgnoreListRemoved } from '../../lib/core/types'
   import { getIgnoreList, removeIgnoreEntries, restoreIgnoreList } from '../../lib/core/api'
   import { removedNote } from '../../lib/library/spacing'
+  import { openRerun } from '../../lib/library/reingest.svelte'
+  import { shell } from '../../lib/shell/shell.svelte'
 
   let {
-    onReingest,
     focus = false,
   }: {
-    /** Open the re-run picker for these documents (App owns the dialog). */
-    onReingest: (documentIds: string[], label: string) => void
     /** Scroll the list into view once it has loaded (opened from a document's block). */
     focus?: boolean
   } = $props()
+
+  // *Re-run text now…*: the list takes effect through the text. Settings closes first, so the
+  // dialog opens over the window the person came from.
+  function rerunText(ids: string[], label: string): void {
+    shell.showSettings = false
+    openRerun(ids, label, ['text'])
+  }
 
   let entries = $state<IgnoreListEntry[] | null>(null)
   let error = $state<string | null>(null)
@@ -167,7 +173,7 @@
             class="ghost"
             type="button"
             onclick={() =>
-              onReingest(
+              rerunText(
                 removed?.ids ?? [],
                 removed && removed.ids.length === 1 ? (removed.result.documents[0] ?? '1 document') : `${removed?.ids.length ?? 0} documents`,
               )}

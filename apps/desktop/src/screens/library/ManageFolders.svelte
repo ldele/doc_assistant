@@ -2,7 +2,8 @@
   // Manage-folders view (ADR-025 F1, docs/specs/feature-corpus-folders.md). Opened from the
   // library rail's Folders section. Create a folder, rename it inline, delete it, and pick
   // which documents belong to it (bulk, searchable). Reuses ManageKeywords' modal shell
-  // (scrim + centred dialog, Esc-to-close). Dumb by design — App owns the lists + the API calls.
+  // (scrim + centred dialog, Esc-to-close). Dumb by design — `lib/library/folders.svelte.ts` owns
+  // the lists + the API calls, and App mounts this with them.
   //
   // The line at the foot was F1's honesty note ("chat still searches everything"). F2 made it
   // false, so it now points at the composer scope selector instead of warning about its absence

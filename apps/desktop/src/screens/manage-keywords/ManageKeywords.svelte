@@ -4,7 +4,9 @@
   // Curate families by hand: create one from un-familied keywords, rename its canonical label,
   // move keywords in/out (a keyword belongs to at most one family — adding it here moves it off
   // any other family), or delete it. Reuses the overlay's modal shell (scrim + centered dialog,
-  // Esc-to-close). Dumb by design — App owns the families list + calls the API, then refreshes.
+  // Esc-to-close). Dumb by design — `lib/library/keywords.svelte.ts` owns the families list and
+  // the writes; App passes them in, and refreshes after a write (that also re-points the
+  // Library's keyword filter, so it is App's glue).
   //
   // ADR-054: the list is two lists. A *concept* is a row the user has taken on (it is on the
   // concept graph); a *term* is a word the library uses that nobody has. A concept is shown under

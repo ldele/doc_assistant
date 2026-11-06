@@ -1,12 +1,13 @@
-<!-- status: active · updated: 2026-11-05 (accepted; pass 1 built; pass 2a built: eight files split; 2b, App's state, open) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (accepted; built: pass 1, pass 2a (eight files split), pass 2b (App's one-domain state in four rune modules)) · class: append-only -->
 
 # ADR-064 — The frontend's folders follow the screens, and the domain spine stays underneath
 
 - **Status:** accepted (user, 2026-11-05: the seven choices as recommended). **Pass 1 built** the
   same evening, after `c2b2fef` left `apps/desktop/` clear: all 54 components moved, 28 renamed,
   `src/layout.test.ts` added; committed as `1fbf246`, so no file is renamed and split in one commit.
-  **Pass 2a built** the same night (the splits, choice 6: "As built" at the end); 2b (App's
-  one-domain state, choice 5) is open. Proposed by Claude Code the same day.
+  **Pass 2a built** the same night (the splits, choice 6: "As built" at the end), committed as
+  `b37c2fe`; **pass 2b built** on 2026-11-06 (App's one-domain state, choice 5: "As built — pass
+  2b"). Proposed by Claude Code on 2026-11-05.
   The request is the
   user's, 2026-11-05, during the UI batch of ROADMAP rows 110–112: could `apps/desktop/` be
   organised to mirror the interface, *"something like one file per screen"*, so that a person who
@@ -333,3 +334,39 @@ Where the table above was not followed, choice 6's rule decided:
 - Files still above 300 lines are named in the table with their size; each is one part whose bulk
   is its own scoped CSS or its own logic. Small rules repeat across parts (`.hint`, `h3`, the
   per-component button classes ROADMAP 110 removes); no part uses `:global` to share them.
+
+## As built — pass 2b, App's one-domain state (2026-11-06)
+
+Four rune modules in `lib/library/`, each one exported `$state` object plus its actions:
+
+| Module | Holds | Its doors now call it directly |
+|---|---|---|
+| `reingest.svelte.ts` | `rerun` (targets, label, parts), `openRerun`, `closeRerun` | *Re-run…* in the page's index and on the select bar, *Re-run text now…* in the letter-spacing block and in Settings › Documents |
+| `documents.svelte.ts` | `library` (the list, loaded, *Edit metadata*, *Delete this document?*, select mode) | a tile's ⋯ menu, the select bar |
+| `folders.svelte.ts` | `folders` (the list, *Manage folders* and its query, the error), the writes | the rail's *Manage…*, a tile's *Add to folder*, the select bar's *Add to folder…* |
+| `keywords.svelte.ts` | `keywords` (families, *Manage keywords* open / focus / on Concepts, detect proposals), the writes | *Manage keywords…* in *Filter by keyword* |
+
+The worked example above is now the code: `PageIndex` calls `openRerun([docId], rerunLabel(doc))`,
+and App mounts the dialog once, from `rerun.targets`. The callback props that only carried a door
+up (`onReingest`, `onReingestDoc`, the select-mode setters, `onManageFolders`, `onManage`, …) are
+gone from the components between.
+
+**What stayed in App, as glue** (two domains): what runs after a re-run (the document list and
+the engine's health), a confirmed delete (it leaves the document page), deleting the folder the
+Library has open, the family refresh that re-points the Library's keyword facets, a family write
+that also invalidates the graph, the Graph tab's doors into *Manage keywords*. Conversation
+deletes stay too: both read the chat view's state and start a new chat, which `conversations.svelte.ts`
+already leaves to App.
+
+**App is 1,478 lines (was 1,778), not the 600–800 choice 5 estimated.** About 300 lines were
+one-domain, not the ~830 read from the function list. The rest is what choice 5 keeps on
+purpose: the chat turn and conversation-view lifecycle (~250 lines), navigation (~100), the
+readiness gate and its effects (~110), the glue above, ~380 lines of overlay markup and 156 of
+style. Smaller candidates for a later pass: the engine-health refreshes into `shell.svelte.ts`,
+the Add documents review flag into `accept.svelte.ts`, the drop veil and staged bar into a
+component.
+
+Driven in the preview against the real library, read-only: every door above opens its dialog
+with the right label and parts, and cancels. The writes the modules now hold (a folder created,
+metadata saved, a document deleted, a family written, a re-run run to the end) were not driven:
+they are the same API calls moved, and checking them needs a scratch copy of the library.

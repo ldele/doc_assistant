@@ -3,9 +3,13 @@
   // Decision 2). Given the active collection's documents, renders them as a 2-D tile grid
   // (the "video-game inventory") or as list rows per the persisted view preference. Dumb by
   // design: no filtering here — App owns collection + search. Per-tile ⋯ menu (ADR-013):
-  // Edit metadata / Reveal in file explorer, mirroring the conversation ⋯ menu in Sidebar.
+  // Edit metadata / Reveal in file explorer / Add to folder… / Delete, mirroring the conversation
+  // ⋯ menu in Sidebar. The menu is the door to those dialogs, so it opens them through
+  // `documents.svelte.ts` and `folders.svelte.ts` (ADR-064 choice 5).
   import type { LibraryDocument } from '../../lib/core/types'
   import { authorLabel, docLabel, orderedUnits } from '../../lib/library/library'
+  import { openDeleteDocument, openEditMetadata, revealDoc } from '../../lib/library/documents.svelte'
+  import { openManageFoldersForDoc } from '../../lib/library/folders.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { isSelectClick } from '../../lib/shell/selection'
 
@@ -18,17 +22,13 @@
     selectedIds = [],
     onPick,
     onOpenDocument,
-    onEditMetadata,
-    onReveal,
-    onAddToFolder,
-    onDelete,
   }: {
     documents: LibraryDocument[]
     view: 'grid' | 'list'
     activeKeywords?: string[]
     // Select mode (batch add-to-folder): tile clicks pick instead of opening the document; the ⋯
-    // menu hides. App owns the selection — this stays a dumb renderer. A Shift- or Ctrl/Cmd-click
-    // picks outside select mode too, which is how App knows to start it (ROADMAP 80).
+    // menu hides. The selection is `documents.svelte.ts`'s, passed in by Library. A Shift- or
+    // Ctrl/Cmd-click picks outside select mode too, which is how select mode starts (ROADMAP 80).
     selectMode?: boolean
     selectedIds?: string[]
     // Tag families (PR-2.6): collapse a document's raw keywords into display **units**, so a
@@ -38,10 +38,6 @@
     /** A click that selects: `shift` asks for the range from the last pick (`selection.ts`). */
     onPick: (id: string, shift: boolean) => void
     onOpenDocument: (id: string) => void
-    onEditMetadata: (id: string) => void
-    onReveal: (id: string) => void
-    onAddToFolder: (id: string) => void
-    onDelete: (id: string) => void
   } = $props()
 
   const CHIP_CAP = 6 // chips shown before "+N" — enough to fill the reserved two-line keyword row
@@ -101,19 +97,19 @@
     if (e.shiftKey) e.preventDefault()
   }
   function menuEdit(): void {
-    if (menuDoc) onEditMetadata(menuDoc.id)
+    if (menuDoc) openEditMetadata(menuDoc.id)
     closeMenu()
   }
   function menuReveal(): void {
-    if (menuDoc) onReveal(menuDoc.id)
+    if (menuDoc) void revealDoc(menuDoc.id)
     closeMenu()
   }
   function menuAddToFolder(): void {
-    if (menuDoc) onAddToFolder(menuDoc.id)
+    if (menuDoc) openManageFoldersForDoc(menuDoc.id)
     closeMenu()
   }
   function menuDelete(): void {
-    if (menuDoc) onDelete(menuDoc.id)
+    if (menuDoc) openDeleteDocument(menuDoc.id)
     closeMenu()
   }
   // Close on Esc or any scroll/wheel (the fixed menu would otherwise detach from its tile).

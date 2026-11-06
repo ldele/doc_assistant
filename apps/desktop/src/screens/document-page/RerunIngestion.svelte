@@ -1,7 +1,9 @@
 <script lang="ts">
-  // Re-run picker (ADR-048, ROADMAP 20/21) — one dialog, two entry points.
+  // Re-run picker (ADR-048, ROADMAP 20/21) — one dialog, four doors.
   //
-  // The document panel opens it for one document; the grid's Select mode opens it for a selection.
+  // The document page opens it for one document (*Re-run…*, and *Re-run text now…* in its
+  // letter-spacing block); the grid's Select mode and Settings › Documents open it for several.
+  // Each door calls `openRerun` in `lib/library/reingest.svelte.ts`, and App mounts this from it.
   // Nothing here knows which: it takes a list of ids and a label, so row 21 needed no second
   // component and cannot drift from row 20's wording or its cost statement.
   //

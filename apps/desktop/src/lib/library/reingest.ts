@@ -5,7 +5,23 @@
 // are separate at all: they differ by four orders of magnitude, so a summary that quietly averaged
 // them, or dropped the expensive one, would put the control back to four equivalent checkboxes.
 
-import type { ReingestOptions, ReingestOutcome, ReingestPart, ReingestStatus } from '../core/types'
+import type {
+  LibraryDocument,
+  ReingestOptions,
+  ReingestOutcome,
+  ReingestPart,
+  ReingestStatus,
+} from '../core/types'
+
+/** What the dialog names when it re-runs one document: its title, else its file name. */
+export function rerunLabel(doc: Pick<LibraryDocument, 'title' | 'filename'> | null): string {
+  return doc?.title ?? doc?.filename ?? 'This document'
+}
+
+/** What the dialog names when it re-runs a selection: "1 document", "12 documents". */
+export function selectionLabel(count: number): string {
+  return count === 1 ? '1 document' : `${count} documents`
+}
 
 /** Selected parts, in registry order — never the order the user happened to click them in.
  *  The backend runs `text` last regardless; the control has to *say* the same order it does. */

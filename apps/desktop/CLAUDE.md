@@ -12,7 +12,7 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   First run (`GettingStarted`, `ProviderSetup`) renders `/api/setup`'s verdicts, never recomputes.
 - `src/lib/<domain>/` — **logic and state, no components**, mirroring `apps/api/routers/` (`chat` ·
   `library` · `graph` · `settings` · `shell` · `core`): `docs/architecture.md` § the domain spine.
-- `<domain>/*.svelte.ts` — **rune modules** (9): export ONE `$state` *object* (an import can't be reassigned).
+- `<domain>/*.svelte.ts` — **rune modules** (13): export ONE `$state` *object* (an import can't be reassigned).
 - `lib/core/api|types/<domain>.ts` — one per `apps/api/models/` domain; tokens: `app.css` + `core/fonts.css`.
 
 **Rules that bite here**

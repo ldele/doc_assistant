@@ -42,6 +42,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 — A dialog's door calls its module, not a callback through App (ADR-064, pass 2b)
+
+**What changed.** Four rune modules in `lib/library/` take App's one-domain state:
+`reingest.svelte.ts` (*Re-run ingestion*), `documents.svelte.ts` (the list, *Edit metadata*,
+*Delete this document?*, select mode), `folders.svelte.ts` (*Manage folders* and the folder
+writes) and `keywords.svelte.ts` (*Manage keywords* and the family writes). Each door calls its
+module (`PageIndex` calls `openRerun`, as ADR-064's worked example drew it), and the props that
+only carried a door up through two components are gone. App keeps the glue: anything that also
+touches another domain (the health refresh after a re-run, the facet re-point after a family
+write, the graph latch). App: 1,778 → 1,478 lines. Driven in the preview, read-only: every door
+opens its dialog with the right label and parts and cancels (Re-run from the page names the title,
+from the select bar "2 documents"); *Manage keywords* opens at the top from the filter, on Concepts
+from the Graph tab, on its row from *Edit*; the chat delete confirm still names the count; 375 px
+light and dark, no script error. npm test 391/391, svelte-check 0/0.
+
+**Why.** ADR-064 choice 5, accepted: a person who sees a dialog finds its state beside its
+domain, and a new dialog adds a module function, not a flag, a callback prop and a mount in App.
+
+**Rejected.** Moving conversation deletes: both confirms read the chat view and start a new chat,
+which `conversations.svelte.ts` already leaves to App. Pushing App to choice 5's 600–800 by moving
+the chat lifecycle or navigation: choice 5 keeps those, and the estimate (~830 one-domain lines)
+was read from function names; ~300 were.
+
+**What it opens.** The writes the modules hold (create a folder, save metadata, delete a document,
+write a family, a re-run to the end) were not driven live: same API calls, moved, but a check needs
+a scratch copy of the library. Smaller App candidates are in ADR-064's "As built — pass 2b".
+
 ## 2026-11-05 (10) — Eight screens cut into the parts they show (ADR-064, pass 2a)
 
 **What changed.** Eight of the nine large files are cut along their headings and sections, each

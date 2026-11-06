@@ -13,6 +13,8 @@ import {
   needsConfirmation,
   orderedParts,
   outcomesByDocument,
+  rerunLabel,
+  selectionLabel,
 } from './reingest.ts'
 import type { ReingestOptions, ReingestOutcome, ReingestPart, ReingestStatus } from '../core/types/library.ts'
 
@@ -122,4 +124,16 @@ test('an uncounted run has NO fraction — null, never zero', () => {
 test('a running count is a real fraction, clamped', () => {
   assert.equal(fraction(status({ done: 1, total: 4 })), 0.25)
   assert.equal(fraction(status({ done: 9, total: 4 })), 1)
+})
+
+test('one document is named by its title, else its file name', () => {
+  assert.equal(rerunLabel({ title: 'On Growth', filename: 'growth.pdf' }), 'On Growth')
+  assert.equal(rerunLabel({ title: null, filename: 'growth.pdf' }), 'growth.pdf')
+  // A row not in the list yet still names something.
+  assert.equal(rerunLabel(null), 'This document')
+})
+
+test('a selection is named by its count', () => {
+  assert.equal(selectionLabel(1), '1 document')
+  assert.equal(selectionLabel(12), '12 documents')
 })

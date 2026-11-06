@@ -32,7 +32,6 @@
     onFolderEdit,
     onOpenAnotherLibrary,
     onUseOwnLibrary,
-    onReingest,
     onClose,
   }: {
     settings: Settings
@@ -60,8 +59,6 @@
     onOpenAnotherLibrary: () => Promise<void>
     /** Ask before switching to the app's own library. */
     onUseOwnLibrary: () => void
-    /** Open the re-run picker for these documents (App owns the dialog). */
-    onReingest: (documentIds: string[], label: string) => void
     onClose: () => void
   } = $props()
 
@@ -271,7 +268,7 @@
   {/if}
 </section>
 <section>
-  <SpacingIgnoreList {onReingest} focus={focusSpacing} />
+  <SpacingIgnoreList focus={focusSpacing} />
 </section>
 
 <style>

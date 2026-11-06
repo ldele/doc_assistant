@@ -2,46 +2,23 @@
   import { untrack } from 'svelte'
   import type {
     ConversationDetail,
-    KeywordFamily,
-    KeywordFamilyDeletion,
     KeywordFamilyProposal,
-    LibraryDocument,
-    LibraryFolder,
     MemberBreadth,
     TurnResult,
   } from './lib/core/types'
   import {
-    addDocumentsToFolder,
-    addFamilyMember,
     compareRetrieval,
-    createFolder,
-    createKeywordFamily,
-    deleteFolder,
-    deleteKeywordFamily,
-    describeFamilyDeletion,
-    detectKeywordFamilies,
     getConceptPresence,
     getConversation,
     getHealth,
     getSetup,
     exportConversation,
-    listFolders,
     listKeywordFamilies,
     deleteDocument,
-    listLibraryDocuments,
     locateChunk,
-    removeDocumentFromFolder,
-    removeFamilyMember,
-    renameFolder,
-    renameKeywordFamily,
-    resetDocumentMeta,
-    revealDocument,
-    setFamilyGraphInclude,
-    setFamilyMemberBreadth,
     streamChat,
     bulkUpdateConversations,
     updateConversationMeta,
-    updateDocumentMeta,
   } from './lib/core/api'
   import { GRAPH_TAB_ENABLED } from './lib/core/features'
   import Chat from './screens/chat/Chat.svelte'
@@ -52,7 +29,6 @@
   import Icon from './shell/Icon.svelte'
   import AddDocumentsReview from './screens/library/AddDocumentsReview.svelte'
   import AddDocumentsChooser from './screens/library/AddDocumentsChooser.svelte'
-  import DocumentGrid from './screens/library/DocumentGrid.svelte'
   import FilterByKeyword from './screens/library/FilterByKeyword.svelte'
   import ManageKeywords from './screens/manage-keywords/ManageKeywords.svelte'
   import ManageFolders from './screens/library/ManageFolders.svelte'
@@ -71,8 +47,6 @@
   import StatusBar from './shell/StatusBar.svelte'
   import {
     type LibraryCollection,
-    type LibrarySort,
-    docLabel,
     folderNameMap,
     docsFor,
     facetFilter,
@@ -86,7 +60,6 @@
     sameCollection,
   } from './lib/library/library'
   import { searchEverything } from './lib/shell/search'
-  import { pick } from './lib/shell/selection'
   // Per-domain reactive state (`.svelte.ts` = a rune module). Cross-domain orchestration —
   // selectMode, the nav-history observer, the readiness gate, the chat-scope guard — stays in
   // this file on purpose: splitting it would only hide the coupling across import graphs.
@@ -109,14 +82,43 @@
     taxonomyDetachDocument,
     taxonomyRemoveEdge,
   } from './lib/library/taxonomy.svelte'
-  import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './lib/library/prefs.svelte'
+  import { closeRerun, rerun } from './lib/library/reingest.svelte'
   import {
-    SIDEBAR_MAX,
-    SIDEBAR_MIN,
-    sidebarPrefs,
-    startSidebarResize,
-    toggleSidebarCollapsed,
-  } from './lib/shell/prefs.svelte'
+    closeDeleteDocument,
+    closeEditMetadata,
+    library,
+    refreshDocuments,
+    resetMetadata,
+    restoreDocuments,
+    saveMetadata,
+  } from './lib/library/documents.svelte'
+  import {
+    addDocsToFolder,
+    closeManageFolders,
+    createLibraryFolder,
+    deleteLibraryFolder,
+    folders,
+    refreshFolders,
+    removeDocFromFolder,
+    renameLibraryFolder,
+    restoreFolders,
+  } from './lib/library/folders.svelte'
+  import {
+    addFamilyMemberKeyword,
+    closeManageKeywords,
+    createFamily,
+    deleteFamily,
+    dismissProposal,
+    keywords,
+    previewFamilyDeletion,
+    removeFamilyMemberKeyword,
+    renameFamily,
+    runDetectFamilies,
+    setFamilyOnGraph,
+    setFormBreadth,
+  } from './lib/library/keywords.svelte'
+  import { libPrefs } from './lib/library/prefs.svelte'
+  import { sidebarPrefs, startSidebarResize } from './lib/shell/prefs.svelte'
   // Shell chrome state (leaf module — imports no sibling state). Phase 2 lets the pane components
   // import this directly instead of taking ~20 props each.
   import { shell } from './lib/shell/shell.svelte'
@@ -151,7 +153,6 @@
     renameConversation,
     restoreConversations,
   } from './lib/chat/conversations.svelte'
-  import { loadSnapshot, saveSnapshot, windowStorage } from './lib/core/lastSession'
 
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
@@ -182,7 +183,7 @@
   // (chat.turns/viewing/chat.sessionId) is untouched by the switch. Navigation model: the rail picks the
   // active *collection*, the main pane shows it as an inventory grid, and opening a document
   // drills down in place to the chunk view (breadcrumb + Back walk back up).
-  let documents = $state<LibraryDocument[]>([])
+  // The document list, its dialogs and the select mode are `lib/library/documents.svelte.ts`.
   let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
   let libraryQuery = $state('')
@@ -191,37 +192,25 @@
   // the two-pane picker overlay; the inline strip shows only the selected keywords + the trigger.
   let libraryKeywords = $state<string[]>([])
   let keywordFilterOpen = $state(false)
-  // `$state`, not a plain `let`: it started as an internal fetch-once latch, and it is now also
-  // read by the Library to tell "empty" from "not yet known". A non-reactive latch passed as a
-  // prop leaves the loading line up forever (svelte-check catches exactly this).
-  let documentsLoaded = $state(false)
-  // Families need their own latch, not `documentsLoaded`. The graph path loads documents (the ego
+  // Families need their own latch, not `library.loaded`. The graph path loads documents (the ego
   // panel resolves doc_ids → titles) without the family list, so once it has run, the library's
-  // `!documentsLoaded` guard skips the family fetch forever — and Manage keywords opens listing
+  // `!library.loaded` guard skips the family fetch forever — and Manage keywords opens listing
   // zero families on a library with 357. Found 2026-08-30 by making that view the graph empty
   // state's primary action; the graph's per-concept "Edit" has had the same hole since it shipped.
   let familiesLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).
-  const searchResults = $derived(searchEverything(shell.searchQuery, conversations.list, documents))
-
-  // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
-  // The rail renders this list rather than deriving groups from `documents`, so a folder with
-  // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
-  // 400 (blank/collision) in the Manage view without blocking anything else.
-  let folders = $state<LibraryFolder[]>([])
+  const searchResults = $derived(searchEverything(shell.searchQuery, conversations.list, library.list))
 
   // The last session's library, folders, chat list and graph, shown at launch until the engine
   // answers (lib/core/lastSession.ts): the packaged backend takes tens of seconds to start, and
-  // the window used to sit empty meanwhile. `documentsLoaded` stays false, so every list is
+  // the window used to sit empty meanwhile. `library.loaded` stays false, so every list is
   // still fetched for real; the readiness gate refreshes them all once the engine is up.
-  const lastDocuments = loadSnapshot<LibraryDocument[]>(windowStorage(), 'documents')
-  const lastFolders = loadSnapshot<LibraryFolder[]>(windowStorage(), 'folders')
-  if (lastDocuments) documents = lastDocuments.data
-  if (lastFolders) folders = lastFolders.data
+  const restoredDocuments = restoreDocuments()
+  const restoredFolders = restoreFolders()
   const restoredChats = restoreConversations()
   const restoredGraph = restoreGraph()
   let lastSession = $state(
-    lastDocuments !== null || lastFolders !== null || restoredChats || restoredGraph,
+    restoredDocuments || restoredFolders || restoredChats || restoredGraph,
   )
   // ADR-025 F2 — the chat retrieval scope. Sticky across chat.turns, in memory ONLY: a reload
   // returns to the whole library. Persisting it is the rejected option — a scope you forgot
@@ -229,50 +218,6 @@
   // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
   // grid and scoping a conversation are two different intentions.
   let chatScopeFolderId = $state<string | null>(null)
-  let manageFoldersOpen = $state(false)
-  let manageFolderId = $state<string | null>(null)
-  let manageFolderQuery = $state('')
-
-  // Library select mode (batch add-to-folder). Selection is App-owned (DocumentGrid stays dumb);
-  // bulk delete is deliberately NOT here — deferred pending its own ADR (ui-checklist).
-  let libSelectMode = $state(false)
-  let libSelected = $state<string[]>([])
-  let libAnchor = $state<string | null>(null)
-  let libAddMenuOpen = $state(false)
-  // A click that selects, in the order the grid shows (ROADMAP 80; the same `pick` as the chat
-  // list). A Shift- or Ctrl/Cmd-click outside select mode starts it with that document.
-  function pickLibDoc(id: string, shift: boolean): void {
-    if (!libSelectMode) enterLibSelect()
-    const r = pick(visibleDocs.map((d) => d.id), libSelected, libAnchor, id, shift)
-    libSelected = r.selected
-    libAnchor = r.anchor
-  }
-  function enterLibSelect(): void {
-    libSelectMode = true
-    libSelected = []
-    libAnchor = null
-  }
-  function exitLibSelect(): void {
-    libSelectMode = false
-    libSelected = []
-    libAnchor = null
-    libAddMenuOpen = false
-  }
-  function addSelectionToFolder(folderId: string): void {
-    if (libSelected.length > 0) addDocsToFolder(folderId, libSelected)
-    exitLibSelect()
-  }
-  let folderError = $state<string | null>(null)
-
-  // Tag families (feature-tag-families.md, PR-1). Loaded alongside the document list;
-  // `manageKeywordsOpen` opens the curation view (from the keyword-filter overlay's link).
-  let keywordFamilies = $state<KeywordFamily[]>([])
-  let manageKeywordsOpen = $state(false)
-  // Detection (PR-2) — proposals live only while the Manage view is open; nothing is written
-  // until a proposal is accepted (routes into createFamily below), so staleness is harmless.
-  let detectProposals = $state<KeywordFamilyProposal[]>([])
-  let detecting = $state(false)
-  let detectError = $state<string | null>(null)
 
   // Concept graph — state + its loader/rebuild live in `lib/graph/graph.svelte.ts`; lazy-loaded on
   // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
@@ -304,9 +249,8 @@
   // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view
   // on that row: with terms listed too (ADR-054) the view is a few hundred rows long, and "take
   // this term on" that lands at the top of them leaves the user to find the term again.
-  let manageFocusId = $state<string | null>(null)
   function manageConcept(conceptId: string, _label: string): void {
-    manageFocusId = conceptId
+    keywords.focusId = conceptId
     curateVocabulary()
   }
 
@@ -319,12 +263,11 @@
   // The view is an overlay, and it opens over the Graph: it used to switch to the Library first,
   // only because entering the Library is what loads the two lists it shows — so closing it left
   // the user on a tab they had not asked for. The lists are loaded here instead.
-  let manageOnConcepts = $state(false)
   function curateVocabulary(): void {
-    if (!documentsLoaded) void refreshDocuments()
+    if (!library.loaded) void refreshDocuments()
     if (!familiesLoaded) void refreshFamilies()
-    manageOnConcepts = true
-    manageKeywordsOpen = true
+    keywords.onConcepts = true
+    keywords.manageOpen = true
   }
 
   // Cross-domain wrapper over the taxonomy module: the attach picker lists *documents*, which
@@ -332,7 +275,7 @@
   // otherwise get an empty picker. The document list is library state, so the pull stays here
   // rather than reaching across from `taxonomy.svelte.ts`.
   function openTaxonomyView(focusConceptId: string | null = null): void {
-    if (!documentsLoaded) void refreshDocuments()
+    if (!library.loaded) void refreshDocuments()
     void openTaxonomy(focusConceptId)
   }
 
@@ -343,12 +286,10 @@
   // Family collapse (PR-1) sits ahead of the facet math: `keywordsOf` maps each doc's raw
   // keywords through the family canonical map (identity when no families exist — byte-identical
   // to pre-PR-1 behavior), then `keywordFacets`/`facetFilter` operate on those collapsed units.
-  const familyCanonicalOf = $derived(familyCanonicalMap(keywordFamilies))
+  const familyCanonicalOf = $derived(familyCanonicalMap(keywords.families))
   const keywordsOf = $derived(familyUnitsOf(familyCanonicalOf))
-  const folderNames = $derived(folderNameMap(folders))
-  // A folder deleted elsewhere must not stay silently selected as the chat scope.
-  const chatScopeFolder = $derived(folders.find((f) => f.id === chatScopeFolderId) ?? null)
-  const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
+  const folderNames = $derived(folderNameMap(folders.list))
+  const collectionDocs = $derived(docsFor(library.list, libraryCollection, new Date()))
   const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
   const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords, keywordsOf))
   // Documents per unit over the pre-facet pool — the rare-tail split (PR-2.7 F4) must not
@@ -357,20 +298,20 @@
   const facetDocCounts = $derived(unitDocCounts(searchedDocs, keywordsOf))
   // The Manage view's pool lists *raw* keyword names (a family's members), so its rare split
   // counts raw keywords over the whole library rather than family units over a collection.
-  const rawKeywordDocCounts = $derived(unitDocCounts(documents))
+  const rawKeywordDocCounts = $derived(unitDocCounts(library.list))
   const visibleDocs = $derived(
     sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), libPrefs.sort),
   )
   // The corpus's full raw-keyword universe (unfiltered by collection/search), for the Manage view.
   const allKeywords = $derived.by(() => {
     const s = new Set<string>()
-    for (const d of documents) for (const k of d.keywords) s.add(k)
+    for (const d of library.list) for (const k of d.keywords) s.add(k)
     return [...s]
   })
   // Breadcrumb label for the open document, from the cached list (the chunk view fetches its
   // own detail; a stale/missing entry just hides the crumb).
   const openDoc = $derived(
-    libraryDocId ? (documents.find((d) => d.id === libraryDocId) ?? null) : null,
+    libraryDocId ? (library.list.find((d) => d.id === libraryDocId) ?? null) : null,
   )
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
@@ -601,7 +542,7 @@
           // Replace whatever the last session left on screen with the live lists.
           if (lastSession) {
             lastSession = false
-            if (lastDocuments) void refreshDocuments()
+            if (restoredDocuments) void refreshDocuments()
             if (restoredGraph || shell.mode === 'graph') void loadConceptGraph()
           }
           return
@@ -624,7 +565,7 @@
   // A scope naming a folder that no longer exists would silently become "search nothing" on the
   // next turn. Drop it the moment the folder leaves the list, so the selector can't lie.
   $effect(() => {
-    if (chatScopeFolderId !== null && !folders.some((f) => f.id === chatScopeFolderId)) {
+    if (chatScopeFolderId !== null && !folders.list.some((f) => f.id === chatScopeFolderId)) {
       chatScopeFolderId = null
     }
   })
@@ -782,21 +723,11 @@
     chat.activeCitation = null
   }
 
-  // Library documents are a sidecar read — a failure must never break the app (inform, don't block).
-  async function refreshDocuments(): Promise<void> {
-    try {
-      documents = await listLibraryDocuments()
-      documentsLoaded = true
-      saveSnapshot(windowStorage(), 'documents', $state.snapshot(documents))
-    } catch {
-      // keep the prior list
-    }
-  }
-
-  // Tag families are a sidecar read, same inform-don't-block rule as documents.
+  // Tag families are a sidecar read, same inform-don't-block rule as documents. Glue: the list is
+  // `keywords.svelte.ts`'s, the selection it re-points is the Library's facets (below).
   async function refreshFamilies(): Promise<void> {
     try {
-      keywordFamilies = await listKeywordFamilies()
+      keywords.families = await listKeywordFamilies()
       familiesLoaded = true
       // PR-2.5 D5 — a family write changes what a facet *unit* is, so a live selection has to be
       // re-pointed or the grid silently empties behind a chip that still looks selectable. The
@@ -805,78 +736,21 @@
       // survives (it must stay removable).
       libraryKeywords = remapSelection(
         libraryKeywords,
-        familyCanonicalMap(keywordFamilies),
-        documents,
+        familyCanonicalMap(keywords.families),
+        library.list,
       )
     } catch {
       // keep the prior list
     }
   }
 
-  // Folders are a sidecar read, same inform-don't-block rule as documents.
-  async function refreshFolders(): Promise<void> {
-    try {
-      folders = await listFolders()
-      saveSnapshot(windowStorage(), 'folders', $state.snapshot(folders))
-    } catch {
-      // keep the prior list
-    }
-  }
-
-  // Folder writes (ADR-025 F1). Write-then-refetch, like the family mutations above: the server
-  // is the authority on names + counts, so we never patch the local list by hand. Membership
-  // changes also refresh `documents`, whose `folder_ids` drive the grid filter.
-  async function folderWrite(op: () => Promise<unknown>, alsoDocuments = false): Promise<void> {
-    folderError = null
-    try {
-      await op()
-    } catch (e) {
-      folderError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await refreshFolders()
-    if (alsoDocuments) await refreshDocuments()
-  }
-
-  function createLibraryFolder(name: string): void {
-    void folderWrite(() => createFolder(name))
-  }
-
-  function renameLibraryFolder(folderId: string, name: string): void {
-    void folderWrite(() => renameFolder(folderId, name), true)
-  }
-
-  function deleteLibraryFolder(folderId: string): void {
-    // A deleted folder can't stay the active collection or the Manage selection.
+  // Glue over `folders.svelte.ts`: a deleted folder can't stay the Library's open collection
+  // (navigation); the module then drops it as the Manage selection and writes.
+  function leaveAndDeleteFolder(folderId: string): void {
     if (libraryCollection.kind === 'folder' && libraryCollection.value === folderId) {
       libraryCollection = { kind: 'all' }
     }
-    if (manageFolderId === folderId) manageFolderId = null
-    void folderWrite(() => deleteFolder(folderId), true)
-  }
-
-  function addDocsToFolder(folderId: string, documentIds: string[]): void {
-    void folderWrite(() => addDocumentsToFolder(folderId, documentIds), true)
-  }
-
-  function removeDocFromFolder(folderId: string, documentId: string): void {
-    void folderWrite(() => removeDocumentFromFolder(folderId, documentId), true)
-  }
-
-  function openManageFolders(): void {
-    manageFolderQuery = ''
-    manageFoldersOpen = true
-    folderError = null
-    shell.sidebarOpen = false
-    void refreshFolders()
-  }
-
-  // The grid tile's "Add to folder…": same view, opened pre-filtered to that one document so the
-  // picker shows it alone once a folder is chosen.
-  function openManageFoldersForDoc(id: string): void {
-    const doc = documents.find((d) => d.id === id)
-    openManageFolders()
-    manageFolderQuery = doc ? docLabel(doc) : ''
+    deleteLibraryFolder(folderId)
   }
 
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
@@ -889,15 +763,15 @@
     shell.mode = m
     shell.sidebarOpen = false
     chat.activeCitation = null
-    if (m === 'chat' && folders.length === 0) void refreshFolders()
+    if (m === 'chat' && folders.list.length === 0) void refreshFolders()
     if (m === 'library') {
-      if (!documentsLoaded) void refreshDocuments()
+      if (!library.loaded) void refreshDocuments()
       if (!familiesLoaded) void refreshFamilies()
-      if (folders.length === 0) void refreshFolders()
+      if (folders.list.length === 0) void refreshFolders()
     }
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
-      if (!documentsLoaded) void refreshDocuments()
+      if (!library.loaded) void refreshDocuments()
       // Before the engine answers, a load would only fail; the readiness gate loads it then.
       if (!graphLoaded() && shell.status === 'ready') void loadConceptGraph()
     }
@@ -922,7 +796,7 @@
     shell.searchQuery = ''
     shell.searchOpen = true
     void refreshConversations()
-    if (!documentsLoaded) void refreshDocuments()
+    if (!library.loaded) void refreshDocuments()
   }
   function closeSearch(): void {
     shell.searchOpen = false
@@ -967,69 +841,33 @@
     }
   }
 
-  // Metadata editing (ADR-013 — first browse-time write path). `editingDocId` opens the modal;
-  // Save/Reset write then re-fetch the list so the tile reflects the new effective values
-  // (mirrors how the conversation actions re-fetch). Reveal opens the OS file manager server-side.
-  let editingDocId = $state<string | null>(null)
+  // The two dialogs a tile's ⋯ menu opens (`documents.svelte.ts` holds their state and Edit
+  // metadata's writes); each mounts while its document is still in the list.
   const editingDoc = $derived(
-    editingDocId ? (documents.find((d) => d.id === editingDocId) ?? null) : null,
+    library.editingId ? (library.list.find((d) => d.id === library.editingId) ?? null) : null,
   )
-  async function saveDocMeta(patch: {
-    title: string
-    authors: string
-    year: number | null
-  }): Promise<void> {
-    if (editingDocId === null) return
-    try {
-      await updateDocumentMeta(editingDocId, patch)
-      await refreshDocuments()
-    } catch {
-      // inform-don't-block: a write failure leaves the prior values in place
-    }
-    editingDocId = null
-  }
-  async function resetDocMeta(): Promise<void> {
-    if (editingDocId === null) return
-    try {
-      await resetDocumentMeta(editingDocId)
-      await refreshDocuments()
-    } catch {
-      // keep the prior list on failure
-    }
-    editingDocId = null
-  }
-  async function revealDoc(id: string): Promise<void> {
-    try {
-      await revealDocument(id)
-    } catch {
-      // the source file may have moved since ingest — surface nothing, never crash the UI
-    }
-  }
-
-  // Safe-delete (ADR-014): the ⋯ Delete opens a confirmation; on confirm the source file goes to
-  // the Recycle Bin and the doc leaves the library + index. If the open doc was deleted, drop back
-  // to its collection grid, then re-fetch the list.
-  let deletingDocId = $state<string | null>(null)
-  let deleteBusy = $state(false)
   const deletingDoc = $derived(
-    deletingDocId ? (documents.find((d) => d.id === deletingDocId) ?? null) : null,
+    library.deletingId ? (library.list.find((d) => d.id === library.deletingId) ?? null) : null,
   )
+  // Safe-delete (ADR-014), glue: on confirm the source file goes to the Recycle Bin and the doc
+  // leaves the library + index. If the open doc was deleted, drop back to its collection grid
+  // (navigation), then re-fetch the list and the engine's health.
   // `deleteFile` is the choice the dialog just collected, per deletion — never a stored
   // preference (ADR-046 §2 replaced an unconditional rule with a per-deletion question, and
   // remembering the answer would quietly restore the rule).
   async function confirmDelete(deleteFile: boolean): Promise<void> {
-    if (deletingDocId === null) return
-    deleteBusy = true
+    if (library.deletingId === null) return
+    library.deleteBusy = true
     try {
-      await deleteDocument(deletingDocId, deleteFile)
-      if (libraryDocId === deletingDocId) libraryDocId = null
+      await deleteDocument(library.deletingId, deleteFile)
+      if (libraryDocId === library.deletingId) libraryDocId = null
       await refreshDocuments()
       void refreshHealth()
-      deletingDocId = null
+      library.deletingId = null
     } catch {
       // e.g. the file couldn't be moved to the Recycle Bin — leave the dialog open, doc intact
     }
-    deleteBusy = false
+    library.deleteBusy = false
   }
 
   // Back walks one level up: doc → its collection's grid, then collection → All documents.
@@ -1054,21 +892,9 @@
     libraryKeywords = []
   }
 
-  // Per-part re-ingest (ADR-048, ROADMAP 20/21). App owns the dialog because App owns every other
-  // overlay — and because that is what lets the document panel and the grid's Select mode share
-  // one picker instead of two copies of the same cost statement.
-  let reingestTargets = $state<string[] | null>(null)
-  let reingestLabel = $state('')
-  let reingestParts = $state<string[]>([])
-
-  function openReingest(ids: string[], label: string, parts: string[] = []): void {
-    if (ids.length === 0) return
-    reingestTargets = ids
-    reingestLabel = label
-    reingestParts = parts
-  }
-
-  // A finished re-run can have changed the metadata, the chunk count, the figures or the
+  // Per-part re-ingest (ADR-048, ROADMAP 20/21): the dialog's state and its four doors are in
+  // `lib/library/reingest.svelte.ts`. What runs after is glue (the document list and the engine's
+  // health). A finished re-run can have changed the metadata, the chunk count, the figures or the
   // references — so the list is refetched wholesale rather than guessing which. The open
   // document's own blocks refetch from their `docId` when the list identity changes.
   async function afterReingest(): Promise<void> {
@@ -1076,133 +902,39 @@
     refreshHealth()
   }
 
-  // Tag-family curation (feature-tag-families.md, PR-1). Each write refreshes the family list
-  // (inform-don't-block: a failure just leaves the prior list, same as the document writes above).
-  async function createFamily(canonical: string, members: string[]): Promise<void> {
-    try {
-      await createKeywordFamily(canonical, members)
-      await refreshFamilies()
-    } catch {
-      // leave the prior list — the create form keeps its typed values for a retry
-    }
+  // Tag-family curation (feature-tag-families.md, PR-1), glue over `keywords.svelte.ts`: a saved
+  // write refetches the families, which re-points the facet selection (`refreshFamilies`). A
+  // concept's name, forms and graph flag are what the graph counts through (ADR-018, ADR-054), so
+  // every write but a create also drops the graph's latch: the graph's staleness is derived from
+  // the live vocabulary at read time, so the next open re-reads it and names the concept the
+  // graph is now behind on. Dropping the latch instead of refetching: paying for a fetch the user
+  // may never look at is the wrong default. A deleted row may have been a concept too.
+  async function afterFamilyWrite(write: Promise<boolean>, graphToo: boolean): Promise<void> {
+    if (!(await write)) return
+    await refreshFamilies()
+    if (graphToo) invalidateGraph()
   }
-  // A concept's name and forms are what the graph counts through (ADR-054), so a rename or a
-  // member change drops the graph's latch like the flag below does: the next open re-reads the
-  // staleness and names the concept the graph is now behind on.
-  async function renameFamily(familyId: string, canonical: string): Promise<void> {
-    try {
-      await renameKeywordFamily(familyId, canonical)
-      await refreshFamilies()
-      invalidateGraph()
-    } catch {
-      // keep the prior name
-    }
-  }
-  // ADR-018's curation flag, from the view the ADR named as its home. The graph never writes its
-  // own vocabulary (ADR-017 A1) — this is the library side of that line, and the graph finds out
-  // by re-reading it (its "N concepts behind your vocabulary" banner) rather than by being told.
-  async function setFamilyOnGraph(familyId: string, include: boolean): Promise<void> {
-    try {
-      await setFamilyGraphInclude(familyId, include)
-      await refreshFamilies()
-      // The graph's staleness is derived from the live vocabulary at read time, so a graph
-      // already loaded in this session would keep reporting the pre-toggle count until something
-      // refetched it. Drop the latch instead of refetching: re-entering the Graph reloads, and
-      // paying for a fetch the user may never look at is the wrong default.
-      invalidateGraph()
-    } catch {
-      // keep the prior flag — the checkbox re-renders from the refreshed list either way
-    }
-  }
-  async function addFamilyMemberKeyword(familyId: string, keyword: string): Promise<void> {
-    try {
-      await addFamilyMember(familyId, keyword)
-      await refreshFamilies()
-      invalidateGraph()
-    } catch {
-      // keep the prior membership
-    }
-  }
-  async function removeFamilyMemberKeyword(familyId: string, keyword: string): Promise<void> {
-    try {
-      await removeFamilyMember(familyId, keyword)
-      await refreshFamilies()
-      invalidateGraph()
-    } catch {
-      // keep the prior membership
-    }
-  }
-  // ADR-054: how one form of a concept counts. Like the graph flag above, it changes what the
-  // next build counts and nothing the loaded graph shows, so the latch is dropped and the graph
-  // names the concept it is behind on when it is next opened.
-  //
-  // The route answers with the family as it now stands, and a mark moves no membership, so that
-  // one row is replaced in place: refetching every family after each click was a second request
-  // and a re-render of the whole view before the button could show what had been clicked.
-  // Resolves to whether the mark was saved — the row says so when it was not.
+  // A form's mark (ADR-054) replaces its row in place; it changes what the next build counts and
+  // nothing the loaded graph shows, so the latch is dropped like the writes above.
   async function setFamilyFormBreadth(
     familyId: string,
     keyword: string,
     breadth: MemberBreadth,
   ): Promise<boolean> {
-    try {
-      const updated = await setFamilyMemberBreadth(familyId, keyword, breadth)
-      keywordFamilies = keywordFamilies.map((f) => (f.id === updated.id ? updated : f))
-      invalidateGraph()
-      return true
-    } catch {
-      return false
-    }
-  }
-  // What a delete would remove, read before the row asks. `null` on a failure: the row then says
-  // it could not be read, and the choice stays the user's.
-  async function previewFamilyDeletion(familyId: string): Promise<KeywordFamilyDeletion | null> {
-    try {
-      return await describeFamilyDeletion(familyId)
-    } catch {
-      return null
-    }
-  }
-  async function deleteFamily(familyId: string): Promise<void> {
-    try {
-      await deleteKeywordFamily(familyId)
-      await refreshFamilies()
-      // A deleted row may have been a concept: the graph says it is behind on its next open.
-      invalidateGraph()
-    } catch {
-      // keep the prior list
-    }
-  }
-
-  // Detection (PR-2): a zero-LLM proposal pass, run on request (never automatically — the API
-  // call loads/runs the embedder, not something to fire on every Manage-view open).
-  async function runDetectFamilies(): Promise<void> {
-    detecting = true
-    detectError = null
-    try {
-      detectProposals = await detectKeywordFamilies()
-    } catch (e) {
-      detectError = e instanceof Error ? e.message : 'Detection failed.'
-    }
-    detecting = false
-  }
-  function dismissProposal(canonical: string): void {
-    detectProposals = detectProposals.filter((p) => p.canonical !== canonical)
+    const ok = await setFormBreadth(familyId, keyword, breadth)
+    if (ok) invalidateGraph()
+    return ok
   }
   async function acceptProposal(p: KeywordFamilyProposal): Promise<void> {
-    await createFamily(p.canonical, p.members)
+    await afterFamilyWrite(createFamily(p.canonical, p.members), false)
     dismissProposal(p.canonical)
   }
-  function closeManageKeywords(): void {
-    manageKeywordsOpen = false
-    manageFocusId = null
-    manageOnConcepts = false
-    // A write in the view drops the graph's latch (`invalidateGraph`), and the graph is re-read
-    // on entering its tab. Closed over the Graph there is no entering: re-read it now, so the
-    // notice naming what changed is there when the view goes away.
+  // A write in the view drops the graph's latch (`invalidateGraph`), and the graph is re-read on
+  // entering its tab. Closed over the Graph there is no entering: re-read it now, so the notice
+  // naming what changed is there when the view goes away.
+  function leaveManageKeywords(): void {
+    closeManageKeywords()
     if (shell.mode === 'graph' && !graphLoaded() && shell.status === 'ready') void loadConceptGraph()
-    detectProposals = []
-    detectError = null
   }
 </script>
 
@@ -1315,15 +1047,14 @@
   <div class="below">
   <Sidebar
     mode={shell.mode}
-    {documents}
-    {folders}
+    documents={library.list}
+    folders={folders.list}
     {libraryCollection}
     bind:libraryQuery
     open={shell.sidebarOpen}
     {chatRail}
     {graphRail}
     onSelectCollection={selectCollection}
-    onManageFolders={openManageFolders}
     onOpenTaxonomy={() => openTaxonomyView()}
     onClose={() => (shell.sidebarOpen = false)}
   />
@@ -1347,8 +1078,8 @@
       {#if shell.mode === 'library'}
         <Library
           {sourceJump}
-          {documents}
-          {documentsLoaded}
+          documents={library.list}
+          documentsLoaded={library.loaded}
           {visibleDocs}
           {facetList}
           {keywordsOf}
@@ -1358,21 +1089,7 @@
           {libraryDocId}
           {libraryQuery}
           {libraryKeywords}
-          {folders}
-          {libSelectMode}
-          {libSelected}
-          onReingestDoc={(parts) =>
-            openReingest(
-              libraryDocId ? [libraryDocId] : [],
-              openDoc?.title ?? openDoc?.filename ?? 'This document',
-              parts,
-            )}
-          onReingestSelection={() =>
-            openReingest(
-              libSelected,
-              libSelected.length === 1 ? '1 document' : `${libSelected.length} documents`,
-            )}
-          {libAddMenuOpen}
+          folders={folders.list}
           onLibraryBack={libraryBack}
           onOpenDocument={openDocument}
           onSearchAll={searchAll}
@@ -1381,24 +1098,13 @@
           onToggleKeywordFacet={toggleKeywordFacet}
           onClearKeywordFacets={clearKeywordFacets}
           onOpenKeywordFilter={() => (keywordFilterOpen = true)}
-          onEnterSelectMode={enterLibSelect}
-          onExitSelectMode={exitLibSelect}
-          onPickDocument={pickLibDoc}
-          onSetAddMenuOpen={(open) => (libAddMenuOpen = open)}
-          onAddSelectionToFolder={addSelectionToFolder}
-          onSetSelection={(ids) => (libSelected = ids)}
-          onOpenManageFolders={openManageFolders}
-          onEditDoc={(id) => (editingDocId = id)}
-          onDeleteDoc={(id) => (deletingDocId = id)}
-          onRevealDoc={revealDoc}
-          onManageFoldersForDoc={openManageFoldersForDoc}
         />
       {:else if shell.mode === 'graph'}
         <Graph
           graph={graph.data}
           loading={graph.loading || (shell.status !== 'ready' && !graph.data)}
           error={graph.error}
-          {documents}
+          documents={library.list}
           rebuildState={graph.rebuildState}
           selectedId={graph.selectedId}
           showUnderConnected={graph.showUnderConnected}
@@ -1420,7 +1126,7 @@
           {viewing}
           {viewedConvo}
           {resumedHistory}
-          {folders}
+          folders={folders.list}
           bind:chatScopeFolderId
           {hasRetrievalOverride}
           {sampleQuestions}
@@ -1453,11 +1159,6 @@
     onClose={() => (shell.showSettings = false)}
     onCorpusChanged={refreshHealth}
     bind:overrides={chat.overrides}
-    onReingest={(ids, label) => {
-      // Settings re-runs only from the letter-spacing list, which takes effect through the text.
-      shell.showSettings = false
-      openReingest(ids, label, ['text'])
-    }}
   />
 {/if}
 
@@ -1486,18 +1187,18 @@
 {#if editingDoc}
   <EditMetadata
     doc={editingDoc}
-    onSave={saveDocMeta}
-    onReset={resetDocMeta}
-    onClose={() => (editingDocId = null)}
+    onSave={saveMetadata}
+    onReset={resetMetadata}
+    onClose={closeEditMetadata}
   />
 {/if}
 
 {#if deletingDoc}
   <DeleteDocument
     doc={deletingDoc}
-    busy={deleteBusy}
+    busy={library.deleteBusy}
     onConfirm={confirmDelete}
-    onClose={() => (deletingDocId = null)}
+    onClose={closeDeleteDocument}
   />
 {/if}
 
@@ -1531,63 +1232,62 @@
     docCounts={facetDocCounts}
     previewDocs={visibleDocs}
     selectedCount={libraryKeywords.length}
-    families={keywordFamilies}
+    families={keywords.families}
     onToggle={toggleKeywordFacet}
     onClear={clearKeywordFacets}
     onClose={() => (keywordFilterOpen = false)}
-    onManage={() => (manageKeywordsOpen = true)}
   />
 {/if}
 
-{#if manageFoldersOpen}
+{#if folders.manageOpen}
   <ManageFolders
-    {folders}
-    {documents}
-    selectedId={manageFolderId}
-    initialDocQuery={manageFolderQuery}
-    error={folderError}
+    folders={folders.list}
+    documents={library.list}
+    selectedId={folders.manageId}
+    initialDocQuery={folders.manageQuery}
+    error={folders.error}
     onCreate={createLibraryFolder}
     onRename={renameLibraryFolder}
-    onDelete={deleteLibraryFolder}
+    onDelete={leaveAndDeleteFolder}
     onAddDocuments={addDocsToFolder}
     onRemoveDocument={removeDocFromFolder}
-    onSelect={(id) => (manageFolderId = id)}
-    onClose={() => (manageFoldersOpen = false)}
+    onSelect={(id) => (folders.manageId = id)}
+    onClose={closeManageFolders}
   />
 {/if}
 
-{#if reingestTargets !== null}
+{#if rerun.targets !== null}
   <RerunIngestion
-    documentIds={reingestTargets}
-    label={reingestLabel}
-    preselected={reingestParts}
-    onClose={() => (reingestTargets = null)}
+    documentIds={rerun.targets}
+    label={rerun.label}
+    preselected={rerun.parts}
+    onClose={closeRerun}
     onFinished={() => void afterReingest()}
   />
 {/if}
 
-{#if manageKeywordsOpen}
+{#if keywords.manageOpen}
   <ManageKeywords
-    families={keywordFamilies}
-    focusId={manageFocusId}
-    openOnConcepts={manageOnConcepts}
+    families={keywords.families}
+    focusId={keywords.focusId}
+    openOnConcepts={keywords.onConcepts}
     {allKeywords}
     keywordDocCounts={rawKeywordDocCounts}
-    proposals={detectProposals}
-    {detecting}
-    {detectError}
-    onCreate={createFamily}
-    onRename={renameFamily}
-    onSetOnGraph={setFamilyOnGraph}
-    onAddMember={addFamilyMemberKeyword}
-    onRemoveMember={removeFamilyMemberKeyword}
+    proposals={keywords.proposals}
+    detecting={keywords.detecting}
+    detectError={keywords.detectError}
+    onCreate={(canonical, members) => afterFamilyWrite(createFamily(canonical, members), false)}
+    onRename={(id, canonical) => afterFamilyWrite(renameFamily(id, canonical), true)}
+    onSetOnGraph={(id, include) => afterFamilyWrite(setFamilyOnGraph(id, include), true)}
+    onAddMember={(id, keyword) => afterFamilyWrite(addFamilyMemberKeyword(id, keyword), true)}
+    onRemoveMember={(id, keyword) => afterFamilyWrite(removeFamilyMemberKeyword(id, keyword), true)}
     onSetBreadth={setFamilyFormBreadth}
     previewDelete={previewFamilyDeletion}
-    onDelete={deleteFamily}
+    onDelete={(id) => afterFamilyWrite(deleteFamily(id), true)}
     onDetect={runDetectFamilies}
     onAcceptProposal={acceptProposal}
     onDismissProposal={dismissProposal}
-    onClose={closeManageKeywords}
+    onClose={leaveManageKeywords}
   />
 {/if}
 
@@ -1608,7 +1308,7 @@
     proposals={taxonomy.proposals}
     loading={taxonomy.loading}
     error={taxonomy.error}
-    {documents}
+    documents={library.list}
     concepts={taxonomy.concepts}
     focusConceptId={taxonomy.focusConceptId}
     onSelectField={selectTaxonomyField}

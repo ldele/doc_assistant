@@ -8,30 +8,35 @@
   // Every change writes the ignore list only; it takes effect when this document's text is
   // re-run, and the row says so until then.
   import { untrack } from 'svelte'
-  import type { DocumentSpacing, SpacingRow } from '../../lib/core/types'
+  import type { DocumentSpacing, LibraryDocument, SpacingRow } from '../../lib/core/types'
   import { getDocumentSpacing, keepRunSpaced, removeRunEntry, setKeepAllSpaced, sourcePageUrl } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
   import EditSpacing from './EditSpacing.svelte'
   import { markRemovedSpaces, rowCaption, shownText, splitRows } from '../../lib/library/spacing'
+  import { rerunLabel } from '../../lib/library/reingest'
+  import { openRerun } from '../../lib/library/reingest.svelte'
 
   let {
     docId,
     listed,
     onShowPage,
-    onReingest,
     onOpenSettings,
   }: {
     docId: string
-    /** This document's row in the library list. A new one means the list was refetched, which a
-     *  finished re-run does, so what this block read may be out of date. */
-    listed: unknown
+    /** This document's row in the library list: the name *Re-run text now…* gives the dialog. A
+     *  new one means the list was refetched, which a finished re-run does, so what this block read
+     *  may be out of date. */
+    listed: LibraryDocument | null
     /** Open the source pane at this page. */
     onShowPage: (page: number) => void
-    /** Open the re-run picker for this document. */
-    onReingest: () => void
     /** Open Settings at its Documents category, where the whole list is. */
     onOpenSettings: () => void
   } = $props()
+
+  // Re-runs this document's text, which is where every change below takes effect.
+  function rerunText(): void {
+    openRerun([docId], rerunLabel(listed), ['text'])
+  }
 
   let data = $state<DocumentSpacing | null>(null)
   let error = $state<string | null>(null)
@@ -105,7 +110,7 @@
     {#if pending > 0}
       <p class="pendingbar" role="status">
         {pending} {pending === 1 ? 'change waits' : 'changes wait'} for a re-run of this document's text.
-        <button class="ghost small" type="button" onclick={onReingest}>Re-run text now…</button>
+        <button class="ghost small" type="button" onclick={rerunText}>Re-run text now…</button>
       </p>
     {/if}
     {#if actionError}<p class="err" role="alert">{actionError}</p>{/if}
@@ -190,7 +195,7 @@
       >
         {data.keep_all ? 'Stop keeping every run spaced' : 'Keep every run spaced'}
       </button>
-      <button class="ghost small" type="button" onclick={onReingest}>
+      <button class="ghost small" type="button" onclick={rerunText}>
         <Icon name="rotate-ccw" size={13} /> Re-run text now…
       </button>
       <span class="spacer"></span>

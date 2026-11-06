@@ -27,7 +27,6 @@
     docId,
     doc,
     onOpenDocument,
-    onReingest,
     sourceJump = null,
   }: {
     docId: string | null
@@ -37,10 +36,6 @@
     /** A request from elsewhere in the app — a chat citation — to open the source pane at a
      *  page. `nonce` is what lets the same document+page be asked for twice in a row. */
     sourceJump?: { docId: string; page: number | null; nonce: number } | null
-    /** Open the re-run picker for this document (ADR-048). App owns the dialog, as it owns every
-     *  other overlay — so the grid's Select mode reuses the same one rather than a second copy.
-     *  `parts` are ticked on open. */
-    onReingest: (parts: string[]) => void
   } = $props()
 
   // The source pane (ROADMAP 18). Closed by default: it is a second read of the same document,
@@ -132,7 +127,7 @@
   {#if !docId}
     <p class="hint">Select a document from the sidebar to read it.</p>
   {:else}
-    <PageIndex blocks={BLOCKS} bind:viewerOpen bind:viewerPage {onReingest} />
+    <PageIndex blocks={BLOCKS} {docId} {doc} bind:viewerOpen bind:viewerPage />
 
     <div class="split" bind:this={splitEl}>
     <div class="scroller">
@@ -146,7 +141,6 @@
         viewerOpen = true
         viewerPage = page
       }}
-      onReingest={() => onReingest(['text'])}
       onOpenSettings={() => {
         shell.settingsSection = 'documents'
         shell.settingsFocus = 'spacing'

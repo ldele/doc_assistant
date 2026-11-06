@@ -17,6 +17,7 @@
     sameCollection,
     typeGroups,
   } from '../lib/library/library'
+  import { openManageFolders } from '../lib/library/folders.svelte'
   import Icon from './Icon.svelte'
 
   let {
@@ -29,7 +30,6 @@
     chatRail = null,
     graphRail = null,
     onSelectCollection,
-    onManageFolders,
     onOpenTaxonomy,
     onClose,
   }: {
@@ -42,7 +42,6 @@
     chatRail?: Snippet | null
     graphRail?: Snippet | null
     onSelectCollection: (c: LibraryCollection) => void
-    onManageFolders: () => void
     onOpenTaxonomy: () => void
     onClose?: () => void
   } = $props()
@@ -111,7 +110,7 @@
 
         <div class="section-head-row">
           <p class="section-header">Folders</p>
-          <button class="managelink" onclick={onManageFolders} type="button">Manage…</button>
+          <button class="managelink" onclick={openManageFolders} type="button">Manage…</button>
         </div>
         {#if folders.length === 0}
           <p class="tree-empty">No folders yet — create one in Manage…</p>

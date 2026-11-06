@@ -7,13 +7,19 @@
   //
   // The two bars are one file because they open the same dropdown menu (sort; *Add to folder…*):
   // its style is about 40 lines of scoped CSS that two files would each carry (ADR-064 choice 6).
-  // Library hands in where the user is and the select mode's state, and gets every action back
-  // as a callback; the only state written here is `libPrefs` (the sort menu, the layout).
+  // Library hands in where the user is and gets its navigation back as callbacks. The state
+  // written here is `libPrefs` (the sort menu, the layout) and the select mode's, in
+  // `documents.svelte.ts`; *Add to folder…* and *Re-run…* act through `folders.svelte.ts` and
+  // `reingest.svelte.ts` (ADR-064 choice 5).
   import Icon from '../../shell/Icon.svelte'
   import { selectAllLabel, selectAllOrNone } from '../../lib/shell/selection'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from '../../lib/library/prefs.svelte'
   import { accept, canAccept, openChooser, unavailableReason } from '../../lib/library/accept.svelte'
   import { collectionLabel, docLabel, type LibraryCollection } from '../../lib/library/library'
+  import { selectionLabel } from '../../lib/library/reingest'
+  import { openRerun } from '../../lib/library/reingest.svelte'
+  import { enterSelectMode, exitSelectMode, library } from '../../lib/library/documents.svelte'
+  import { addSelectionToFolder, openManageFolders } from '../../lib/library/folders.svelte'
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
 
   interface Props {
@@ -31,33 +37,16 @@
     /** The layout toggle's *Summary*: where it is offered, and whether it is the layout shown. */
     summaryScope: { folder: string | null } | null
     showSummary: boolean
-    // --- batch add-to-folder select mode
-    libSelectMode: boolean
-    libSelected: string[]
-    libAddMenuOpen: boolean
     // --- navigation
     onLibraryBack: () => void
     onSelectCollection: (c: LibraryCollection) => void
     onSetDocId: (id: string | null) => void
-    // --- select mode
-    onEnterSelectMode: () => void
-    onExitSelectMode: () => void
-    onSetAddMenuOpen: (open: boolean) => void
-    onAddSelectionToFolder: (folderId: string) => void
-    /** Replace the selection: what *Select all* / *Select none* sets. */
-    onSetSelection: (ids: string[]) => void
-    onOpenManageFolders: () => void
-    /** Open the re-run picker for the selection (ROADMAP 21). */
-    onReingestSelection: () => void
   }
   const {
     documents, visibleDocs, openDoc, folderNames,
     libraryCollection, libraryDocId, folders,
     summaryScope, showSummary,
-    libSelectMode, libSelected, libAddMenuOpen,
     onLibraryBack, onSelectCollection, onSetDocId,
-    onEnterSelectMode, onExitSelectMode, onSetAddMenuOpen,
-    onAddSelectionToFolder, onSetSelection, onOpenManageFolders, onReingestSelection,
   }: Props = $props()
 </script>
 
@@ -149,7 +138,7 @@
           class="summarytoggle"
           class:active={showSummary}
           onclick={() => {
-            if (libSelectMode) onExitSelectMode()
+            if (library.selectMode) exitSelectMode()
             libPrefs.summaryOpen = true
           }}
           aria-pressed={showSummary}
@@ -163,9 +152,9 @@
     {#if documents.length > 0 && !showSummary}
       <button
         class="selecttoggle"
-        class:active={libSelectMode}
-        aria-pressed={libSelectMode}
-        onclick={() => (libSelectMode ? onExitSelectMode() : onEnterSelectMode())}
+        class:active={library.selectMode}
+        aria-pressed={library.selectMode}
+        onclick={() => (library.selectMode ? exitSelectMode() : enterSelectMode())}
         title="Select documents to add to a folder"
         type="button"
       >
@@ -190,38 +179,39 @@
   {/if}
 </div>
 
-{#if libSelectMode && libraryDocId === null}
+{#if library.selectMode && libraryDocId === null}
   <!-- Action roles (ADR-063): the selection helper is quiet, the actions are plain, and Done
        ends the mode, so it sits apart at the trailing end in the primary style. "Clear" read
        as a possible delete (the user, 2026-11-05); it only ever emptied the selection, which
        is what *Select none* now says. -->
   <div class="selectbar" role="toolbar" aria-label="Selection actions">
-    <span class="selcount">{libSelected.length} selected</span>
+    <span class="selcount">{library.selected.length} selected</span>
     <button
       class="btn btn-quiet"
       disabled={visibleDocs.length === 0}
-      onclick={() => onSetSelection(selectAllOrNone(visibleDocs.map((d) => d.id), libSelected))}
+      onclick={() =>
+        (library.selected = selectAllOrNone(visibleDocs.map((d) => d.id), library.selected))}
       type="button"
     >
-      {selectAllLabel(libSelected)}
+      {selectAllLabel(library.selected)}
     </button>
     <span class="selsep" aria-hidden="true"></span>
     <div class="addwrap">
       <button
         class="btn"
-        disabled={libSelected.length === 0}
+        disabled={library.selected.length === 0}
         aria-haspopup="menu"
-        aria-expanded={libAddMenuOpen}
-        onclick={() => onSetAddMenuOpen(!libAddMenuOpen)}
+        aria-expanded={library.addMenuOpen}
+        onclick={() => (library.addMenuOpen = !library.addMenuOpen)}
         type="button"
       >
         <Icon name="folder" size={13} /> Add to folder…
       </button>
-      {#if libAddMenuOpen}
-        <div class="sort-backdrop" onclick={() => onSetAddMenuOpen(false)} role="presentation"></div>
+      {#if library.addMenuOpen}
+        <div class="sort-backdrop" onclick={() => (library.addMenuOpen = false)} role="presentation"></div>
         <div class="sortmenu" role="menu">
           {#each folders as f (f.id)}
-            <button class="sortitem" role="menuitem" onclick={() => onAddSelectionToFolder(f.id)} type="button">
+            <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button">
               <span class="tick"><Icon name="folder" size={13} /></span>
               {f.name}
             </button>
@@ -230,8 +220,8 @@
               class="sortitem"
               role="menuitem"
               onclick={() => {
-                onSetAddMenuOpen(false)
-                onOpenManageFolders()
+                library.addMenuOpen = false
+                openManageFolders()
               }}
               type="button"
             >
@@ -247,13 +237,13 @@
          cannot drift between the two entry points. -->
     <button
       class="btn"
-      disabled={libSelected.length === 0}
-      onclick={() => onReingestSelection()}
+      disabled={library.selected.length === 0}
+      onclick={() => openRerun(library.selected, selectionLabel(library.selected.length))}
       type="button"
     >
       <Icon name="rotate-ccw" size={13} /> Re-run…
     </button>
-    <button class="btn btn-primary seldone" onclick={onExitSelectMode} type="button">Done</button>
+    <button class="btn btn-primary seldone" onclick={exitSelectMode} type="button">Done</button>
   </div>
 {/if}
 

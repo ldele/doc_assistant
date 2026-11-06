@@ -4,8 +4,9 @@
   // drilled-in document. The bars are `HeaderBar`; the body here is the summary, the empty
   // Library (the drop target), the filter strip with the grid or list, and the no-match state.
   //
-  // Presentational by design. It reads its *preferences* from `library/prefs.svelte.ts` and its
-  // pure helpers from `library.ts`, but everything else arrives as an **explicit prop contract**.
+  // Presentational by design. It reads its *preferences* from `library/prefs.svelte.ts`, the
+  // select mode from `library/documents.svelte.ts` (ADR-064 choice 5) and its pure helpers from
+  // `library.ts`, but everything else arrives as an **explicit prop contract**.
   // That is deliberate: the derived facet pipeline (`facetList`, `keywordsOf`) depends on the
   // keyword-family state, which App owns because a family write also re-points the live facet
   // selection across three domains (PR-2.5 D5). Rather than break that boundary to shorten this
@@ -18,6 +19,7 @@
   import Summary from './Summary.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
   import { libPrefs } from '../../lib/library/prefs.svelte'
+  import { library, pickDocument } from '../../lib/library/documents.svelte'
   import { accept, canAccept, openChooser, unavailableReason } from '../../lib/library/accept.svelte'
   import { formatLine, limitPhrase } from '../../lib/library/formats'
   import {
@@ -48,10 +50,6 @@
     libraryQuery: string
     libraryKeywords: string[]
     folders: LibraryFolder[]
-    // --- batch add-to-folder select mode
-    libSelectMode: boolean
-    libSelected: string[]
-    libAddMenuOpen: boolean
     // --- navigation
     onLibraryBack: () => void
     onOpenDocument: (id: string) => void
@@ -62,38 +60,15 @@
     onToggleKeywordFacet: (v: string) => void
     onClearKeywordFacets: () => void
     onOpenKeywordFilter: () => void
-    // --- select mode
-    onEnterSelectMode: () => void
-    onExitSelectMode: () => void
-    /** A click that selects; `shift` ranges from the last pick (`shell/selection.ts`). */
-    onPickDocument: (id: string, shift: boolean) => void
-    onSetAddMenuOpen: (open: boolean) => void
-    onAddSelectionToFolder: (folderId: string) => void
-    /** Replace the selection: what *Select all* / *Select none* sets. */
-    onSetSelection: (ids: string[]) => void
-    onOpenManageFolders: () => void
-    // --- per-document actions
-    onEditDoc: (id: string) => void
-    onDeleteDoc: (id: string) => void
-    /** Open the re-run picker for the open document (ROADMAP 20), with these parts ticked. */
-    onReingestDoc: (parts: string[]) => void
-    /** Open the same picker for the grid selection (ROADMAP 21). */
-    onReingestSelection: () => void
-    onRevealDoc: (id: string) => void
-    onManageFoldersForDoc: (id: string) => void
   }
   const {
     sourceJump = null,
     documents, documentsLoaded, visibleDocs, facetList, keywordsOf, openDoc,
     libraryCollection, libraryDocId, libraryQuery, libraryKeywords, folders,
-    libSelectMode, libSelected, libAddMenuOpen,
     folderNames,
     onLibraryBack, onOpenDocument, onSearchAll,
     onSelectCollection, onSetDocId,
     onToggleKeywordFacet, onClearKeywordFacets, onOpenKeywordFilter,
-    onEnterSelectMode, onExitSelectMode, onPickDocument, onSetAddMenuOpen,
-    onAddSelectionToFolder, onSetSelection, onOpenManageFolders,
-    onEditDoc, onDeleteDoc, onReingestDoc, onReingestSelection, onRevealDoc, onManageFoldersForDoc,
   }: Props = $props()
 
   // The Summary layout (ROADMAP 112) covers the whole library or one folder: the collections the
@@ -126,19 +101,9 @@
       {folders}
       {summaryScope}
       {showSummary}
-      {libSelectMode}
-      {libSelected}
-      {libAddMenuOpen}
       {onLibraryBack}
       {onSelectCollection}
       {onSetDocId}
-      {onEnterSelectMode}
-      {onExitSelectMode}
-      {onSetAddMenuOpen}
-      {onAddSelectionToFolder}
-      {onSetSelection}
-      {onOpenManageFolders}
-      {onReingestSelection}
     />
 
     {#if libraryDocId !== null}
@@ -146,7 +111,6 @@
         docId={libraryDocId}
         doc={openDoc}
         onOpenDocument={onOpenDocument}
-        onReingest={onReingestDoc}
         {sourceJump}
       />
     {:else}
@@ -236,14 +200,10 @@
               view={libPrefs.view}
               activeKeywords={libraryKeywords}
               {keywordsOf}
-              selectMode={libSelectMode}
-              selectedIds={libSelected}
-              onPick={onPickDocument}
+              selectMode={library.selectMode}
+              selectedIds={library.selected}
+              onPick={(id, shift) => pickDocument(visibleDocs.map((d) => d.id), id, shift)}
               onOpenDocument={onOpenDocument}
-              onEditMetadata={onEditDoc}
-              onReveal={onRevealDoc}
-              onAddToFolder={onManageFoldersForDoc}
-              onDelete={onDeleteDoc}
             />
           {/if}
         {/if}

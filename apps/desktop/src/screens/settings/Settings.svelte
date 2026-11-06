@@ -50,13 +50,10 @@
     onClose,
     onCorpusChanged,
     overrides = $bindable(),
-    onReingest = () => {},
   }: {
     onClose: () => void
     onCorpusChanged: () => void
     overrides: RagOverrides
-    /** Open the re-run picker for these documents (App owns the dialog). */
-    onReingest?: (documentIds: string[], label: string) => void
   } = $props()
 
   // Which category the drawer shows (2026-08-30). The panel is a rail + one pane rather than one
@@ -381,7 +378,6 @@
             onFolderEdit={clearFeedback}
             onOpenAnotherLibrary={chooseLibrary}
             onUseOwnLibrary={() => (confirmOwnLibrary = true)}
-            {onReingest}
             {onClose}
           />
         {:else if activeSection === 'models'}

@@ -210,7 +210,8 @@ export function metadataRows(s: CollectionSummary): CardRow[] {
         kind: 'line',
         key: 'metadata-not-read',
         title: `Not read for ${plural(n, 'document', 'documents')}`,
-        detail: 'Indexing does not read metadata yet. Re-run… > Metadata reads it from the first page.',
+        detail:
+          'Indexing reads it for new or changed documents only. For documents indexed earlier, Re-run… > Metadata reads it from the first page.',
       },
     ]
   }

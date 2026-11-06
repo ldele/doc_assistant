@@ -254,7 +254,7 @@
               {#each metaRows as r (r.key)}{@render cardRow(r)}{/each}
             </div>
             <p class="foot">
-              Indexing does not read these. Re-run… &gt; Metadata reads them from the first page.
+              Indexing fills them for new or changed documents only. For documents indexed earlier, Re-run… &gt; Metadata reads them from the first page.
               {#if s.metadata.implausible_year > 0}
                 {fmt(s.metadata.implausible_year)}
                 {s.metadata.implausible_year === 1 ? 'year is' : 'years are'} set but cannot be a publication year.

@@ -42,6 +42,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (8) — The library summary stops saying indexing reads no metadata
+
+**What changed.** The *Metadata* card's two lines (`lib/library/summary.ts`,
+`screens/library/Summary.svelte`) now say indexing fills metadata for new or changed documents
+only, and that *Re-run… > Metadata* reads it for documents indexed earlier. ROADMAP 112's
+"Exposed" note says the same. The merge of ROADMAP 110 (`5ed8bf5`) also gave the title bar's three
+window buttons their hover text, because `ui-rules.test.ts` check 2 failed without it: *Hide the
+window in the taskbar*, *Make the window fill the screen* / *Return the window to its earlier
+size*, *Quit Provenote*.
+
+**Why.** Since `3a1966f` (merged `1123b3d`) indexing fills a new document's blank title, authors,
+year and DOI, so "Indexing does not read metadata yet" was wrong for every document indexed after
+it. It stays true for documents indexed before, and nothing re-reads those on its own.
+
+**Rejected.** Naming a version in the copy ("since 0.7.3"): the reader of the card knows when a
+document was added, not which build added it.
+
+**Opens.** ADR-065 (the title bar) is cited by the code but not yet written; the window buttons'
+texts belong in it.
+
 ## 2026-11-06 (7) — ROADMAP 110 (d): one dialog frame, and no colour outside the tokens
 
 **What changed.** `shell/Dialog.svelte` is the one dialog frame: backdrop, frame, *Esc*, focus in

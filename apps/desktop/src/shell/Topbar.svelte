@@ -12,6 +12,7 @@
   import { GRAPH_TAB_ENABLED } from '../lib/core/features'
   import { canAccept, openChooser, unavailableReason } from '../lib/library/accept.svelte'
   import appMark from '../assets/brand/app-mark.png'
+  import WindowControls from './WindowControls.svelte'
 
   interface Props {
     canBack: boolean
@@ -37,9 +38,12 @@
   }: Props = $props()
 </script>
 
-<div class="topbar">
+<!-- The top bar is the window's title bar on Windows (ADR-065): its empty space drags the window and
+     a double-click maximises or restores it ("deep": anywhere in the bar; buttons and tabs never drag). -->
+<div class="topbar" data-tauri-drag-region="deep">
   <div class="tb-cluster">
-    <div class="menuwrap">
+    <!-- Never a drag region: the open menu's backdrop covers the window, and a press on it closes the menu. -->
+    <div class="menuwrap" data-tauri-drag-region="false">
       <button
         class="tb-btn"
         class:on={shell.appMenuOpen}
@@ -175,16 +179,20 @@
       <Icon name="settings" size={17} />
     </button>
   </div>
+  <WindowControls />
 </div>
 
 <style>
   /* ---- top toolbar (browser-chrome shell) ---- */
   .topbar {
+    /* Read by WindowControls to sit flush with the window's edges. */
+    --tb-pad-y: 0.45rem;
+    --tb-pad-x: 0.7rem;
     flex: none;
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: 0.45rem 0.7rem;
+    padding: var(--tb-pad-y) var(--tb-pad-x);
     border-bottom: 1px solid var(--border);
     background: var(--bg);
   }

@@ -83,6 +83,12 @@
   --scrollbar-thumb: color-mix(in srgb, var(--fg) 20%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--fg) 38%, transparent);
 
+  /* The window's Close button on hover (shell/WindowControls.svelte, ADR-065): the platform's own
+     caption red, the same in both themes, as the platform draws it. It means "this closes the
+     window", not ADR-063's danger role, which is why it is not --danger. White on it is 5.6:1. */
+  --caption-close: #c42b1c;
+  --caption-close-fg: #ffffff;
+
   font-family: var(--font-sans);
   /* 17px since 0.7.0 (15px before): the walkthrough found buttons, pills and panels too small
      to read and hit for weak eyesight. Sizes are in rem, so this one value scales them all. */

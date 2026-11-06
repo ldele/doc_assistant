@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window - opening the file/folder picker for Add documents (AD1). The backend is started from Rust (lib.rs), which capabilities do not govern, so the window has no shell permission at all (KI-73). `dialog:allow-open` only: the plugin's `dialog:default` would also grant message/save, which nothing uses.",
+  "description": "Default capability for the main window - opening the file/folder picker for Add documents (AD1), and the app's own title bar on Windows (ADR-065): drag, minimise, maximise/restore and close the window, nothing else about it. The backend is started from Rust (lib.rs), which capabilities do not govern, so the window has no shell permission at all (KI-73). `dialog:allow-open` only: the plugin's `dialog:default` would also grant message/save, which nothing uses. Asking whether the window is maximised or framed, and the double-click on the drag region, are already in `core:default`.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
   ]
 }

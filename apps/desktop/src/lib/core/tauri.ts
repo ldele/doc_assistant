@@ -33,10 +33,27 @@ interface TauriCoreApi {
   invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
 }
 
+/** The slice of Tauri's `Window` class the app's own title bar uses (ADR-065). Methods, so they
+ *  are always called on the window object, never detached. */
+interface TauriWindowHandle {
+  minimize: () => Promise<void>
+  toggleMaximize: () => Promise<void>
+  close: () => Promise<void>
+  isMaximized: () => Promise<boolean>
+  isDecorated: () => Promise<boolean>
+  onResized: (handler: () => void) => Promise<() => void>
+  onFocusChanged: (handler: (e: { payload: boolean }) => void) => Promise<() => void>
+}
+
+interface TauriWindowApi {
+  getCurrentWindow: () => TauriWindowHandle
+}
+
 interface TauriGlobal {
   core?: TauriCoreApi
   event?: TauriEventApi
   dialog?: TauriDialogApi
+  window?: TauriWindowApi
 }
 
 function api(): TauriGlobal | null {
@@ -230,4 +247,96 @@ export function clearLibrarySwitch(): void {
   } catch {
     // Nothing to clear.
   }
+}
+
+// ---- The window's own title bar (ADR-065) ---------------------------------------------------
+//
+// On Windows the window has no native frame (`tauri.windows.conf.json`), so the top bar draws
+// minimise, maximise/restore and close itself (`shell/WindowControls.svelte`), and its empty space
+// drags the window (`data-tauri-drag-region`, handled by Tauri's own injected script). Everything
+// here degrades like the rest of this module: in a browser, or in a window that keeps its native
+// frame (macOS, Linux), there is nothing to draw and every call is a no-op.
+
+function currentWindow(): TauriWindowHandle | null {
+  const get = api()?.window?.getCurrentWindow
+  if (typeof get !== 'function') return null
+  try {
+    return get()
+  } catch {
+    return null
+  }
+}
+
+/** True only when the app must draw its own window controls: inside the Tauri window, and the
+ *  window has no native frame. A refused or failed question answers false: the native frame, if
+ *  any, then stays the way out, and no control is drawn that could not work. */
+export async function drawsOwnWindowControls(): Promise<boolean> {
+  const w = currentWindow()
+  if (!w) return false
+  try {
+    return (await w.isDecorated()) === false
+  } catch {
+    return false
+  }
+}
+
+/** Whether the window fills the screen (maximised), or false when that cannot be asked. */
+export async function isWindowMaximized(): Promise<boolean> {
+  const w = currentWindow()
+  if (!w) return false
+  try {
+    return (await w.isMaximized()) === true
+  } catch {
+    return false
+  }
+}
+
+// A refused window command changes nothing on screen, which is the honest result: no try/catch at
+// the caller, and no unhandled rejection in the console.
+const ignore = (): void => {}
+
+export function minimizeWindow(): void {
+  currentWindow()?.minimize().catch(ignore)
+}
+
+export function toggleMaximizeWindow(): void {
+  currentWindow()?.toggleMaximize().catch(ignore)
+}
+
+/** Close the window the way the native close button does: the shell's exit then ends the
+ *  backend (`lib.rs`, `RunEvent::Exit`). */
+export function closeWindow(): void {
+  currentWindow()?.close().catch(ignore)
+}
+
+/** Subscribe to a Tauri window event; same always-returns-an-unsubscribe contract as above. */
+function subscribe(start: (w: TauriWindowHandle) => Promise<() => void>): () => void {
+  const w = currentWindow()
+  if (!w) return () => {}
+  let stop: (() => void) | null = null
+  let cancelled = false
+  start(w).then(
+    (unlisten) => {
+      if (cancelled) unlisten()
+      else stop = unlisten
+    },
+    ignore,
+  )
+  return () => {
+    cancelled = true
+    stop?.()
+    stop = null
+  }
+}
+
+/** Called after every resize, which is how maximise and restore (by any route: a button, a
+ *  double-click, Win+Up, a drag to the screen's edge) reach the maximise button's icon. */
+export function onWindowResized(handler: () => void): () => void {
+  return subscribe((w) => w.onResized(() => handler()))
+}
+
+/** Called when the window gains or loses the system's focus (not the page's: a focused frame
+ *  inside the page still counts as the window being active). */
+export function onWindowFocusChanged(handler: (focused: boolean) => void): () => void {
+  return subscribe((w) => w.onFocusChanged((e) => handler(e.payload === true)))
 }

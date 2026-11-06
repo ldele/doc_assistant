@@ -4,9 +4,10 @@ The desktop renders LLM output through ``marked`` into ``{@html}``
 (``apps/desktop/src/screens/chat/Markdown.svelte``). Three walls contain it: DOMPurify on that one
 sink (S-3), the webview's Content-Security-Policy in ``tauri.conf.json`` — sent by the dev server
 too, since Tauri injects it only into the built app — and a capability file that grants the page
-almost nothing (one sidecar spawn, one file-open dialog). Each is an edit nobody would think of as
-a security change, and neither ``svelte-check`` nor ``node:test`` reads the JSON or the Vite
-config — so a loosened policy, an unsanitised sink or a broadened capability would ship silently.
+almost nothing (one file-open dialog; moving, minimising, maximising and closing its own window).
+Each is an edit nobody would think of as a security change, and neither ``svelte-check`` nor
+``node:test`` reads the JSON or the Vite config — so a loosened policy, an unsanitised sink or a
+broadened capability would ship silently.
 These tests make that a red CI run.
 
 Threat model and the reasoning: ``docs/security.md``.
@@ -77,7 +78,16 @@ def test_capabilities_are_exactly_the_documented_set() -> None:
     # Add a permission here only together with the docs/security.md row that justifies it.
     # No shell permission since KI-73: the backend is started from Rust by path, which
     # capabilities do not govern, so the window never needed to run anything.
-    assert names == {"core:default", "dialog:allow-open"}, names
+    # The four window commands are the app's own title bar on Windows (ADR-065): they move,
+    # minimise, maximise/restore and close the window, and read nothing.
+    assert names == {
+        "core:default",
+        "dialog:allow-open",
+        "core:window:allow-start-dragging",
+        "core:window:allow-minimize",
+        "core:window:allow-toggle-maximize",
+        "core:window:allow-close",
+    }, names
     assert sidecars == [], sidecars
 
 

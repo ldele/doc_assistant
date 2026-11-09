@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 · class: append-only -->
+<!-- status: active · updated: 2026-11-09 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -41,6 +41,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-09 — The README leads with the product; the full limitations move to `docs/limitations.md`
+
+**What changed.** `README.md` goes from 365 lines to about 190. It opens on a one-line pitch, the
+demo and a download link, then *Why Provenote*, *What you can do with it*, *Get it*, one benchmark
+table (*Measured, not asserted*), *How it works*, a six-item *Limitations* list, a short *Status*
+and the documentation table. Three badges are new (CI, latest release, licence). The Limitations
+section moves verbatim, links re-based, to the new `docs/limitations.md`. The README's *How long
+does indexing take?* section is removed: `docs/performance.md` § 1 already holds each of its
+figures. `docs/OVERVIEW.md` and `docs/QUICKSTART.md` point at the new file.
+
+**Why.** The user, 2026-11-09: a better description of the project in the README, more
+"marketable", with the technical detail moved to linked files.
+
+**Rejected.** Dropping the benchmark caveats from the README (results stay indicative, with their
+limits beside them). Cutting Limitations from the README altogether.
+
+**What it opens.** The demo GIF predates the title bar and the library summary; new media is
+planned, not recorded. The local-model citation figures still predate the 0.7.0 fix. The removed
+indexing section was the only plain-language version of those figures.
 
 ## 2026-11-06 (10) — The settings cog moves beside the menu (ADR-065 choice 7)
 

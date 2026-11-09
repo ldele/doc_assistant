@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 (§5: 0.7.1 published, the next moves; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
+<!-- status: active · updated: 2026-11-09 (§4: the knowledge-layer row cites docs/limitations.md; 2026-11-01: §5: 0.7.1 published, the next moves; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
 
 # Provenote — project overview
 
@@ -84,7 +84,7 @@ calibrated against human grades.** Baselines are in [`tests/eval/baselines/`](..
 | `TOP_K` = 10, parent-child on | Peak at K = 10 in a sweep over 3–15; parent-child ahead of single chunks | **measured before the harness existed:** point estimates, case set, N and variance unrecorded; the direction holds, the size does not | [decisions archive](archive/decisions-monolith.md) |
 | Reranker | **No experiment.** Adopted on a rationale (slower per item, but sees few candidates). | — | [decisions archive](archive/decisions-monolith.md) |
 | Indexing cost | ~15 s for a 30-page text PDF, ~90% of it PDF extraction; 2 extraction workers 1.47× faster than 1; backend memory flat at ~2 GB | 97-document library (2,859 pages), 28-core desktop with GPU; validated at ~100 documents, not thousands | [README](../README.md), [performance](performance.md) |
-| Knowledge layer | A definition graded *strong* was right 8 times in 13 (95% interval 36–82%); 97% of extracted keywords occur in a single document, which is why the map is built from concepts the user picks | development library, 2026-10 | [README](../README.md), [knowledge layer](knowledge-layer.md) |
+| Knowledge layer | A definition graded *strong* was right 8 times in 13 (95% interval 36–82%); 97% of extracted keywords occur in a single document, which is why the map is built from concepts the user picks | development library, 2026-10 | [limitations](limitations.md), [knowledge layer](knowledge-layer.md) |
 
 What the record does **not** have: a judge checked against human grades; retrieval scored by rank
 (it is scored by presence, no MRR or nDCG); any significance test (10 cases discriminate between

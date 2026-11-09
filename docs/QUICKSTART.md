@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 · class: living -->
+<!-- status: active · updated: 2026-11-09 · class: living -->
 
 # Quickstart — first run in about 10 minutes
 
@@ -81,7 +81,7 @@ The panel distinguishes the two things that can be wrong, because the fixes diff
 (install/start Ollama) versus *no models installed* (pull one).
 
 Answer quality on an 8B local model is lower than the API — this project measures that rather than
-claiming otherwise; see [`../evals/README.md`](../evals/README.md) and the README's Limitations.
+claiming otherwise; see [`../evals/README.md`](../evals/README.md) and [Limitations](limitations.md).
 
 > Prefer a file? Everything above also works via `.env` — `cp .env.example .env` and fill in
 > `ANTHROPIC_API_KEY`, or set `LLM_PROVIDER=ollama`. **A key in `.env` wins** over one saved in the

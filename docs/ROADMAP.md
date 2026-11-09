@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-09 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -46,7 +46,8 @@ layer's signals are worth: `docs/knowledge-layer.md`.
 2. **Next — the chat and MCP.** An MCP server (**65**) and a chat that does more with the library:
    prompts and modes, skills maybe (**37**), context handled deliberately (**101**), lookups in the
    library and the graph (**102**), then an interface pass over all of it (**103**). Security step
-   S-9, the prompt fence, lands before any tool.
+   S-9, the prompt fence, lands before any tool. The eval harness is reinforced first (**113**),
+   so each of these changes is measured on cases that can show it.
 3. **Then — extraction, the Library, and what the user chose.** Extraction polish (**104**), a UX
    and UI pass over the Library (**105**), and every instance of a word or concept the user picks,
    per concept (**106**).
@@ -166,6 +167,7 @@ mark the older tracks.)*
 | 6 | F11 Quality | Per-project embedder routing (Feature 1b) — re-run SPECTER2 `--repeat 5` first | deferred | `evals/README.md` |
 | 68 | F11 Quality | **Close or waive the open blocks-ship rigor items with a date** — RG-001/008 (edge precision gate), RG-014 (spec has not absorbed the verdict), RG-027 (ADR-042 identity migration + backfill). `rigor_gate.py` does not exist; the file is a manual discipline doc — say so or build it | planned | `.claude/RIGOR_TODO.md` |
 | 69 | F11 Quality | **`CANDIDATE_K=20` retest** on the private 35 with `--repeat` — the verdict has been "unvalidated" since 2026-06-13 | planned ($0) | `tests/eval/baselines/candidate_k_public_2026-06-13.md` · memory note *candidate-k-retest-needed* |
+| 113 | F11 Quality | **The eval harness and the benchmarks, reinforced for the chat work** (the user, 2026-11-09). The chat rows are gated on measurements the harness cannot take: it has single-turn cases only, scores retrieval by presence, reports no interval, and its judge has not been checked against a person. In order: a short spec (case families, scorers, the statistic, the model panel, the paid budget) · rank metrics, citation coverage as a scorer, conversation and refusal cases, a paired interval in `compare_runs` · a larger public case set, plus conversation, not-in-the-library, hostile-passage and record-lookup cases · a baseline on the model panel before any chat change, with row 69 and a reranker ablation · the judge checked against human grades and the local judge's agreement gate · the public write-up. No framework and no new dependency (*What NOT to do*) | gate first — spec, after row 65's ADR; its baseline lands before S-9 | `tests/eval/TESTING.md` · `docs/OVERVIEW.md` §4 · `evals/README.md` · rows 15, 69 |
 | 70 | F11 Quality | **Backend code review as a module** (`.claude/REVIEWS.md` row 2 = never); start with `ingest/` (nine tracked defects) and `chat_controller/` | planned — Cowork-shaped | `.claude/REVIEWS.md` |
 | 71 | F11 Quality | **Frontend code review + a component test harness** — 39 `.svelte` components untestable under `node:test`; needs the lockfile decision (vitest + a Svelte testing library) and would automate half of `docs/release-ux-checklist.md` | planned | `.claude/REVIEWS.md` row 3 · `apps/desktop/CLAUDE.md` |
 | 83 | F11 Quality | **Thin-shell and scripts hygiene** (REVIEW 2026-09-10 §8 moves 3–5, 7): move the existence-check SQL out of `apps/api/routers/taxonomy.py` into `knowledge.taxonomy` (a typed `UnknownConceptError` → 404; the only SQL in `apps/`, non-negotiable #3; can ride with row 51) · delete `scripts/extract_doc_metadata.py` (re-implements the write policy the `src` module owns) · archive `tests/eval/run_eval.py` (calls the provider SDK directly behind a `cpc: allow-live-api` pragma, bypassing the KI-4 guard; update `[test_api]`'s comment in `scripts/conventions.toml`) and the scripts the review listed as dead — **check each for callers first**: the same review called `library/pins.py` dead and it is live, and `.claude/CONTEXT.md` still names `backfill_graph_include` as a demotion path · lift `_resolve_pdf_path` / `_resolve_cache_path` out of `scripts/extract_tables.py` into `ingest.cache` | planned | REVIEW 2026-09-10 §8 (local) |
@@ -270,7 +272,8 @@ user has to make; 64 is parked by user call; 87/88 are host actions for the user
 The eval record is `evals/README.md`; the debt is `.claude/RIGOR_TODO.md` (four `blocks-ship`
 items open, no gate wired) and `.claude/REVIEWS.md` (backend and frontend never read as modules).
 **Next:** row **98**, the docs revamp, with row 89's decisions; then 68 (decide each open
-blocks-ship item), then 69 ($0). Rows 70/71 are review sessions,
+blocks-ship item), then 69 ($0), which rides with row **113**: the harness reinforced for the
+chat work, before the chat changes it has to measure. Rows 70/71 are review sessions,
 Cowork-shaped, and 71 also unlocks the automatable half of the release walkthrough.
 
 ### F12 · Verification debt

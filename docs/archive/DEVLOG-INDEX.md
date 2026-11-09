@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-06 · class: living -->
+<!-- status: archived · updated: 2026-11-09 · class: living -->
 
 # DEVLOG archive index
 
@@ -6,6 +6,20 @@ One line per rotated entry, grouped per archive file, newest file first. Laid by
 `cpc-rotate` at the first rollover (ADR-045). Each later rotation writes the lines it
 owes when `[rotate] write_index` is on, and prints them for a human to place when it
 is off; docs_check rule 17 fails while any archived entry is missing here.
+
+## DEVLOG-archive-010.md
+
+- **2026-11-06** (3) — ADR-063 accepted as proposed
+- **2026-11-06** (2) — ADR-063 revised: hover text, styles in one place, checks that fail
+- **2026-11-06** — A dialog's door calls its module, not a callback through App (ADR-064, pass 2b)
+- **2026-11-05** (10) — Eight screens cut into the parts they show (ADR-064, pass 2a)
+- **2026-11-05** (9) — `oauthlib` 4.0.1: an advisory in a package that never ships
+- **2026-11-05** (8) — A sentence is never a document's authors (KI-89)
+- **2026-11-05** (7) — The app's own index run fills title, authors, year and DOI (KI-87's library)
+- **2026-11-05** (6) — Every component moves to the screen it shows (ADR-064 accepted, pass 1)
+- **2026-11-05** (5) — The library summary follows the user's seven recommendations (ROADMAP 112)
+- **2026-11-05** (4) — The library summary, built (ROADMAP 112)
+- **2026-11-05** (3) — The library summary, gate first: signals read, wireframe drawn, spec written (ROADMAP 112)
 
 ## DEVLOG-archive-009.md
 

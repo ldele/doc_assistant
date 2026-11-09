@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-09 (moved verbatim from the README's Limitations section, links re-based) · class: living -->
+<!-- status: active · updated: 2026-11-09 (row 95 dated to 0.8.0; moved verbatim from the README's Limitations section, links re-based) · class: living -->
 
 # Limitations
 
@@ -41,7 +41,7 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
   methods and sections the PDF reader emitted late go unseen: 3.7% of the library's prose, in 32
   documents (2026-10-09). Concept presence reads the whole text instead, so a concept named only in
   a cited title counts as present: 111 of 1,079 concept–document pairs exist only past that
-  heading, 88 of them in reference lists or back matter. Both change together in the next release,
+  heading, 88 of them in reference lists or back matter. Both change together in 0.8.0,
   with a before/after for every layer they move (ROADMAP 95).
 - **The map covers the concepts you choose; extracted keywords alone do not organise a library.**
   1,445 of 1,496 extracted keywords (97%) occur in a single document, so the graph is built from

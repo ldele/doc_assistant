@@ -12,7 +12,7 @@ needs to know where a statement came from before reusing it. It reads PDF, EPUB,
 Markdown and more, answers in prose with a citation on each claim, and keeps your library on your
 disk. With a local model, nothing leaves your computer.
 
-![Provenote demo: ask a question, watch a cited answer stream in, open the passage behind a citation, filter the library, read a document as five ordered blocks, open one of its figures, then explore the concept graph](docs/assets/provenote-demo.gif)
+![Provenote demo: a question about Neural Turing Machines gets a cited answer that streams in; clicking a citation opens the passage, and Show the page opens page 5 of the paper beside its library entry; back in the answer, its sources are listed and one uncited claim is flagged for review](docs/assets/provenote-demo.gif)
 
 **[Download for Windows](https://github.com/ldele/doc_assistant/releases/latest)** ·
 [Quickstart](docs/QUICKSTART.md) · [60-second walkthrough](docs/DEMO.md) ·
@@ -23,11 +23,16 @@ disk. With a local model, nothing leaves your computer.
 - **A citation opens the page.** Each cited claim names the page its passage came from. One click
   shows that page of the PDF as it was printed, beside the document; *In context* shows the passage
   highlighted in the text around it.
+
+  <img src="docs/assets/provenote-source-viewer.png" width="100%" alt="The document page for Neural Turing Machines: its title, keywords and related papers on the left, and on the right page 5 of the PDF as printed, with the cited passage's page marked">
+
 - **What your sources say is kept apart from what the model infers.** An answer shows the retrieved
   passages word for word, with source, page and relevance score, and next to them the model's
   synthesis, labelled as interpretation. A claim that cites nothing, or cites a weak passage, is
   flagged for you to accept, reject or edit, and a separate reviewer can re-grade a flagged answer
   against the passages. The flags tell you where to look; they do not certify a claim.
+
+  <img src="docs/assets/provenote-answer-claims.png" width="100%" alt="An answer about Neural Turing Machines with inline citations, the list of its ten sources below it, and one claim flagged as uncited with Accept, Reject and Edit buttons">
 - **Your documents can stay on your computer.** With a local model through
   [Ollama](https://ollama.com), none of your text leaves the machine: the embedding and reranking
   models run locally and ship in the installer. With the Claude API, only the question and the
@@ -53,6 +58,17 @@ disk. With a local model, nothing leaves your computer.
   delete.
 - **Choose your answer engine in the app.** An Anthropic API key or a local Ollama server, set in
   Settings; no file to edit.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/provenote-library-grid.png" width="100%" alt="The Library grid: a card per paper with its title, authors, year, page and chunk counts and keywords, with folders, a keyword filter and a Summary view at the top"></td>
+    <td width="50%"><img src="docs/assets/provenote-library-summary.png" width="100%" alt="The library summary: 28 documents, what indexing found, and how many documents have each metadata field, with the missing ones counted"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/provenote-concept-graph.png" width="100%" alt="The concept graph centred on attention, with its linked concepts, and below it the definition chosen for it: a sentence quoted from Attention Is All You Need, with a link to the passage"></td>
+    <td width="50%" valign="top"><b>Library</b>: the grid and its summary, which counts what is missing (here, authors on 15 of 28 papers).<br><br><b>Graph</b>: a concept, its neighbours, and a definition quoted from one of your papers.<br><br><sub>Screenshots taken over the public demo corpus (28 arXiv papers) with a local model.</sub></td>
+  </tr>
+</table>
 
 ## Get it
 

@@ -1,10 +1,11 @@
-<!-- status: active · updated: 2026-11-01 · class: living -->
+<!-- status: active · updated: 2026-11-09 · class: living -->
 
 # Demo — 60-second walkthrough
 
 What to run, what to ask, and what to look at so a first-time reader sees the point quickly.
-(The README's GIF — `docs/assets/provenote-demo.gif` — is this walkthrough on film: a question →
-streamed cited answer → source panel → library document view → concept graph.)
+(The README's GIF — `docs/assets/provenote-demo.gif` — films the first part of this walkthrough:
+a question → streamed cited answer → source panel → *Show the page* → a flagged claim. The
+library and concept graph appear as screenshots in the README.)
 
 **Setting it up for real, rather than skimming?** [`QUICKSTART.md`](QUICKSTART.md) is the supported
 10-minute path — it picks the answer engine from inside the app, with no file to edit.

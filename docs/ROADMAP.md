@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-09 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-10 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -56,6 +56,18 @@ layer's signals are worth: `docs/knowledge-layer.md`.
 
 *(Session planning is kept local-only. The PR table below is the open work, and `docs/security.md`
 §4 is the order of the security steps.)*
+
+## Releases
+
+Published so far, each with its notes in `CHANGELOG.md` and its tag: **v0.7.2** (2026-11-04),
+**v0.7.1** (2026-10-31), **v0.7.0** (2026-10-30), **v0.6.0** (2026-09-04). The runbook for
+cutting one is `docs/RELEASE.md`.
+
+The next release is not planned in this file: session and release planning are kept local-only
+(see *Where the product stands*, above), and the open work is the PR table. A `### X.Y.Z` entry
+under this heading would opt the project in to cpc's release checkpoints, where a release is
+planned with criteria that can fail and `cpc-release-preflight` reads them (cpc ADR-051). None
+is written, so that check stays off.
 
 ## Goals
 

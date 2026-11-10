@@ -36,6 +36,10 @@ build/
 # ⚠ Consequence: nothing here has an off-machine copy any more — back up .claude/ yourself.
 CLAUDE.local.md
 .claude/
+# cpc 1.22 (its ADR-077) moved these two out of .claude/: read when a task needs them, so they
+# sit in docs/. Still local working state (ADR-029), so ignored by name.
+docs/KNOWN_ISSUES.md
+docs/FRICTION.md
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
 # ...and the index cpc-rotate lays at the first baton rollover (cpc ADR-045/053): it lists every one of

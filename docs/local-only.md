@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-02 (the crossover review's archived path; 2026-09-16: four gitignored paths the docs cite were missing from the table) · class: living -->
+<!-- status: active · updated: 2026-11-10 (the crossover review's archived path; 2026-09-16: four gitignored paths the docs cite were missing from the table) · class: living -->
 
 # Local-only working docs
 
@@ -10,7 +10,8 @@ trade-offs (including this one — dangling links) are recorded in
 | Path | What it is |
 |---|---|
 | `.claude/CONTEXT.md` | Canonical facts: stack, locked settings, provider config, phase map, open questions. `AGENTS.md` carries the digest a reader needs. |
-| `.claude/KNOWN_ISSUES.md` | Open weaknesses, recurring failures, workarounds (the `KI-nn` references). |
+| `docs/KNOWN_ISSUES.md` | Open weaknesses, recurring failures, workarounds (the `KI-nn` references). In `docs/` since cpc 1.22 (read when a task needs it), and gitignored by name. |
+| `docs/FRICTION.md` | One line the first time a tool or a rule got in the way. In `docs/` since cpc 1.22, and gitignored by name. |
 | `.claude/RIGOR_TODO.md` | Deferred-rigor tracker — validation debt on work believed correct (the `RG-nn` references). |
 | `.claude/SESSION.md` | The cross-session handoff baton (always local — per-machine by nature). |
 | `docs/archive/SESSION-archive-<NNN>.md` | Older baton entries, rotated verbatim out of `.claude/SESSION.md` (local, like the baton). ROADMAP rows cite them as "baton YYYY-MM-DD". |

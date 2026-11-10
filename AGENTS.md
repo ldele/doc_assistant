@@ -28,16 +28,25 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 > **All of these but the DEVLOG are local-only working state (ADR-029) — they are not in the repo.** On the dev machine
 > they are exactly where this list says; in a fresh clone they do not exist, and this file's
 > Non-negotiables digest is what you get. See `docs/local-only.md`. They also have **no off-machine
-> copy** any more: back up `.claude/` yourself.
+> copy** any more: back up `.claude/`, `docs/KNOWN_ISSUES.md` and `docs/FRICTION.md` yourself.
+
+Every session reads these four, after this file (cpc 1.22: `.claude/` is what every session reads):
 
 1. `.claude/SESSION.md` — handoff baton: who worked last, what's done/uncommitted, what's next, which tool picks up.
 2. `.claude/CONTEXT.md` — canonical facts: stack, locked settings, provider config, phase map, open questions.
-3. `docs/DEVLOG.md` (top entries — newest first) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
-4. `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds, plus a one-line
-   **Resolved** index; closed issues in full at `docs/archive/KNOWN_ISSUES-resolved-001.md`.
-5. `.claude/REVIEWS.md` — when each aspect (docs · backend · frontend · tests · cpc · UX/UI+MCP) was
-   last reviewed as a whole, and what each pass did **not** cover. `never` is a legal value and the
-   most useful one: it marks what nobody has read end to end.
+3. `.claude/NORTH_STAR.md` — who this project writes for and in what register, before writing anything a person will read.
+4. `.claude/DIGEST.md` — every known issue's heading and status, the open tickets and the newest
+   DEVLOG headings, generated (`rungate.py generate --write`). Read it **instead of** the logs.
+
+Open these only for the entry the digest sent you to, or when the task needs them:
+
+- `docs/DEVLOG.md` (top entries — newest first) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
+- `docs/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds, plus a one-line
+  **Resolved** index; closed issues in full at `docs/archive/KNOWN_ISSUES-resolved-001.md`.
+  Local-only, like `.claude/` (gitignored by name since the cpc 1.22 move out of `.claude/`).
+- `.claude/REVIEWS.md` — when each aspect (docs · backend · frontend · tests · cpc · UX/UI+MCP) was
+  last reviewed as a whole, and what each pass did **not** cover. `never` is a legal value and the
+  most useful one: it marks what nobody has read end to end.
 
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADRs — living index
 `docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary) ·
@@ -149,7 +158,7 @@ the named skill below.
 
 See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Tauri desktop or CLI). Runtime quirks
 (the 3.12 pin — native deps not yet 3.14-stable, KI-2; the resolved win32 cu130 segfault; sandbox sync;
-the Anthropic credit-leak) live in `.claude/KNOWN_ISSUES.md`.
+the Anthropic credit-leak) live in `docs/KNOWN_ISSUES.md`.
 
 > Rules changed? Edit `.claude/CONTEXT.md` (the canonical text). This file only points.
 > An agent's project settings (e.g. Cowork's) only point here — never restate rules there.

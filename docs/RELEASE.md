@@ -163,6 +163,7 @@ Write for someone deciding whether to install it, not for the commit log:
 | Docs | `rungate.py docs_check --root . --strict` | |
 | Hooks | `uv run --no-sync pre-commit run` | ruff/format/mypy/bandit/secrets |
 | Checklists refreshed | `preflight` (`checklists`) | both files touched since the previous tag — §0 |
+| Docker image | the `Docker — Headless API image` job of the CI run on the release commit: `gh run view <id>` | read it green, do not assume it. If the CHANGELOG's block names a new dependency, environment variable, port or data path, re-read `Dockerfile`, `docker-compose.yml` and `docs/setup.md` (Docker) against it before the tag |
 | Security floor | `uv run --no-sync python -m scripts.pip_audit_gate` · `uv run --no-sync python -m scripts.secret_scan_gate` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; the advisory gate blocks in CI since 2026-09-30 (S-8), and a new advisory is reviewed into `pip-audit-ignore.toml` or fixed, never waved through; the secret scan fails on a secret `.secrets.baseline` does not record (S-13, 2026-10-01) |
 | UX/UI walkthrough | `docs/release-ux-checklist.md` | §5b — a person drives every surface in the **installed** build |
 

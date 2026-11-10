@@ -1,7 +1,7 @@
 # Config for the vendored cpc gates (docs_check, sprint_check, keypoint, …). Tune per project;
 # do not silently raise to pass. Laid by cpc-init (standard profile); key set refreshed by hand on
 # 2026-07-19 (ADR-021, cpc 1.2.3) with this project's tuned values preserved. The vendored gates are
-# whatever tools/conventions/cpc/_VERSION says (1.18.1 since a re-vendor on 2026-10-14) — do not
+# whatever tools/conventions/cpc/_VERSION says (1.22.1 since a re-vendor on 2026-11-10) — do not
 # restate a version here; the 1.2.3 line above stood unnoticed for 25 days. The settings audit
 # (`settings_doc --check-config`) reported no unknown or removed keys on 2026-09-16.
 
@@ -29,7 +29,11 @@ archive_max_tokens     = 25000
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
 # Token budgets (0 = off) — calibrate before enabling.
-entry_max_tokens       = 0
+entry_max_tokens       = 9000  # approved: Lucas 2026-11-10 · calibrated · AGENTS.md + .claude/CONTEXT.md measured ~8,458 tokens that day; cpc lays 8,000
+# cpc 1.20-1.21 cap one baton entry at 300 tokens and one DEVLOG entry at 500. Four of each here
+# were written before the caps and are append-only. Back to 300 and 500 once they rotate out.
+session_entry_max_tokens = 650  # approved: Lucas 2026-11-10 · transitional · 4 baton entries of 2026-11-05 to 11-09 run to ~610 tokens
+devlog_entry_max_tokens  = 650  # approved: Lucas 2026-11-10 · transitional · 4 DEVLOG entries of 2026-11-06 run to ~647 tokens
 uses_max_tokens        = 0
 
 [uses]
@@ -61,7 +65,16 @@ enforce_stub = true
 require_prior_art = false
 
 [generate]
-# Derived artifacts regenerated before handoff (cpc ADR-013). None registered yet.
+# Derived artifacts regenerated before handoff (cpc ADR-013).
+# The digest (registered 2026-11-10): every known issue's heading with its status, the open tickets
+# and the newest DEVLOG headings, in about 1,000 tokens. A session start reads it in place of
+# docs/KNOWN_ISSUES.md (~31,500 tokens that day) and opens the one entry it needs. Local-only, like
+# the rest of .claude/ (ADR-029): `generate --write` makes it, `generate --check` says when it is stale.
+[[generate.artifact]]
+name  = "digest"
+path  = ".claude/DIGEST.md"
+check = "python tools/conventions/run.py digest --check"
+write = "python tools/conventions/run.py digest --write"
 
 [keypoints]
 # Per-project extras per boundary: [keypoints.<name>] run = [...] / checklist = [...].

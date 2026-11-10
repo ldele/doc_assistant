@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -95,6 +95,26 @@ flowchart TD
 This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `metadata_enrich` (deterministic backfill runner, L5), `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) live inside the `doc_assistant.ingest` package. The cross-document knowledge layer lives inside `doc_assistant.knowledge` (ADR-023, imported as `doc_assistant.knowledge.<name>`): `concept_skeleton` is a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity` (producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`), `concept_skeleton_enrich` is the confined Node-B LLM pass, and `epistemics`/`wiki`/`gaps` read the skeleton directly. The superseded open-vocabulary `concept_graph.py` was **deleted 2026-07-07** (G1, KI-7 resolved).
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
+
+## Concept map
+<!-- organizing principle: by domain concept. Drafted 2026-11-10 from the import graph of
+     `src/doc_assistant/` (one row per group of its 44 top-level modules) for cpc's rule 19.
+     May-import records what each group imports TODAY, not a target: several edges run upward
+     (storage imports ingest through `app_settings`; Retrieval and Knowledge import each other
+     through `sparse_index`). The Renderers row is from the boundary rule above, not measured.
+     Not linted: cpc-dod-lint is not wired in this project. Correct the grouping before wiring it. -->
+| Concept | Responsibility | Owned paths | May-import |
+|---------|----------------|-------------|------------|
+| Configuration and storage | settings, paths, credentials, the SQLite store and logging | `src/doc_assistant/config.py`, `src/doc_assistant/app_settings.py`, `src/doc_assistant/credentials.py`, `src/doc_assistant/db/`, `src/doc_assistant/logging_config.py`, `src/doc_assistant/fsutil.py`, `src/doc_assistant/stored_paths.py`, `src/doc_assistant/library_home.py`, `src/doc_assistant/update_check.py`, `src/doc_assistant/readiness.py` | Model access, Extraction and ingest |
+| Model access | the LLM and embedding providers, prompt templates and usage tracking | `src/doc_assistant/llm.py`, `src/doc_assistant/providers.py`, `src/doc_assistant/compatible.py`, `src/doc_assistant/embeddings.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/tracking.py` | — |
+| Extraction and ingest | any supported format to markdown, then chunks, vectors and the source registry | `src/doc_assistant/extractors.py`, `src/doc_assistant/adapters/`, `src/doc_assistant/ingest/`, `src/doc_assistant/reingest.py`, `src/doc_assistant/sources_manifest.py`, `src/doc_assistant/metadata_extractor.py`, `src/doc_assistant/metadata_enrich.py`, `src/doc_assistant/bibtex.py`, `src/doc_assistant/health.py`, `src/doc_assistant/demo_corpus.py` | Configuration and storage, Model access, Retrieval, Library, Knowledge |
+| Retrieval | the RAG runtime: retrieve, rerank, generate, and the indexes it reads | `src/doc_assistant/pipeline.py`, `src/doc_assistant/chroma_read.py`, `src/doc_assistant/sparse_index.py`, `src/doc_assistant/doc_vectors.py`, `src/doc_assistant/corpus_stats.py`, `src/doc_assistant/query_router.py` | Configuration and storage, Model access, Library, Knowledge |
+| Library | documents, folders, pins, citations, conversations and export | `src/doc_assistant/library/`, `src/doc_assistant/conversations.py`, `src/doc_assistant/export.py` | Configuration and storage, Extraction and ingest, Knowledge |
+| Knowledge | concepts, the concept graph, gaps, the wiki and synthesis | `src/doc_assistant/knowledge/`, `src/doc_assistant/synthesis.py`, `src/doc_assistant/compare.py` | Configuration and storage, Model access, Retrieval, Integrity |
+| Integrity | provenance per answer and the rubric reviewer | `src/doc_assistant/provenance.py`, `src/doc_assistant/reviewer.py`, `src/doc_assistant/reviewer_aggregate.py` | Configuration and storage, Model access, Knowledge |
+| Chat | UI-agnostic turn orchestration and its commands | `src/doc_assistant/chat_controller/`, `src/doc_assistant/commands.py` | Configuration and storage, Model access, Extraction and ingest, Retrieval, Library, Knowledge, Integrity |
+| Evaluation | the eval harness | `src/doc_assistant/eval/` | Model access, Retrieval |
+| Renderers | the terminal, the HTTP API and the desktop shell: no business logic | `apps/cli.py`, `apps/api/`, `apps/desktop/` | Chat, Library, Knowledge, Configuration and storage |
 
 ## Repository layout
 

@@ -44,6 +44,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-10 (2) — A digest is registered, and Docker joins the release gates
+
+**What changed.** `[generate]` registers `.claude/DIGEST.md`: every known issue's heading and
+status, the open tickets and the newest DEVLOG headings, ~1,600 tokens. `AGENTS.md` numbers it
+fourth in what every session reads. `docs/RELEASE.md` §3 gains a Docker row: read the image's CI
+job green on the release commit, and re-read the `Dockerfile`, the compose file and the setup
+guide when the CHANGELOG names a new dependency, variable, port or data path.
+
+**Why.** The entry file told each session to scan `docs/KNOWN_ISSUES.md`, ~31,500 tokens. The
+user, 2026-11-10: the digest should be standard, and Docker is part of release work.
+
+**Verified.** `generate --check` and `docs_check --strict` pass; `keypoint session-start` lists
+the digest fifth. No release was cut, so the Docker row has not been used.
+
+**What it opens.** A triage of the 29 open known issues, drafted for the user's ruling.
+
+## 2026-11-10 — cpc 1.18.1 → 1.22.1: two files leave `.claude/`, cpc's templates leave `docs/`
+
+**What changed.** Re-vendored cpc 1.18.1 -> 1.22.1 from a worktree of the `v1.22.1` tag
+(`tools/conventions/cpc/`, 64 modules; `tools/conventions/templates/` is new). The known issues
+and the friction register moved to `docs/KNOWN_ISSUES.md` and `docs/FRICTION.md` with `cpc-move`,
+and `.gitignore` names both, so they stay local (ADR-029). The four template copies cpc had laid
+(`docs/decisions/ADR-000-template.md` and its pivot, `docs/specs/SPEC-000-template.md`,
+`docs/sprints/SPRINT-000-template.md`) are deleted: cpc's are in `tools/conventions/templates/`.
+`AGENTS.md` numbers the three files every session reads and lists the rest as read on need;
+`docs/local-only.md` and three `.claude/` files name the new paths.
+
+**Why.** cpc 1.22.0 sorts documents by when they are read, with `.claude/` for every session and
+`docs/` for a task, and its init check fails until the known issues move. 1.22.1 keeps cpc's
+templates in cpc's folder. The user, 2026-11-10: update this project first, and keep the two
+moved files out of git.
+
+**Rejected.** Keeping the known issues in `.claude/` with a `[paths]` line: it would leave this
+project off the layout every other one moves to.
+
+**Verified.** `init_check`: 0 errors. `docs_check --strict`: 0 errors and 0 warnings, where the
+re-vendor alone gave 4 errors and 16 warnings. A baton rotation of 6 entries cleared 5 warnings.
+The user ruled the other 11 the same day: caps of 650 tokens for one baton or DEVLOG entry,
+transitional, until 8 entries written before cpc's caps rotate out; 9,000 for the session-start
+files, measured at ~8,458; a `## Releases` section in the ROADMAP with no entry, so cpc's release
+checkpoints stay off; a `## Concept map` in `docs/architecture.md`, drafted from the import graph.
+
+**What it opens.** The concept map's grouping is a draft and its May-import column records
+today's imports, some of which run upward; correct it before wiring `cpc-dod-lint`. The two entry
+caps go back to 300 and 500 once the long entries rotate out. Three shipped specs still name the
+old sprint template path.
+
 ## 2026-11-09 (3) — New README media: a three-beat demo GIF and five screenshots
 
 **What changed.** `docs/assets/provenote-demo.gif` is re-recorded on the current UI (1280×800,

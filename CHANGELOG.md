@@ -15,6 +15,10 @@ The engineering record is finer-grained than this file: per-change entries live 
   how it tells whether a PDF's stored text is current, so every update since 0.7.0 marked every
   PDF *changed*. This update does it one last time; later ones list a PDF as *changed* only when
   the way PDFs are read has changed.
+- **Indexing from a source checkout or the headless server no longer stops if a helper process
+  dies early.** These read several files at once in helper processes (the installed app reads one
+  at a time); if a helper stopped while files were still being handed out, the whole run stopped
+  with an error. It now carries on and reads the rest one at a time.
 
 ## [0.7.3] — 2026-11-11
 

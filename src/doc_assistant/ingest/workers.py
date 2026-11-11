@@ -170,23 +170,33 @@ def warm_extraction_cache(
     # CI hung that way for three hours on 2026-10-17 in `test_ingest_rebuild_preserves_library`,
     # after logging Python's own "multi-threaded, use of fork() may lead to deadlocks" warning on
     # every green run before it. Windows always spawned, so this is the behaviour already tested.
-    with ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN) as pool:
-        futures = {pool.submit(_extract_one, str(p)): p for p in paths}
-        for fut in as_completed(futures):
-            if should_stop is not None and should_stop():
-                cancelled = sum(1 for f in futures if f.cancel())
-                log.info("extraction_warmup_stopped", cancelled=cancelled)
-                break
-            try:
-                _path, error = fut.result()
-            except Exception as e:
-                failed += 1
-                log.warning("extraction_warmup_worker_died", error=str(e))
-                continue
-            if error:
-                failed += 1
-                log.warning("extraction_warmup_failed", file=Path(_path).name, error=error)
-            else:
-                done += 1
+    try:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN) as pool:
+            futures = {pool.submit(_extract_one, str(p)): p for p in paths}
+            for fut in as_completed(futures):
+                if should_stop is not None and should_stop():
+                    cancelled = sum(1 for f in futures if f.cancel())
+                    log.info("extraction_warmup_stopped", cancelled=cancelled)
+                    break
+                try:
+                    _path, error = fut.result()
+                except Exception as e:
+                    failed += 1
+                    log.warning("extraction_warmup_worker_died", error=str(e))
+                    continue
+                if error:
+                    failed += 1
+                    log.warning("extraction_warmup_failed", file=Path(_path).name, error=error)
+                else:
+                    done += 1
+    except Exception as e:
+        # ⚠ The pool itself failed, not one document (KI-92). A child that dies while jobs are
+        # still being handed out breaks the pool, and the next `submit` raises outside the
+        # per-result guard above; so can starting a child at all. This step is only a warm-up, so
+        # whatever it did not finish is left to the serial pass, which meets the same files.
+        failed = len(paths) - done
+        log.warning(
+            "extraction_warmup_pool_failed", error=f"{type(e).__name__}: {e}", extracted=done
+        )
     log.info("extraction_warmup_done", extracted=done, failed=failed, workers=workers)
     return {"extracted": done, "failed": failed, "workers": workers}

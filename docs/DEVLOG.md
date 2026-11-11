@@ -44,6 +44,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-11 (6) — A broken extraction pool no longer stops an ingest run (KI-92)
+
+**What changed.** `ingest/workers.py::warm_extraction_cache` wraps the whole pool block: a failure
+of the pool itself logs `extraction_warmup_pool_failed` and returns, with every document it did not
+finish counted as failed and left to the serial pass. `tests/unit/test_ingest_workers.py` gains a
+stub pool and a test that breaks it at the first, second and third `submit`; the frozen-guard test
+now uses the stub too.
+
+**Why.** CI failed on the `v0.7.3` commit with `BrokenProcessPool` raised at `pool.submit`, outside
+the per-result guard. The test fakes `sys.frozen`, so every real child starts with
+`--multiprocessing-fork` and dies (30 of 30 jobs in a probe here); it passed when the break reached
+`fut.result()` and failed when it reached the next `submit`. The test was flaky, and the code under
+it was wrong: the warm-up's docstring promises a failed pool leaves ingest as slow as serial.
+
+**Rejected.** Catching only `BrokenProcessPool`: a child that cannot start raises other errors, and
+the step is optional either way. Retrying with a fresh pool: what killed one child may kill the
+next, and the serial pass already does the work.
+
+**What it opens.** CI's Linux runner, where the race showed, is the real check; the two failures
+were on runs 40041172523 and 43070327008.
+
 ## 2026-11-11 (5) — The state lines say v0.7.3
 
 **What changed.** AGENTS.md's *State*, the README's *Status* and the ROADMAP's *Where the product

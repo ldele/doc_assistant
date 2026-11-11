@@ -144,16 +144,67 @@ def test_a_frozen_build_stays_serial(monkeypatch, tmp_path):
     assert result["workers"] == 1, "a frozen build must not spawn a pool"
 
 
+class _StubPool:
+    """A `ProcessPoolExecutor` stand-in: no child process, so the test cannot race one.
+
+    ``break_at`` makes the n-th ``submit`` (0-based) raise ``BrokenProcessPool``, the way a real
+    pool does once a child has died while jobs are still being handed out (KI-92).
+    """
+
+    def __init__(self, *, max_workers, mp_context=None, break_at=None, seen=None):
+        self.break_at = break_at
+        self.calls = 0
+        if seen is not None:
+            seen["constructed"] = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def submit(self, fn, arg):
+        from concurrent.futures import Future
+        from concurrent.futures.process import BrokenProcessPool
+
+        if self.break_at is not None and self.calls >= self.break_at:
+            raise BrokenProcessPool("A child process terminated abruptly")
+        self.calls += 1
+        f: Future = Future()
+        f.set_result((arg, None))
+        return f
+
+
 def test_the_frozen_guard_can_be_lifted_deliberately(monkeypatch, tmp_path):
-    """So verifying it in a packaged build does not need a code change."""
+    """So verifying it in a packaged build does not need a code change.
+
+    The pool is a stub: with `sys.frozen` faked in an ordinary interpreter, every real child is
+    started with `--multiprocessing-fork`, which only a frozen entry point understands, so all of
+    them die at once and this test flaked on whichever line saw the break first (KI-92).
+    """
+    seen: dict[str, object] = {}
     monkeypatch.setattr("sys.frozen", True, raising=False)
     monkeypatch.setenv("DOC_INGEST_PARALLEL_FROZEN", "1")
-    files = [tmp_path / f"{i}.pdf" for i in range(3)]
-    for f in files:
-        f.write_bytes(b"not a real pdf")
-    result = warm_extraction_cache(files, workers=2)
-    # They all fail to extract — the point is that a pool was attempted, not that it succeeded.
-    assert result["workers"] == 2
+    monkeypatch.setattr(
+        "doc_assistant.ingest.workers.ProcessPoolExecutor",
+        lambda **kw: _StubPool(**kw, seen=seen),
+    )
+    result = warm_extraction_cache([tmp_path / f"{i}.pdf" for i in range(3)], workers=2)
+    assert seen.get("constructed"), "the variable must lift the guard and start a pool"
+    assert result == {"extracted": 3, "failed": 0, "workers": 2}
+
+
+@pytest.mark.parametrize("break_at", [0, 1, 2])
+def test_a_pool_that_breaks_while_jobs_are_submitted_is_not_fatal(monkeypatch, tmp_path, break_at):
+    """⚠ KI-92: the warm-up is optional, so a broken pool must leave ingest as slow as serial,
+    never stopped. A child killed while jobs are still being handed out makes the next `submit`
+    raise; that used to escape into the ingest run (CI, `workers.py:174`)."""
+    monkeypatch.setattr(
+        "doc_assistant.ingest.workers.ProcessPoolExecutor",
+        lambda **kw: _StubPool(**kw, break_at=break_at),
+    )
+    result = warm_extraction_cache([tmp_path / f"{i}.pdf" for i in range(3)], workers=2)
+    assert result == {"extracted": 0, "failed": 3, "workers": 2}
 
 
 def test_the_pool_spawns_and_never_forks(monkeypatch, tmp_path):

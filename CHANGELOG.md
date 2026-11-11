@@ -65,8 +65,9 @@ After this update every PDF is listed as *changed*, though none is (see *Known l
   last time.
 - **Documents indexed before 0.7.3 keep their blank metadata after a Re-index**, because a
   Re-index skips documents that did not change. *Re-run… > Metadata* on them fills the blanks.
-- **A filled title is sometimes the journal's name**, and an author list taken from body text
-  before this version stays until you correct it. Both are fixed in *Edit metadata*.
+- **A filled title is sometimes the journal's name, and a filled author list can miss a name**;
+  an author list taken from body text before this version stays until you correct it. All are
+  fixed in *Edit metadata*.
 - **If the engine stops while the window is open, panels still say *Failed to fetch***, and the
   status bar stays green until you restart the app.
 - **Hovering *Maximise* does not open Windows' snap layouts**; Win+Z does.

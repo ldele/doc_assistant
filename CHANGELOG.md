@@ -9,6 +9,63 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-11-11
+
+A new document gets its title, authors, year and DOI as it is indexed, the Library has a summary of
+what your library holds and what needs a look, and both lists select a range with Shift-click.
+Nothing is read again after this update.
+
+### Added
+
+- **A summary of your library.** The Library's *Summary* layout counts, for the whole library or
+  the open folder, what is there and what needs attention: documents with no text or flagged
+  text, documents missing a title, authors, year or DOI, and files that failed to index. Each
+  count opens exactly those documents, and each problem
+  names where it is fixed (the indexing screen, Settings > Documents, or the documents
+  themselves). What the app never looked for says *not looked for*, not 0.
+- **Indexing fills blank metadata.** A new or changed document's title, authors, year and DOI are
+  read from its own text while it is indexed, where they are blank. A value you edited or imported
+  is never replaced.
+- **Select a range in the Library and in the chat list.** Shift-click selects from the last item
+  you clicked, Ctrl-click (Cmd on macOS) adds or removes one, and either starts selecting. The bar
+  reads *Select all*, *Select none* and *Done*.
+- **On Windows, the top bar is the window's title bar.** Drag the window by it, double-click to
+  maximise, and use its own minimise, maximise and close buttons. The settings cog now sits next to
+  the menu, on every platform.
+
+### Changed
+
+- **Every button says what it does when you point at it or reach it with Tab**, and a greyed-out
+  button says why it cannot be used yet.
+- **A button's look says what kind it is**, and red always means it removes something. Removing a
+  key, a server or ignore-list entries, dismissing a chosen definition, resetting edited metadata
+  and *Undo all* in the add review now ask first, with *Cancel* selected. The Library's selection
+  *Clear*, which never deleted anything, is *Select none*.
+- **Dialogs behave the same everywhere.** Escape closes only the one in front, Tab stays inside it,
+  and focus goes back to the button that opened it.
+- **The concept view keeps its graph in sight.** A long definition no longer squeezes the graph
+  away.
+
+### Fixed
+
+- **An author list is no longer a sentence from the document.** The author scan could take a line
+  of body text for a document's authors; that line is now refused.
+- **A failed request says it failed.** In the installed app, a document page whose request failed
+  said *TypeError: Failed to fetch*, as if the engine had stopped. It now says the request failed.
+- **Cancelling a delete in the chat list keeps your selection.** It used to leave select mode
+  before you answered.
+
+### Known limits
+
+- **Documents indexed before 0.7.3 keep their blank metadata after a Re-index**, because a
+  Re-index skips documents that did not change. *Re-run… > Metadata* on them fills the blanks.
+- **A filled title is sometimes the journal's name**, and an author list taken from body text
+  before this version stays until you correct it. Both are fixed in *Edit metadata*.
+- **If the engine stops while the window is open, panels still say *Failed to fetch***, and the
+  status bar stays green until you restart the app.
+- **Hovering *Maximise* does not open Windows' snap layouts**; Win+Z does.
+- **Everything under *Known limits* for 0.7.2, 0.7.1 and 0.7.0 still applies.**
+
 ## [0.7.2] — 2026-11-04
 
 You can open a library indexed elsewhere on this computer, watch and steer each indexing run, and

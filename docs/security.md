@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (§2: four window permissions for the app's own title bar, ADR-065; 2026-11-05: S2: the sink moved to screens/chat/, ADR-064; 2026-11-04: 0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-11-11 (0.7.3 refresh: §2 re-checked: the summary route and the document filter read only, the 500 that keeps its CORS headers, no new dependency; §3 and §4 unchanged, no step landed since 0.7.2; 2026-11-06: §2: four window permissions for the app's own title bar, ADR-065; 2026-11-05: S2: the sink moved to screens/chat/, ADR-064; 2026-11-04: 0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -39,7 +39,7 @@ goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; 
 corporate MITM, KI-10), and multi-user servers (the Docker image is a *headless* single-user API
 and says so).
 
-## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20 and for 0.7.2 on 2026-11-04 — keep it that way)
+## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20, for 0.7.2 on 2026-11-04 and for 0.7.3 on 2026-11-11 — keep it that way)
 
 - **Bind is loopback.** `apps/api/__main__.py` defaults `DOC_API_HOST` to `127.0.0.1` with the reason
   in a comment; the compose file publishes `127.0.0.1:8001:8001`.
@@ -87,6 +87,16 @@ and says so).
   open library (S-7, below). The provider routes (ADR-060, `routers/setup.py`) add no GET: keys,
   servers, the billing tick and the model list are POSTs or DELETEs under S-6; the model list is a
   POST because it sends a stored key out, and a key goes only to the address it was saved with.
+- **0.7.3's changes, checked 2026-11-11.** One new route, `GET /api/library/summary`, and an
+  optional `issue` / `folder_id` filter on `GET /api/library/documents`: both read SQLite and the
+  registry as they stand, write nothing and call nothing out (S15 stays at three). An unhandled
+  engine error now answers a 500 from inside CORS (`apps/api/server_errors.py`), so the window can
+  read it: the body is Starlette's fixed text, never a traceback, and only the listed origins can
+  read it, as for every other answer. The shared hover text is set with `textContent`
+  (`lib/shell/tooltip.ts`), so `Markdown.svelte` keeps the one `{@html}`. Index-time metadata is the
+  deterministic extractor over the document's own text, shown as text. No dependency was added to
+  any shipped tree (`oauthlib` 4.0.1 is dev and CI only); the window's four new permissions are the
+  title-bar line above.
 - **The installer's reach outside its own folder is one process name and one folder test** (KI-80,
   2026-10-31): `src-tauri/nsis/hooks.nsh` ends `doc-assistant-api.exe` and, in `%TEMP%`, deletes a
   `_MEI*` folder only if it holds our reranker model, since every PyInstaller program uses that

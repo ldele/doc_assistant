@@ -176,16 +176,16 @@ The short list. Each of these, with counts and what to do about it, is in
 
 ## Status
 
-**v0.7.1 (2026-10-31): the map of your library becomes yours to curate and check.** Concepts are
-ones you take on, definitions are quoted from your documents with their page, curated work survives
-a merge, and the app is harder to misuse (oversized files and zip bombs refused, answers sanitised,
-a local API that takes writes only from the app). At that release: 2,816 Python tests and 317
-desktop tests, ruff / mypy / bandit clean, and an installer built from the tag and installed on a
-clean machine before it was published.
+**v0.7.3 (2026-11-11): your library tells you what it holds and what needs a look.** A new
+document's title, authors, year and DOI are filled from its own text as it is indexed; the Library's
+summary counts what is there and what is missing, and each count opens exactly those documents;
+both lists select a range with Shift-click; and on Windows the app has its own title bar. At that
+release: 3,233 Python tests and 416 desktop tests, ruff / mypy / bandit clean, and an installer
+built from the tag and installed on a clean machine before it was published.
 
-Next: the knowledge layer reads past the reference list, then suggestions of what to read next for
-a subject, and LLM-assisted ingestion. Release notes: [`CHANGELOG.md`](CHANGELOG.md). Roadmap:
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+Next: the chat and MCP. An MCP server, and a chat that does more with your library (lookups,
+modes, context handled deliberately), each change measured on a reinforced eval harness. Release
+notes: [`CHANGELOG.md`](CHANGELOG.md). Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation
 

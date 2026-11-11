@@ -44,6 +44,20 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-11 (5) — The state lines say v0.7.3
+
+**What changed.** AGENTS.md's *State*, the README's *Status* and the ROADMAP's *Where the product
+stands* and *Releases* now name v0.7.3 (2026-11-11) and what it added; the README's *Next* names
+the chat and MCP, as the ROADMAP's order does. ROADMAP row 60's current security step is S-9, the
+prompt fence: S-7 was done on 2026-11-04 and the row still named it.
+
+**Why.** `docs/RELEASE.md` §0 asks for it at each release, and three surfaces still said v0.7.1.
+The test counts are the tag's: 3,233 Python tests collected (CI's own count on `a8408c0`: 3,226
+passed, 6 skipped, 1 failed, KI-92) and 416 desktop tests.
+
+**What it opens.** KI-92, filed beside this: the worker test that failed CI on the tagged commit
+is a real escape at `pool.submit`, not only a flaky test.
+
 ## 2026-11-11 (4) — The PDF fingerprint no longer carries the app's version (KI-91)
 
 **What changed.** `ingest/cache.py::_extraction_closure` treats a class defined in `extractors`

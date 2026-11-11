@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-10 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-11 (state lines at v0.7.3; row 60's current step is S-9); 2026-11-10 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -24,14 +24,14 @@ and `AGENTS.md` / `.claude/CONTEXT.md` point at both. Evaluation strategy: `test
 > (AGENTS.md build protocol). A row's *why* lives in its spec/ADR/DEVLOG, linked in `Spec` — do not
 > restate it here.
 
-## Where the product stands (2026-10-31)
+## Where the product stands (2026-11-11)
 
-**v0.7.1 is published** (2026-10-31). Shipped and measured: hybrid RAG with page-level citations,
+**v0.7.3 is published** (2026-11-11). Shipped and measured: hybrid RAG with page-level citations,
 the integrity layer (provenance, evidence vs interpretation, reviewer), figures, concepts the user
 curates with exact and broad forms, definitions chosen from sentences quoted from the user's
 documents, the gap list and taxonomy substrate, folders with retrieval scope, add-documents (copy or
 reference), Zotero import, per-part re-ingest, the source viewer with page jump and in-context
-passage. Quality record: `evals/README.md`; cost record: `docs/performance.md`; what the knowledge
+passage, metadata filled from a document's own text at indexing, and the library summary. Quality record: `evals/README.md`; cost record: `docs/performance.md`; what the knowledge
 layer's signals are worth: `docs/knowledge-layer.md`.
 
 **Now → next → later** (the user's order, 2026-10-31, which replaces those of 2026-09-10 and
@@ -59,7 +59,8 @@ layer's signals are worth: `docs/knowledge-layer.md`.
 
 ## Releases
 
-Published so far, each with its notes in `CHANGELOG.md` and its tag: **v0.7.2** (2026-11-04),
+Published so far, each with its notes in `CHANGELOG.md` and its tag: **v0.7.3** (2026-11-11),
+**v0.7.2** (2026-11-04),
 **v0.7.1** (2026-10-31), **v0.7.0** (2026-10-30), **v0.6.0** (2026-09-04). The runbook for
 cutting one is `docs/RELEASE.md`.
 
@@ -164,7 +165,7 @@ mark the older tracks.)*
 | 58 | F9 Search | **Semantic search option** — global search is a literal client-side match (`lib/shell/search.ts`); add an optional embedding-cosine mode, keep literal as the default (instant, offline, predictable) | planned (small spec) | — |
 | 59 | F9 Search | **Recent searches** (last ~5) and **search over conversation content** (titles only today) — no favourites list (user: prefer grouping) | planned | — |
 | 100 | F10 Platform | **The app stays repairable when it cannot work.** Two states, two answers: (1) the backend answers but no answer engine does: everything but answering keeps working, and Settings leads straight to connecting one; (2) the backend does not answer: the window still shows what is wrong, with the backend's log, a retry and the library folder in use. Rule: *inform, don't block* | planned — now | `apps/desktop/src/App.svelte` readiness gate (KI-39) · ADR-034 · `docs/release-ux-checklist.md` §6 |
-| 60 | F10 Platform | **Security, one step per session.** `docs/security.md` §4 is the ordered plan; this row names the current step | in progress — **current step: S-7, source-viewer containment** | `docs/security.md` §4 · `docs/archive/local/REVIEW_2026-09-10_project-review.md` §4 |
+| 60 | F10 Platform | **Security, one step per session.** `docs/security.md` §4 is the ordered plan; this row names the current step | in progress — **current step: S-9, the prompt fence** (eval-gated, before any chat tool; S-7 done 2026-11-04) | `docs/security.md` §4 · `docs/archive/local/REVIEW_2026-09-10_project-review.md` §4 |
 | 63 | F10 Platform | **Slim installer as a user option** — download weights on first run. A *trade* against KI-9's offline-from-first-launch promise, not an improvement: two artifacts per release, touches KI-10 and splits RG-010 | gate first — ADR | KI-9 · KI-10 · RG-010 · `docs/RELEASE.md` |
 | 64 | F10 Platform | In-app API-key entry via an OS keychain (ADR-011 v2) | parked — keyring decision | ADR-011 · ADR-034 |
 | 15 | F10 Platform | Extract the eval harness to a standalone repo (Feature 5) | planned — after a real comparison has been produced with the integrated one | ADR-024 |

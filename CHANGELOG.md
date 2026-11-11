@@ -13,7 +13,7 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 A new document gets its title, authors, year and DOI as it is indexed, the Library has a summary of
 what your library holds and what needs a look, and both lists select a range with Shift-click.
-Nothing is read again after this update.
+After this update every PDF is listed as *changed*, though none is (see *Known limits*).
 
 ### Added
 
@@ -57,6 +57,12 @@ Nothing is read again after this update.
 
 ### Known limits
 
+- **After this update, Settings > Documents lists every PDF as *changed*, though none is**, and
+  *Re-index* counts them as changed. The app's own version number is part of how it tells whether
+  a PDF's stored text is current, so every update since 0.7.0 has done this. Your documents stay
+  searchable as they are, and reading them again gives the same text, so there is no need to:
+  *Only index new files* leaves them alone. A later release fixes it, and that update does it one
+  last time.
 - **Documents indexed before 0.7.3 keep their blank metadata after a Re-index**, because a
   Re-index skips documents that did not change. *Re-run… > Metadata* on them fills the blanks.
 - **A filled title is sometimes the journal's name**, and an author list taken from body text

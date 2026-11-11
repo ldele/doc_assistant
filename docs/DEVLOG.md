@@ -44,6 +44,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-11 (3) — 0.7.3's notes say every PDF reads *changed* after the update
+
+**What changed.** The 0.7.3 CHANGELOG no longer says nothing is read again: its summary and a new
+first *Known limits* entry say every PDF is listed as *changed* after the update, though none is,
+and that reading them again is not needed. The release checklist's upgrade row (§7) expects the
+same, naming KI-91.
+
+**Why.** The upgrade run from the real 0.7.2 installer in the sandbox (2026-11-11) kept every
+record (documents, titles, the folder, chunks, conversations), then listed the 4 PDFs *changed*
+and the text file *ingested*. Cause: the PDF extraction fingerprint hashes the version of the
+package each reached class comes from, and the KI-64 ligature fix's two helper classes live in
+`extractors`, so `doc_assistant`'s own version is hashed (KI-91). Every release since 0.7.0 does it.
+
+**Rejected.** Fixing it before the tag: 0.7.3 would mark every PDF *changed* either way, because
+the fix moves the fingerprint once more, and it would mean a change to the cache code after the
+gates, then the gate, the build, RG-012 and the upgrade run again (the user's call: ship).
+
+**What it opens.** KI-91's fix in release A; that upgrade marks every PDF *changed* one last time.
+RG-012 on this build passed (`run-20261111-152202`, 3 of 3 turns cited); the build is unchanged.
+
 ## 2026-11-11 (2) — Preflight counts the Windows window config as a build input; CI is green again
 
 **What changed.** `scripts/release_preflight.py` lists

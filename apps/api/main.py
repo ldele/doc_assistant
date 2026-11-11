@@ -11,7 +11,8 @@ controller via ``create_app(controller=...)`` so no real pipeline / LLM / networ
 serializers, the settings read view, and the lazy default job runners — lives in
 ``apps/api/services``. This module owns only ``create_app``: the lifespan (schema migration +
 controller construction), the ``app.state`` wiring + test seams, CORS, the host guard (security
-S-5), the launch token (S-6, ``apps/api/launch_token``), and the router mounts.
+S-5), the launch token (S-6, ``apps/api/launch_token``), the 500 that keeps its CORS headers
+(``apps/api/server_errors``), and the router mounts.
 ``_settings_view`` / ``_default_rebuild_graph`` are re-exported below because tests import them by
 name from here.
 
@@ -49,6 +50,7 @@ from apps.api.routers import (
     taxonomy,
     updates,
 )
+from apps.api.server_errors import ServerErrorCorsMiddleware
 from apps.api.services import (
     _default_ingest,
     _default_rebuild_graph,
@@ -171,6 +173,9 @@ def create_app(
     app.state.controller_factory = controller_factory or ChatController
     if controller is not None:
         app.state.controller = controller
+    # Added first, so it runs innermost: a route's unhandled error becomes a 500 that still
+    # carries the CORS headers, which the installed window reads as a 500, not as a network error.
+    app.add_middleware(ServerErrorCorsMiddleware)
     # S-6: added before CORS, so it runs inside it and a 401 still carries the CORS headers.
     token = configured_token()
     if token is not None:

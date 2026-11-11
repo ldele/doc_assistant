@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-09 · class: append-only -->
+<!-- status: active · updated: 2026-11-11 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-11 — An engine error reaches the installed window as a 500, not as "Failed to fetch"
+
+**What changed.** `apps/api/server_errors.py` adds `ServerErrorCorsMiddleware`, mounted innermost
+in `create_app`, inside CORS. A route that raises before sending now gets a 500 that carries the
+CORS headers; the error is re-raised, so the server still logs it. A response already started (the
+chat's event stream) is left alone. Tests: the window-origins test gains a 500 for both window
+origins (it fails without the fix); `test_api_server_errors.py` pins the before/mid-stream split.
+
+**Why.** The 0.7.3 report *"Couldn't load connections: TypeError: Failed to fetch"*. The installed
+window calls the engine from another origin, and Starlette answers an unhandled exception outside
+CORS, so the 500 was discarded and read like a dead engine. In dev, Vite proxies on the same origin,
+so the same failure showed as a 500. The report's own cause is not known: no document reproduces
+it on a copy of the library, and the installed engine keeps no log (KI-90).
+
+**Rejected.** A FastAPI handler for `Exception`: Starlette mounts it on the outermost layer, outside
+CORS, so the header would still be missing. A JSON body: the window's clients fall back to
+"X failed: 500" only on a non-JSON body, so Starlette's plain text is kept.
+
+**What it opens.** KI-90 (a log file for the installed engine) and KI-79's health poll, for
+release A. The CHANGELOG line is written at `docs/RELEASE.md` §2.
 
 ## 2026-11-10 (2) — A digest is registered, and Docker joins the release gates
 

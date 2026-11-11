@@ -63,6 +63,25 @@ def test_the_installed_window_can_send_a_write_with_its_token(
     assert refused.headers.get("access-control-allow-origin") == origin
 
 
+class _BrokenController:
+    def chunk_count(self) -> int:
+        raise RuntimeError("simulated engine error")
+
+
+@pytest.mark.parametrize("origin", [WINDOWS_WINDOW, UNIX_WINDOW])
+def test_the_installed_window_can_read_an_engine_error(
+    monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    """0.7.3: a route that raised answered a 500 without CORS headers, so the window discarded it
+    and showed "TypeError: Failed to fetch", the text of a dead engine."""
+    monkeypatch.setenv("DOC_API_TOKEN", TOKEN)
+    app = create_app(controller=_BrokenController())  # type: ignore[arg-type]
+    client = TestClient(app, base_url="http://127.0.0.1:8001", raise_server_exceptions=False)
+    r = client.get("/api/health", headers={"Origin": origin})
+    assert r.status_code == 500
+    assert r.headers.get("access-control-allow-origin") == origin
+
+
 def test_any_other_origin_reads_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """The list stays explicit: a page elsewhere gets its answer without the header, so its
     browser discards it."""

@@ -118,6 +118,7 @@ SHIPPED_PATHS = (
     "apps/desktop/src-tauri/build.rs",
     "apps/desktop/src-tauri/Cargo.toml",
     "apps/desktop/src-tauri/tauri.conf.json",  # bundle config, externalBin, version
+    "apps/desktop/src-tauri/tauri.windows.conf.json",  # Windows: no native frame (ADR-065)
     "apps/desktop/src-tauri/capabilities/",  # what the webview may call
     "apps/desktop/src-tauri/nsis/",  # the installer script and its hooks
     "apps/desktop/src-tauri/icons/",

@@ -44,6 +44,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-11 (2) — Preflight counts the Windows window config as a build input; CI is green again
+
+**What changed.** `scripts/release_preflight.py` lists
+`apps/desktop/src-tauri/tauri.windows.conf.json` in `SHIPPED_PATHS`, and
+`test_the_shipped_path_list_is_pinned` pins it.
+
+**Why.** ADR-065 (`f35cabe`, merged in `5ed8bf5`) added the file: Tauri merges it over
+`tauri.conf.json` on Windows, where it removes the native frame, so it changes what ships. Left
+out, `test_every_tracked_app_file_is_shipped_or_named_as_not` failed on every CI run of `main`
+from `5ed8bf5` to the release commit `823bf3b`, and `artifact_fresh` could not see a change to it
+(KI-58's sixth instance). Found by 0.7.3's full gate: 1 failed, 3,229 passed.
+
+**Rejected.** `NOT_SHIPPED`: the file is in the installed app's window behaviour.
+
+**What it opens.** The release is tagged at this commit, not at `823bf3b`; the build is made from
+it.
+
 ## 2026-11-11 — An engine error reaches the installed window as a 500, not as "Failed to fetch"
 
 **What changed.** `apps/api/server_errors.py` adds `ServerErrorCorsMiddleware`, mounted innermost

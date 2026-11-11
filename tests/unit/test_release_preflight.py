@@ -237,6 +237,7 @@ def test_the_shipped_path_list_is_pinned() -> None:
         "apps/desktop/src-tauri/build.rs",
         "apps/desktop/src-tauri/Cargo.toml",
         "apps/desktop/src-tauri/tauri.conf.json",
+        "apps/desktop/src-tauri/tauri.windows.conf.json",
         "apps/desktop/src-tauri/capabilities/",
         "apps/desktop/src-tauri/nsis/",
         "apps/desktop/src-tauri/icons/",

@@ -44,6 +44,30 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-11 (4) — The PDF fingerprint no longer carries the app's version (KI-91)
+
+**What changed.** `ingest/cache.py::_extraction_closure` treats a class defined in `extractors`
+as code, not a dependency: a new `_class_parts` walks its methods (and any base written there)
+like the module's functions, hashes its class-level values as constants (`_module_attr` resolves
+`Class.name`), and adds only a foreign base's package to the module list. Two guard tests: no
+format's fingerprint moves with `doc_assistant.__version__`, and an edit to
+`_CellTextOfBlocks.__call__` moves `.pdf` and nothing else. A CHANGELOG `[Unreleased]` *Fixed*
+line says the next update marks every PDF *changed* one last time.
+
+**Why.** The KI-64 ligature fix's two wrapper classes live in `extractors`, and the walk mapped
+any class it reached to its package's version, so `doc_assistant=<version>` was in the PDF
+fingerprint and every release since 0.7.0 marked every PDF *changed*. Both tests failed first; the
+second showed the converse hole: an edit to those classes' methods between releases was invisible
+(KI-40), masked only because a release moved the version anyway.
+
+**Rejected.** Dropping `doc_assistant` from the module list alone: it fixes the release noise and
+keeps the KI-40 hole. Hashing the whole `extractors` module when a local class is reached: every
+EPUB fix would re-read every PDF again (KI-48).
+
+**What it opens.** Measured: `.pdf` moved once (`72f4aab8da6266fa` → `b4d61cccbf2cbc78`), the
+other eight formats unchanged, and the PDF closure holds six methods of the three KI-64 classes.
+The 0.8.0 upgrade run (A9) should show every PDF *changed* once; the one after it, none.
+
 ## 2026-11-11 (3) — 0.7.3's notes say every PDF reads *changed* after the update
 
 **What changed.** The 0.7.3 CHANGELOG no longer says nothing is read again: its summary and a new

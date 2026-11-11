@@ -9,6 +9,13 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+### Fixed
+
+- **An update no longer lists every PDF as *changed*.** The app's own version number was part of
+  how it tells whether a PDF's stored text is current, so every update since 0.7.0 marked every
+  PDF *changed*. This update does it one last time; later ones list a PDF as *changed* only when
+  the way PDFs are read has changed.
+
 ## [0.7.3] — 2026-11-11
 
 A new document gets its title, authors, year and DOI as it is indexed, the Library has a summary of

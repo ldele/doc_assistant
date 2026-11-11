@@ -101,6 +101,48 @@ def _referenced(code: CodeType) -> tuple[set[str], set[str]]:
     return names, imports
 
 
+def _class_parts(
+    cls: type, ref: str, module_name: str, modules: set[str], constants: set[str]
+) -> list[tuple[str, Any]]:
+    """The functions a class defined in ``extractors`` runs, keyed ``Class.method`` (KI-91).
+
+    Its own methods and those of any base written in the same module; a method a ``Protocol``
+    base adds comes from ``typing`` and is skipped. A class-level value joins ``constants`` as
+    ``Class.name``, like a module tunable. A base from elsewhere is a dependency like any imported
+    class, so its package joins ``modules``; ``builtins`` is left out, its version is Python's.
+    """
+    found: list[tuple[str, Any]] = []
+    for klass in cls.__mro__:
+        if klass.__module__ != module_name:
+            if klass.__module__ != "builtins":
+                modules.add(klass.__module__.split(".")[0])
+            continue
+        owner = ref if klass is cls else klass.__qualname__
+        for name, member in vars(klass).items():
+            if isinstance(member, (staticmethod, classmethod)):
+                member = member.__func__
+            if isinstance(member, property):
+                parts = [(f"{name}.get", member.fget), (f"{name}.set", member.fset)]
+            elif inspect.isfunction(member):
+                parts = [(name, member)]
+            else:
+                if not name.startswith("__"):
+                    constants.add(f"{owner}.{name}")
+                continue
+            for key, fn in parts:
+                if inspect.isfunction(fn) and fn.__module__ == module_name:
+                    found.append((f"{owner}.{key}", fn))
+    return found
+
+
+def _module_attr(module: Any, dotted: str) -> Any:
+    """``extractors.<name>`` or, for a class-level value, ``extractors.<Class>.<name>``."""
+    obj = module
+    for part in dotted.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
 def _extraction_closure(
     blocked: frozenset[str], seeds: tuple[str, ...] = ()
 ) -> tuple[dict[str, Any], list[str], list[str]]:
@@ -133,6 +175,7 @@ def _extraction_closure(
     functions: dict[str, Any] = {}
     constants: set[str] = set()
     modules: set[str] = set()
+    classes: set[str] = set()
     stack: list[tuple[str, Any]] = [("extract_to_markdown", extractors.extract_to_markdown)]
     for seed in seeds:
         obj = getattr(extractors, seed, None)
@@ -155,6 +198,13 @@ def _extraction_closure(
                     stack.append((ref, obj))
             elif inspect.ismodule(obj):
                 modules.add(obj.__name__.split(".")[0])
+            elif inspect.isclass(obj) and obj.__module__ == extractors.__name__:
+                # A class written here is code, not a dependency (KI-91): hashing its package's
+                # version put the app's own version into the PDF fingerprint, so every release
+                # re-read every PDF, while an edit to its methods between releases went unseen.
+                if ref not in classes:
+                    classes.add(ref)
+                    stack.extend(_class_parts(obj, ref, extractors.__name__, modules, constants))
             elif inspect.isclass(obj) or inspect.isbuiltin(obj):
                 # An imported symbol (`BeautifulSoup`): its package version is what matters,
                 # because the behaviour lives there rather than here.
@@ -243,7 +293,9 @@ def extraction_fingerprint(suffix: str | None = None) -> str:
     * **the reachable functions' bytecode** — a logic change must invalidate the cache *without
       anyone remembering to bump a constant*. Bytecode, not source, so it works in the frozen
       build (PyInstaller ships ``.pyc``, and ``inspect.getsource`` would raise), and so comments
-      and docstrings — which cannot change output — do not force a re-extraction;
+      and docstrings — which cannot change output — do not force a re-extraction. A class
+      written in ``extractors`` that they name counts as code too: its methods are hashed the
+      same way, never its package's version, which is the app's own (KI-91);
     * **the module-level constants those functions reference** — a global is referenced by *name*
       from a function, so its value never appears in ``co_code``. ``_TEXT_LAYER_KEPT_MIN`` is
       exactly such a knob, and changing it changes output. Collected by the walk, so a new one
@@ -310,7 +362,7 @@ def extraction_fingerprint(suffix: str | None = None) -> str:
         h.update(name.encode())
         h.update(functions[name].__code__.co_code)
     for name in constants:
-        h.update(f"{name}={_stable_repr(getattr(extractors, name))}".encode())
+        h.update(f"{name}={_stable_repr(_module_attr(extractors, name))}".encode())
     for name in modules:
         h.update(f"{name}={_module_version(name)}".encode())
     return h.hexdigest()[:16]

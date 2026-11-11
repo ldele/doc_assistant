@@ -442,3 +442,46 @@ def test_the_other_formats_are_untouched_by_a_renamed_extractor(monkeypatch):
     assert after[".docx"] != before[".docx"], "its own change must still be noticed"
     for untouched in (".pdf", ".epub", ".html", ".rtf", ".odt", ".txt"):
         assert after[untouched] == before[untouched], f"{untouched} re-extracts for nothing"
+
+
+# ============================================================
+# The app's own version (KI-91). A class defined in `extractors` used to count as a dependency, so
+# `doc_assistant=<version>` entered the PDF fingerprint and every release marked every PDF
+# *changed*. Such a class is code: its methods are hashed like the module's functions instead.
+# ============================================================
+
+
+def test_no_fingerprint_moves_with_the_app_version(monkeypatch):
+    """A release that changes no extraction code must leave every cached text fresh."""
+    import doc_assistant
+
+    before = _fingerprints()
+    monkeypatch.setattr(doc_assistant, "__version__", "999.0.0", raising=False)
+    after = _fingerprints()
+
+    assert after == before, "a version bump alone re-reads documents (KI-91)"
+
+
+def test_a_change_to_a_method_of_a_class_defined_in_extractors_moves_pdf(monkeypatch):
+    """The other direction: walking the class instead of versioning it must not lose its code.
+
+    `_CellTextOfBlocks` is how a table cell keeps a ligature's second letter (KI-64); an edit to
+    its `__call__` changes PDF text, so it must invalidate every cached PDF and nothing else.
+    """
+    from doc_assistant import extractors
+
+    before = _fingerprints()
+    original = extractors._CellTextOfBlocks.__call__
+
+    def patched(self, table_blocks, cell, markdown=False, ocrpage=False):
+        return original(self, table_blocks, cell, markdown=markdown, ocrpage=ocrpage)
+
+    # Impersonate a method written in `extractors`, as the entry-point test does for functions.
+    patched.__module__ = extractors.__name__
+    patched.__qualname__ = "_CellTextOfBlocks.__call__"
+    monkeypatch.setattr(extractors._CellTextOfBlocks, "__call__", patched)
+    after = _fingerprints()
+
+    assert after[".pdf"] != before[".pdf"], "an edit to the KI-64 cell wrapper went unseen (KI-40)"
+    for untouched in (".epub", ".html", ".docx", ".rtf", ".odt", ".txt"):
+        assert after[untouched] == before[untouched], f"{untouched} does not run it"

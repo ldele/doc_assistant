@@ -44,6 +44,28 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-12 (2) — ADR-062 accepted as proposed
+
+**What changed.** ADR-062 (*the app stays repairable*) is accepted: option A with all eight
+choices as recommended. Its status, its Decision section, the index line in `docs/decisions.md`
+and ROADMAP row 100 say so. No code.
+
+**Why.** The plan held it as an open question before the chat and MCP design. The user took each
+choice on its own: the engine and the shell both degrade; the shell makes the update check when
+no engine answers; four repairs that rename aside and never delete; a repair offered only for
+damage; the reachability table as written; the program on port 8001 named, and only an older
+engine of ours ended; a remembered folder with no `library.db` is a state; the engine answers
+first and opens the library behind it.
+
+**Rejected.** On choice 5, also showing the last session's settings read-only while a section
+waits: a stale folder or provider shown as current can mislead. On choice 6, starting the engine
+on a free port: the security policy and the dev setup both fix 8001.
+
+**What it opens.** The build, in the ADR's order (choice 7 and the engine's log first), before the
+MCP server. The entry before this one built the window half of choice 8's third bullet without
+citing the ADR; the ADR's status now names it, and its `Settings.svelte` line numbers are those of
+2026-11-05.
+
 ## 2026-11-12 — Settings opens before the engine answers (KI-93)
 
 **What changed.** `screens/settings/Settings.svelte` renders its rail and pane at once. General

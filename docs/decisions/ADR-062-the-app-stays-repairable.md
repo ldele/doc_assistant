@@ -1,8 +1,13 @@
-<!-- status: active · updated: 2026-11-05 (proposed; revised the same day: choice 8, the start-up, and the settings docs; step 7's third row and step 5 corrected for KI-88) · class: append-only -->
+<!-- status: active · updated: 2026-11-12 (accepted as proposed: all eight choices; the window half of choice 8's third bullet built as KI-93); 2026-11-05 (proposed; revised the same day: choice 8, the start-up, and the settings docs; step 7's third row and step 5 corrected for KI-88) · class: append-only -->
 
 # ADR-062 — The app stays repairable: Settings opens in every state, and a repair never destroys a library
 
-- **Status:** proposed (Claude Code, 2026-11-05). Not accepted, not built. This is ROADMAP row 100,
+- **Status:** proposed (Claude Code, 2026-11-05); **accepted as proposed by the user on
+  2026-11-12**: option A, each of the eight choices put to the user on its own and each taken as
+  recommended. Built so far: only the window half of choice 8's third bullet (the Settings drawer
+  shows its sections at once and fills when the engine answers; KI-93, `7b13397`), so the
+  `Settings.svelte` line numbers below are those of 2026-11-05. The rest is ROADMAP row 100, built
+  before the MCP server. *As proposed:* Not accepted, not built. This is ROADMAP row 100,
   *the app stays repairable when it cannot work*, as the user widened it on 2026-11-05: Settings must
   open whatever state the app is in, with fewer features rather than none; *Check for updates* at
   least; and perhaps a *Repair* that puts back the files the app needs, with defaults, the way some
@@ -386,6 +391,11 @@ elapsed.
   is rejected for the library.
 
 ## Decision
+
+**Accepted 2026-11-12 (user): A, with choices 1 to 8 as recommended.** On choice 5 the user took
+the table as written, over a variant that also showed the last session's settings read-only while
+a section waits: a stale folder or provider shown as current can mislead. On choice 6, *pick a
+free port* was offered and not taken. *As proposed:*
 
 Proposed: **A**, with choices 1 to 8 as recommended. Build order:
 

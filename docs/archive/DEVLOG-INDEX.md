@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-09 · class: living -->
+<!-- status: archived · updated: 2026-11-12 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-010.md
 
+- **2026-11-10** — cpc 1.18.1 → 1.22.1: two files leave `.claude/`, cpc's templates leave `docs/`
+- **2026-11-09** (3) — New README media: a three-beat demo GIF and five screenshots
+- **2026-11-09** (2) — ROADMAP 113: the eval harness is reinforced before the chat work
+- **2026-11-09** — The README leads with the product; the full limitations move to `docs/limitations.md`
+- **2026-11-06** (10) — The settings cog moves beside the menu (ADR-065 choice 7)
+- **2026-11-06** (9) — The top bar is the window's title bar on Windows (ADR-065)
+- **2026-11-06** (8) — The library summary stops saying indexing reads no metadata
+- **2026-11-06** (7) — ROADMAP 110 (d): one dialog frame, and no colour outside the tokens
+- **2026-11-06** (6) — ROADMAP 110 (c): every button says what it does
+- **2026-11-06** (5) — ROADMAP 110 (b): every button on a role, and a delete always asks
+- **2026-11-06** (4) — ROADMAP 110 (a): the primary's fill, one tooltip, and checks that fail
 - **2026-11-06** (3) — ADR-063 accepted as proposed
 - **2026-11-06** (2) — ADR-063 revised: hover text, styles in one place, checks that fail
 - **2026-11-06** — A dialog's door calls its module, not a callback through App (ADR-064, pass 2b)

@@ -12,7 +12,7 @@
     startIngestNewOnly,
     getUpdateStatus,
   } from '../../lib/core/api'
-  import { onDestroy, tick } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import Icon from '../../shell/Icon.svelte'
   import {
     libraryState,
@@ -98,6 +98,7 @@
 
   let settings = $state<Settings | null>(null)
   let loadError = $state<string | null>(null)
+  let loading = $state(false)
 
   // What a section shows between visits. The rail mounts one section at a time and unmounts the
   // one it leaves, so anything that must still be there when the person comes back (a request in
@@ -139,6 +140,16 @@
 
   void load()
 
+  // KI-93: opened before the engine answers, the first read fails, and it used to be the only
+  // one. The read is made again when the engine comes up, so the open page fills in place.
+  // Only `shell.status` is tracked: a read that fails on a running engine must not loop.
+  $effect(() => {
+    if (shell.status !== 'ready') return
+    untrack(() => {
+      if (!settings && !loading) void load()
+    })
+  })
+
   useRunEnd((s) => {
     ingest = s
     void load(true) // refresh this panel's chunk_count; a blip here stays non-fatal
@@ -157,13 +168,17 @@
   // was already updated via onCorpusChanged). Default-valued param, not optional — Svelte 5's TS
   // strip rejects `?:` here.
   async function load(silent = false): Promise<void> {
+    loading = true
     try {
       const s = await getSettings()
       if (cancelled) return
       settings = s
+      loadError = null
       if (!dir) dir = s.source_dir
     } catch (e) {
       if (!silent) loadError = String(e)
+    } finally {
+      loading = false
     }
     // ADR-044: free in the default configuration — this reads the cached answer and only
     // touches the network if the user opted in and a check is due. Deliberately after the
@@ -278,11 +293,9 @@
     </button>
   </header>
 
-  {#if loadError}
-    <p class="err">Couldn't load settings: {loadError}</p>
-  {:else if !settings}
-    <p class="muted">Loading…</p>
-  {:else}
+  <!-- The rail and the pane render at once (KI-93). Getting started and General read nothing from
+       `/api/settings`, so they are whole before the engine answers; the three sections that do
+       say what they are waiting for and fill when it lands. -->
     <div class="body">
       <!-- Navigation, deliberately NOT `role="tablist"`. Tabs come with a keyboard contract —
            roving tabindex, arrow-key movement — and a rail that claims the role without honouring
@@ -318,6 +331,19 @@
           <!-- First (ADR-034): on a fresh install this is the only section that matters, and it says
                so — a model and documents, each one link from the tab that sets it up. -->
           <GettingStarted onOpen={openSection} />
+        {:else if activeSection === 'general'}
+          <General bind:update bind:updateBusy bind:updateError bind:exporting bind:exportError />
+        {:else if !settings}
+          {#if shell.status !== 'ready'}
+            <p class="muted" role="status">
+              Waiting for the engine. This page fills in by itself once it has started.
+            </p>
+          {:else if loading || !loadError}
+            <p class="muted" role="status">Loading…</p>
+          {:else}
+            <p class="err" role="alert">Couldn't load settings: {loadError}</p>
+            <button class="btn" type="button" onclick={() => void load()} use:tooltip={'Read the settings from the engine again'}>Try again</button>
+          {/if}
         {:else if activeSection === 'documents'}
           <Documents
             bind:settings
@@ -350,14 +376,11 @@
               onCorpusChanged()
             }}
           />
-        {:else if activeSection === 'answers'}
-          <Retrieval {settings} bind:overrides />
         {:else}
-          <General bind:update bind:updateBusy bind:updateError bind:exporting bind:exportError />
+          <Retrieval {settings} bind:overrides />
         {/if}
       </div>
     </div>
-  {/if}
 </Dialog>
 
 {#if libraryToOpen}

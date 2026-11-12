@@ -44,6 +44,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-12 — Settings opens before the engine answers (KI-93)
+
+**What changed.** `screens/settings/Settings.svelte` renders its rail and pane at once. General
+and Getting started read nothing from `/api/settings`, so they are whole straight away; Documents,
+Provider & model and Retrieval say *Waiting for the engine* until the settings land. The read is
+made again when `shell.status` turns `ready`, so the open drawer fills in place, and a read that
+fails on a running engine shows its error with *Try again*. `GettingStarted.svelte` says it is
+waiting, not *Couldn't read the setup state*, while the engine is not up.
+
+**Why.** The user's 0.7.3 walkthrough: Settings showed nothing until the engine was online, and
+the installed engine takes tens of seconds to start. The drawer asked once at opening, replaced
+itself with *Loading…* or the error, and never asked again, so it had to be closed and reopened.
+
+**Rejected.** Showing the last session's settings read-only, as the library is shown
+(`lib/core/lastSession.ts`): three sections would each need a read-only mode, and a stale provider
+or folder shown as current is worse than a line that says what is awaited. Polling from the
+drawer: the readiness gate already polls, and `shell.status` is its answer.
+
+**What it opens.** Checked in the dev preview with the engine cut off in the page and then let
+back: rail, General and the waiting line, then the open page filled; `npm test` 416/416,
+`svelte-check` 0/0. Not seen: a cold start of an installed build, and Getting started's waiting
+line (it needs a start with no setup state yet).
+
 ## 2026-11-11 (6) — A broken extraction pool no longer stops an ingest run (KI-92)
 
 **What changed.** `ingest/workers.py::warm_extraction_cache` wraps the whole pool block: a failure

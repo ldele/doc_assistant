@@ -65,6 +65,12 @@
         </li>
       {/each}
     </ul>
+  {:else if shell.status !== 'ready'}
+    <!-- Before the engine answers the read can only fail (KI-93). The shell reads the setup state
+         when the engine comes up, and this page fills from it. -->
+    <p class="muted" role="status">
+      Waiting for the engine. This page fills in by itself once it has started.
+    </p>
   {:else if loadError}
     <p class="err" role="alert">Couldn't read the setup state: {loadError}</p>
   {:else}

@@ -65,12 +65,13 @@ show `\|` in commands meant to be copied. Trimming comments across `src/` now: T
 
 The ticket ledger, `docs/TICKETS.md`, leaves the repository: it is gitignored like the known
 issues, and a public report is a GitHub issue. T-001 and T-002 stay in the history. `soupsieve`
-moves from 2.9 to 2.10 for CVE-2026-126192.
+moves from 2.9 to 2.10 for CVE-2026-126192. CVE-2026-126190 is fixed only in 4.0.0, which needs
+Python 3.11.5 and forks the lock; it is a reviewed ignore in `pip-audit-ignore.toml`, since
+nothing here runs a CSS selector.
 
 **What it opens.** T-003 needs the owner's words for the engine and for the library's folders.
-The archive tables that render broken stay as they are, since archives are verbatim. CVE-2026-126190
-in `soupsieve` is fixed only in 4.0.0, which needs Python 3.11.5: the audit gate fails on it until
-it is reviewed or taken.
+The archive tables that render broken stay as they are, since archives are verbatim. The
+`soupsieve` ignore lifts when the Python floor reaches 3.11.5.
 
 ## 2026-11-12 (3) — ADR-066 proposed: the library is offered to a model as records and passages
 

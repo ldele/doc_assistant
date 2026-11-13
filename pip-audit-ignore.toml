@@ -67,3 +67,13 @@ uv installs every package, and no code in src/, apps/ or scripts/ imports setupt
 locked copy is a runtime dependency of torch 2.12, which requires setuptools<82; the fix (84.1.0) \
 cannot be taken until torch lifts that cap."""
 reverse_if = "Anything installs wheels through setuptools (easy_install, setup_requires, fetch_build_eggs) or imports setuptools at runtime; or torch lifts its setuptools<82 cap (then upgrade)."
+
+[[ignore]]
+id = "CVE-2026-126190"  # GHSA-mmhr-3c5m-f64f
+package = "soupsieve"
+reviewed = "2026-11-13"
+why = """Reached only through a CSS selector run on untrusted markup. Nothing in src/, apps/ or \
+scripts/ calls select, select_one or css.select: extractors.py walks the tree with find_all, \
+smooth and get_text, and ebooklib calls no selector either. The fix (4.0.0) needs Python 3.11.5 \
+while the project floor is 3.10, so taking it forks the lock."""
+reverse_if = "A CSS selector is run on document markup; or requires-python moves to 3.11.5 or later (then upgrade)."

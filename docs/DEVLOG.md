@@ -44,6 +44,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-13 (2) — ADR-066 accepted as proposed
+
+**What changed.** ADR-066 (*the library is offered to a model as records and passages*) is
+accepted: option A, the nine choices and the seven read tools as written. Its status, its Decision
+section, the index line in `docs/decisions.md` and ROADMAP rows 65, 102 and 37 say so. No code.
+
+**Why.** It was the open decision that closes A1 in the plan. The user read it with the steer
+that the MCP endpoint need not be complete in its first form and will grow; the ADR's table of
+seams already carries that.
+
+**Rejected.** A smaller first tool set (three or four tools, without the two conversation tools
+and their switch), offered because choice 8 freezes what ships first: the user kept the seven.
+
+**What it opens.** H1, the harness spec. Two texts waited on this acceptance and are still to
+write: row 65's description (it still says a stdio server over `pipeline.py`) and the MCP-client
+row in `docs/security.md`.
+
 ## 2026-11-13 — Repository upkeep: four tickets, and the easy fixes they found
 
 **What changed.** Tickets T-003 to T-006 (the glossary's missing words, security.md's tables,

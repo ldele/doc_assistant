@@ -1,8 +1,10 @@
-<!-- status: active · updated: 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
+<!-- status: active · updated: 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
 
 # ADR-066 — The library is offered to a model as records and passages: an MCP endpoint in the engine, lookups by rule in the chat, and modes that only change the framing
 
-- **Status:** proposed (Claude Code, 2026-11-12). The nine choices below were each put to the user
+- **Status:** proposed (Claude Code, 2026-11-12); **accepted as proposed by the user on
+  2026-11-13**: option A, the nine choices and the seven read tools as written. Nothing is built.
+  *As proposed:* The nine choices below were each put to the user
   on 2026-11-12 and each is recorded with the user's answer. Not accepted until the user has read
   this file; nothing is built. This is ROADMAP rows 65 (the MCP server), 102 (the chat looks
   things up in the library) and 37 (chat modes), designed together because they share one read
@@ -161,6 +163,11 @@ papers `tests/eval/corpus_manifest.yaml` pins). The question is the first public
   the library.
 
 ## Decision
+
+**Accepted 2026-11-13 (user): A, as proposed.** A smaller first set (three or four tools, without
+the conversation tools and their switch) was offered and not taken: the seven tools stay. The
+user's steer stands: the endpoint is not meant to be complete in its first form and grows through
+the seams below. *As proposed:*
 
 **A**, with the nine choices as the user decided them. Build order: the read surface (session
 A3), then the endpoint and its bridge (A4), then the chat's rules and commands (A6), then modes

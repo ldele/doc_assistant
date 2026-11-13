@@ -44,6 +44,31 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-13 (3) — The eval harness spec for the chat work (H1)
+
+**What changed.** `docs/specs/eval-harness-chat.md`, a draft: the executor brief for H2 to H6 of
+ROADMAP 113. ROADMAP row 113 points at it. No code.
+
+**Why.** Four chat sessions (A2, A5, A6, A7) are gated on measurements the harness cannot take.
+A scoped grill put six forks to the user, each taken as recommended: deterministic scorers decide
+gates on every model and a model judge is optional and marked not calibrated until H5; a panel is a
+file of columns (provider, model, adapter), compared within a column only; eight new cases per
+family, all on the public demo corpus; a paired bootstrap interval over cases at `--repeat 3`; a
+gate passes on no measured drop and no new break; and a second adapter drives `ChatController`,
+found necessary because today's adapter calls `RAGPipeline` and never reaches the router, history
+or framing. The user then asked that the spec be model-neutral and fix no budget: which models a
+run uses and what it may cost are the run's settings, recorded with it and stated before it starts,
+and anyone can run the public families on their own model.
+
+**Rejected.** A budget or a fixed model list in the spec; a judge that gates before it is checked;
+records and conversation cases on the private library; fixed thresholds per family; replacing the
+pipeline adapter, which would orphan every committed baseline.
+
+**What it opens.** The user accepted the spec the same day, which fixes the 40 cases (H3) and 30
+grades (H5); H2 is next. Parked: the exact not-found rule (H2), and a run from inside the app
+(after H6). The user made the criterion general: a spec says how a thing works and what it
+measures, independent of any one model, provider or budget; AGENTS.md's build protocol now says so.
+
 ## 2026-11-13 (2) — ADR-066 accepted as proposed
 
 **What changed.** ADR-066 (*the library is offered to a model as records and passages*) is

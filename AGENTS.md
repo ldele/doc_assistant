@@ -127,6 +127,9 @@ Cap 10 entries (cpc ADR-018): rotate older entries verbatim to docs/archive/SESS
 1. Pick the next PR from the `docs/ROADMAP.md` PR table. One PR per session — never bundle.
 2. Read that PR's ADR in `docs/decisions/` before starting.
 3. Where a spec exists in `docs/specs/`, it is the code-level contract (files, contracts, guard tests, DoD).
+   A spec says how the thing works and what it measures, the same on any model, provider or budget;
+   a run's or a release's own choices (which models, what it may cost, when) go in the plan or the
+   run's record, never in the spec (`.claude/CONTEXT.md` rule 10).
 4. Append one `docs/DEVLOG.md` entry per logical change (what / why / rejected / opens).
 
 ## Keypoints (cpc ADR-020 — run the named command at the named moment)

@@ -44,6 +44,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-13 — Repository upkeep: four tickets, and the easy fixes they found
+
+**What changed.** Tickets T-003 to T-006 (the glossary's missing words, security.md's tables,
+tables and status headers across the living docs, plan labels in code comments), and three reports
+filed in the inboxes of the projects they concern: cpc's template justfile, cpc's docs gate, and
+the code-descriptions skill. Fixed now: GLOSSARY's C-011 and C-012 read as built and sit in
+order; security.md's §6 is a list, since an unescaped pipe in a code span split seven of its rows
+on GitHub, and S3 no longer says it waits on S-6; the ADR-048 row in `docs/decisions.md` has its
+Status cell; the CLI's `/help` stops saying *(Phase 4)*; the justfile goes from 184 to 133 lines
+with every recipe unchanged; GLOSSARY and security.md lose the changelog in their status line.
+
+**Why.** The owner asked for the upkeep to be ticketed and the easy part done. Each fix is a
+statement that was wrong or a page that rendered broken; anything that needs a decision (a
+canonical word, a table's new shape) is a ticket.
+
+**Rejected.** Escaping the pipes in §6 rather than making it a list: the raw file would then
+show `\|` in commands meant to be copied. Trimming comments across `src/` now: T-006 rides on the
+0.8.0 chat and extraction work, which touches those files anyway.
+
+The ticket ledger, `docs/TICKETS.md`, leaves the repository: it is gitignored like the known
+issues, and a public report is a GitHub issue. T-001 and T-002 stay in the history. `soupsieve`
+moves from 2.9 to 2.10 for CVE-2026-126192.
+
+**What it opens.** T-003 needs the owner's words for the engine and for the library's folders.
+The archive tables that render broken stay as they are, since archives are verbatim. CVE-2026-126190
+in `soupsieve` is fixed only in 4.0.0, which needs Python 3.11.5: the audit gate fails on it until
+it is reviewed or taken.
+
 ## 2026-11-12 (3) — ADR-066 proposed: the library is offered to a model as records and passages
 
 **What changed.** A new ADR for ROADMAP rows 65, 102 and 37, with its line in

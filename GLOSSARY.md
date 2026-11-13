@@ -1,12 +1,13 @@
-<!-- status: active · updated: 2026-11-06 (U-003: hover text, ADR-063 choice 6; its tooltip and checks, ROADMAP 110 (a)); 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-11-13 · class: living -->
 
 # GLOSSARY — doc_assistant
 
 The pinned vocabulary for this project: one canonical term per concept, the synonyms that are
 forbidden, and where each concept is owned. Use the canonical form in code, docs, prompts, and UI.
 Enforced (opt-in, on-call) by the `cpc-glossary` gate and `cpc-dod-lint` rule N001 — cpc
-CONVENTIONS §14. Laid + filled 2026-07-19 (ADR-021): the concept/keyword/family/skeleton
-vocabulary has produced real confusion (see the 2026-07-17/18 "junk labels" trap) — pin it.
+CONVENTIONS §14. Entries are grouped by prefix: **C-** the knowledge layer's vocabulary, **U-**
+the app's screens and controls, **D-** the project's identity. What changed when: `git log -p
+GLOSSARY.md`.
 
 **Owner:** Lucas
 
@@ -94,28 +95,6 @@ usually real specialist vocabulary.
 **Forbidden:** —
 **Authoritative in:** `db/models.py::Concept.graph_include` + `knowledge/concept_skeleton.load_concepts`
 
-## C-011 — domain / `kind` (taxonomy node kind) — *decided, unbuilt*
-
-**Canonical:** `domain` (a `Concept` with `kind="domain"`)
-**Definition:** An abstract field node (e.g. *machine learning*, *neuroscience*) with zero text presence,
-seeded from ANZSRC, sharing the `Concept` table via a `kind` column (`concept` | `domain`) so typed
-hierarchy edges can span both (ADR-028 Decision 4, supersedes ADR-019 C1). Presence/gap detectors must
-read only `kind="concept"` — via the single canonical `presence_nodes()` accessor, never scattered
-`WHERE kind` clauses. **Not yet built** — spec: `docs/specs/feature-taxonomy-seed-schema.md` (T1a).
-**Forbidden:** `field node`, `category`
-**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` (spec: `feature-taxonomy-seed-schema.md`)
-
-## C-012 — concept hierarchy (curated classification DAG) — *decided, unbuilt*
-
-**Canonical:** `concept hierarchy`
-**Definition:** The user's curated `is_a`/`in_field` edges — a polyhierarchical, acyclic SKOS-shaped DAG
-over `Concept` nodes, stored in a new `concept_hierarchy` table that **survives a skeleton rebuild**
-(distinct from the derived, rebuilt-every-run `concept_edges`; ADR-028 Decision 5). This is the
-*classification* layer; `concept_edges` is the *association* layer. Documents attach to `domain` nodes via
-a `document_field` many-to-many (ADR-028 Decision 6). **Not yet built.**
-**Forbidden:** `concept tree` (it is a DAG, not a tree — polyhierarchy per ADR-028), `taxonomy tree`
-**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` (spec: `feature-taxonomy-seed-schema.md`; future `knowledge/taxonomy.py`)
-
 ## C-009 — Enrichment-Layer Pattern
 
 **Canonical:** `Enrichment-Layer Pattern`
@@ -131,6 +110,30 @@ default, and never mutates the primary chunk store.
 beat the control beyond variance, record a baseline in `tests/eval/baselines/`).
 **Forbidden:** —
 **Authoritative in:** `.claude/CONTEXT.md` → Locked settings table
+
+## C-011 — domain / `kind` (taxonomy node kind)
+
+**Canonical:** `domain` (a `Concept` with `kind="domain"`)
+**Definition:** An abstract field node (e.g. *machine learning*, *neuroscience*) with zero text presence,
+seeded from ANZSRC, sharing the `Concept` table via a `kind` column (`concept` | `domain`) so typed
+hierarchy edges can span both (ADR-028 Decision 4, supersedes ADR-019 C1). Presence/gap detectors must
+read only `kind="concept"` — via the single canonical `presence_nodes()` accessor, never scattered
+`WHERE kind` clauses.
+**Forbidden:** `field node`, `category`
+**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` +
+`db/models.py::Concept.kind` + `knowledge/taxonomy.presence_nodes`
+
+## C-012 — concept hierarchy (curated classification DAG)
+
+**Canonical:** `concept hierarchy`
+**Definition:** The user's curated `is_a`/`in_field` edges — a polyhierarchical, acyclic SKOS-shaped DAG
+over `Concept` nodes, stored in the `concept_hierarchy` table, which **survives a skeleton rebuild**
+(distinct from the derived, rebuilt-every-run `concept_edges`; ADR-028 Decision 5). This is the
+*classification* layer; `concept_edges` is the *association* layer. Documents attach to `domain` nodes via
+the `document_field` many-to-many (ADR-028 Decision 6).
+**Forbidden:** `concept tree` (it is a DAG, not a tree — polyhierarchy per ADR-028), `taxonomy tree`
+**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` +
+`src/doc_assistant/knowledge/taxonomy.py` (the write seam and its acyclicity check)
 
 ## C-013 — written form
 

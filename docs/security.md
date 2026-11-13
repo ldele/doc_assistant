@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-11 (0.7.3 refresh: §2 re-checked: the summary route and the document filter read only, the 500 that keeps its CORS headers, no new dependency; §3 and §4 unchanged, no step landed since 0.7.2; 2026-11-06: §2: four window permissions for the app's own title bar, ADR-065; 2026-11-05: S2: the sink moved to screens/chat/, ADR-064; 2026-11-04: 0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-11-13 · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -132,7 +132,7 @@ and says so).
 |---|---------|-------|---------------------|------|
 | S1 | **No request authentication on the local API** — CORS is the only origin control, and DNS rebinding (T2) bypasses CORS entirely | `apps/api/main.py` | chained with S3, a web page can copy any readable file into the library, index it, and read the chunks back | S-5 (**rebinding closed 2026-09-30**), S-6 (**writes need the launch token, 2026-10-17**) |
 | S2 | **LLM output is rendered as raw HTML** — `marked.parse` → `{@html}`, no sanitiser; `marked` ≥ 14 no longer filters `javascript:` | `apps/desktop/src/screens/chat/Markdown.svelte` | T1: a quoted passage carries markup into the DOM. The CSP contains it in the packaged app; the dev loop had **no CSP** — Tauri injects it only into assets it serves, and `tauri dev` loads the Vite server directly (**fixed 2026-09-17**, S-3: the dev server sends it). Residual after S-3 was `<form action>` / `<a href>` exfil and UI spoofing, since `form-action`, `base-uri` and `object-src` do not inherit from `default-src` — all three now `'none'` (**S-4, 2026-09-20**). What is left is `<a href>`: DOMPurify keeps links, and a click is the user's | S-3 **done 2026-09-17**, S-4 **done 2026-09-20** |
-| S3 | **`POST /api/documents/inspect` and `/add` accept arbitrary absolute paths** (by design — the picker sends them), and `inspect` walks a directory with no count/size cap | `apps/api/routers/sources.py` · `library/add.py` | with S1 this is the exfil path; alone it is an unbounded walk + hash of `C:\` on a request thread | walk cap **done 2026-09-16** (S-2: 50,000 files, 400 with a sentence, `/add` too); the arbitrary-path half waits on S-6 (auth) |
+| S3 | **`POST /api/documents/inspect` and `/add` accept arbitrary absolute paths** (by design — the picker sends them), and `inspect` walks a directory with no count/size cap | `apps/api/routers/sources.py` · `library/add.py` | with S1 this is the exfil path; alone it is an unbounded walk + hash of `C:\` on a request thread | walk cap **done 2026-09-16** (S-2: 50,000 files, 400 with a sentence, `/add` too); the arbitrary-path half closed by S-6 (2026-10-17): both are POSTs, so a page cannot call them without the launch token |
 | S4 | ~~**No size / page / archive-entry cap on ingest**~~ — EPUB, DOCX, ODT are zip archives opened with no decompressed-size accounting | `extractors.py` | T1: a zip bomb in the corpus is unbounded memory; the cheapest local DoS | **done 2026-09-16** (S-1) — residual: no page cap, and a central directory of millions of entries is bounded only by the 1 GB file cap |
 | S5 | **Document text enters the prompt with no data/instruction boundary** | `prompts.py` · `pipeline.py` | T1: *"ignore prior instructions"* inside a passage reads like evidence. Must not reintroduce a bracket-shaped delimiter; moves `prompt_version` | S-9 (eval-gated) |
 | S6 | ~~**`pip-audit` cannot fail CI** (`continue-on-error`); 66 advisories / 16 packages on 2026-09-07~~ | `.github/workflows/ci.yml` | — | **done 2026-09-30** (S-8): 59 across 18 → 5 across 2, each reviewed in `pip-audit-ignore.toml` |
@@ -199,19 +199,30 @@ any change that adds a route, a `{@html}`, a capability, a parser, or a network 
 **How** — read-only, one session, the same eleven lenses the 2026-09-10 review used, each with the
 command that answers it. Write the answer down even when it is "clean":
 
-| Lens | Question | How to answer it |
-|------|----------|------------------|
-| A | Where does the API bind, and who can call it? | `rg -n "DOC_API_HOST|allow_origins|TrustedHost|Depends\(" apps/api`; compose `ports:` |
-| B | Which routes take a path or serve a file, and is each confined to a root? | `rg -n "FileResponse|Path\(|rglob|open\(" apps/api src/doc_assistant/library` — one row per route |
-| C | Where is untrusted text rendered as HTML? | `rg -n "@html|innerHTML" apps/desktop/src` — must be exactly the sanitised path |
-| D | Tauri: CSP, capabilities, remote IPC, updater | `pytest tests/unit/test_desktop_security_config.py -q`; read `capabilities/*.json` |
-| E | Secrets: loaded where, logged where, echoed where | `rg -n "ANTHROPIC_API_KEY|api_key|key_hint" src apps`; `git log --all -- .env` is empty |
-| F | Any exec / deserialisation primitive? | `rg -n "pickle|torch.load|trust_remote_code|yaml.load\(|eval\(|exec\(|shell=True|os.system" src apps scripts tools` — expect zero |
-| G | Any SQL built from input? | `rg -n "execute\(f|\.format\(|% " src/doc_assistant --glob "*.py"` near `execute` |
-| H | Parsers and caps | the cap constants exist and have tests; `bandit -r src apps -c pyproject.toml -q` |
-| I | Prompt injection and every LLM-output sink | `rg -n "json.loads" src/doc_assistant` — each result validated, none becomes a path/URL/arg |
-| J | Supply chain | `pip-audit`; `npm audit`; `uses:` pinned; Docker base tags; `HF_HUB_OFFLINE` in the frozen build |
-| K | Logging and PII | `rg -n "log\.(info|warning|error)\(" src` for `path=|query=|text=`; `security_*` events present |
+Each lens is a question, then the command that answers it:
+
+- **A · Where does the API bind, and who can call it?**
+  `rg -n "DOC_API_HOST|allow_origins|TrustedHost|Depends\(" apps/api`; compose `ports:`.
+- **B · Which routes take a path or serve a file, and is each confined to a root?**
+  `rg -n "FileResponse|Path\(|rglob|open\(" apps/api src/doc_assistant/library`, one line per route.
+- **C · Where is untrusted text rendered as HTML?**
+  `rg -n "@html|innerHTML" apps/desktop/src`: it must be exactly the sanitised path.
+- **D · Tauri: CSP, capabilities, remote IPC, updater.**
+  `pytest tests/unit/test_desktop_security_config.py -q`; read `capabilities/*.json`.
+- **E · Secrets: loaded where, logged where, echoed where?**
+  `rg -n "ANTHROPIC_API_KEY|api_key|key_hint" src apps`; `git log --all -- .env` is empty.
+- **F · Any exec or deserialisation primitive?** Expect zero from
+  `rg -n "pickle|torch.load|trust_remote_code|yaml.load\(|eval\(|exec\(|shell=True|os.system" src apps scripts tools`.
+- **G · Any SQL built from input?**
+  `rg -n "execute\(f|\.format\(|% " src/doc_assistant --glob "*.py"`, read near each `execute`.
+- **H · Parsers and caps.** The cap constants exist and have tests;
+  `bandit -r src apps -c pyproject.toml -q`.
+- **I · Prompt injection and every LLM-output sink.** `rg -n "json.loads" src/doc_assistant`:
+  each result is validated, and none becomes a path, a URL or an argument.
+- **J · Supply chain.** `pip-audit`; `npm audit`; `uses:` pinned; Docker base tags;
+  `HF_HUB_OFFLINE` in the frozen build.
+- **K · Logging and PII.** `rg -n "log\.(info|warning|error)\(" src`, looking for `path=`,
+  `query=` and `text=`; the `security_*` events are present.
 
 **The log.** One dated entry in `.claude/REVIEWS.md` under row 7, in the file's standard shape:
 **Covered** (the lenses, with the commands as run) · **Found** (new §3 rows, or "none") · **NOT

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-10 (the crossover review's archived path; 2026-09-16: four gitignored paths the docs cite were missing from the table) · class: living -->
+<!-- status: active · updated: 2026-11-13 · class: living -->
 
 # Local-only working docs
 
@@ -12,6 +12,7 @@ trade-offs (including this one — dangling links) are recorded in
 | `.claude/CONTEXT.md` | Canonical facts: stack, locked settings, provider config, phase map, open questions. `AGENTS.md` carries the digest a reader needs. |
 | `docs/KNOWN_ISSUES.md` | Open weaknesses, recurring failures, workarounds (the `KI-nn` references). In `docs/` since cpc 1.22 (read when a task needs it), and gitignored by name. |
 | `docs/FRICTION.md` | One line the first time a tool or a rule got in the way. In `docs/` since cpc 1.22, and gitignored by name. |
+| `docs/TICKETS.md` | The ticket ledger (the `T-nnn` references): what the owner or another project reported, and the answer each is owed. Gitignored by name since 2026-11-13; a public report is a GitHub issue. T-001 and T-002 remain in the history before that date. |
 | `.claude/RIGOR_TODO.md` | Deferred-rigor tracker — validation debt on work believed correct (the `RG-nn` references). |
 | `.claude/SESSION.md` | The cross-session handoff baton (always local — per-machine by nature). |
 | `docs/archive/SESSION-archive-<NNN>.md` | Older baton entries, rotated verbatim out of `.claude/SESSION.md` (local, like the baton). ROADMAP rows cite them as "baton YYYY-MM-DD". |

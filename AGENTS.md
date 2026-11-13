@@ -29,7 +29,8 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 > **All of these but the DEVLOG are local-only working state (ADR-029) — they are not in the repo.** On the dev machine
 > they are exactly where this list says; in a fresh clone they do not exist, and this file's
 > Non-negotiables digest is what you get. See `docs/local-only.md`. They also have **no off-machine
-> copy** any more: back up `.claude/`, `docs/KNOWN_ISSUES.md` and `docs/FRICTION.md` yourself.
+> copy** any more: back up `.claude/`, `docs/KNOWN_ISSUES.md`, `docs/FRICTION.md` and `docs/TICKETS.md`
+> yourself.
 
 Every session reads these four, after this file (cpc 1.22: `.claude/` is what every session reads):
 

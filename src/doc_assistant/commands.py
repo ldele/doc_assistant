@@ -150,16 +150,16 @@ def help_message() -> str:
 - `/library healthy` — show only healthy documents
 - `/library pdf` (or epub, etc.) — show documents of a specific format
 - `/document <id>` — full details for one document (use first 8 chars of ID)
-- `/cites <id>` — citations this document makes (Phase 4)
-- `/cited-by <id>` — documents in the library that cite this one (Phase 4)
-- `/graph <id>` — small citation subgraph around this document (Phase 4)
-- `/similar <id>` — top-N semantically-similar documents (Phase 4)
+- `/cites <id>` — citations this document makes
+- `/cited-by <id>` — documents in the library that cite this one
+- `/graph <id>` — small citation subgraph around this document
+- `/similar <id>` — top-N semantically-similar documents
 - `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
-- `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
+- `/export-record <id>` — export the full provenance record for one answer as JSON
 - `/export` — download this conversation as a clean markdown transcript
 - `/export-debug` — dev bundle (sources + scores + figures + reviewer + log) → `data/exports/`
 - `/records` — list the most recent answer records
-- `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent (Phase 6)
+- `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent
 - `/synthesis` — show the current synthesis mode (`human` evidence-only vs `ai` dual-layer)
 - `/help` — this message
 
@@ -172,7 +172,7 @@ single argument._
 
 
 # ============================================================
-# Phase 4 citation formatters
+# Citation formatters
 # ============================================================
 
 

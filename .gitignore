@@ -40,6 +40,9 @@ CLAUDE.local.md
 # sit in docs/. Still local working state (ADR-029), so ignored by name.
 docs/KNOWN_ISSUES.md
 docs/FRICTION.md
+# The ticket ledger: reports to the owner, private like the known issues (2026-11-13). Public
+# reports go to GitHub issues. Its first two tickets stay in the history before that date.
+docs/TICKETS.md
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
 # ...and the index cpc-rotate lays at the first baton rollover (cpc ADR-045/053): it lists every one of

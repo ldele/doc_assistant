@@ -1,14 +1,11 @@
-# doc_assistant — task runner (optional; needs `just`: https://github.com/casey/just)
+# doc_assistant — task runner (optional; needs `just`: https://github.com/casey/just).
+# A facade (cpc ADR-011): every recipe aliases a command you can run without `just`.
+# `just --list` shows the comment line right above each recipe, so that line is its summary.
 #
-# Per-machine PyTorch backend, the footgun-free way: set DOC_TORCH once per machine
-# and every recipe below uses the right wheel.
-#   GPU box (RTX/CUDA):  setx DOC_TORCH cu130   (Windows)  /  export DOC_TORCH=cu130
-#   CPU-only box + CI:   leave DOC_TORCH unset  -> defaults to the safe `cpu` wheel.
-# The +cu130 wheel SEGFAULTS (exit 139) on a box with no usable GPU, so cpu is the default.
-# Rationale + the underlying uv extras/conflicts: docs/specs/torch-backend-per-machine.md.
+# Torch backend per machine: `setx DOC_TORCH cu130` on a CUDA box; unset means `cpu`, the safe
+# default (the cu130 wheel segfaults without a GPU). Why: docs/specs/torch-backend-per-machine.md.
 
-# Windows has no POSIX `sh`; run recipes through cmd so `just` works out of the box. The
-# recipe bodies are plain single commands (uv/npm/uvicorn), so cmd vs PowerShell is moot.
+# Windows has no POSIX `sh`; every recipe body is one command, so cmd is enough.
 set windows-shell := ["cmd.exe", "/c"]
 
 torch := env_var_or_default("DOC_TORCH", "cpu")
@@ -41,33 +38,15 @@ compare *ARGS:
 emit-baseline *ARGS:
     uv run --extra {{torch}} python -m scripts.emit_baseline {{ARGS}}
 
-# --- optimisation instruments (the locked-settings workflow) -----------------------------------
-# `just --list` shows only the LAST comment line above a recipe, so the detail lives here and each
-# recipe below keeps a one-line summary.
-#
-# Locked settings change ONLY on an eval win (.claude/CONTEXT.md): sweep, beat the control beyond
-# its variance, record a baseline in tests/eval/baselines/. Both sweeps take --dry-run — it prints
-# the grid and the exact commands and touches nothing. Always start there.
-#
-# ⚠ A run is comparable only to baselines taken on the SAME corpus. Extra documents are retrieval
-# distractors, so a public-case run against the private 97-doc index is NOT the committed public
-# baseline (evals/README.md): the public 10 need an isolated data home, while the private 35-case
-# set matches the indexed library. The public set also saturates citation_overlap at 1.000 and so
-# cannot discriminate retrieval changes — retrieval experiments belong on the larger corpus.
-#
-# `just compare A B` now checks that mechanically (RG-021): it reports which scorers may be
-# read across two runs and which may not, and answers UNKNOWN rather than OK when a run did
-# not record what it measured. `just compare --list` shows which runs pin themselves at all.
-#
-# ⚠ sweep-chunking's preflight is load-bearing: it asserts every config actually reaches the code
-# and that no two grid points are the same experiment. That guard exists because the 2026-06-06 run
-# compared one configuration with itself six times and reported a verdict (KI-41). Never trust a
-# chunking result from a run that skipped it.
+# --- optimisation instruments: locked settings change only on an eval win (.claude/CONTEXT.md) ---
+# Start every sweep with --dry-run. A run compares only with baselines on the same corpus
+# (evals/README.md); `just compare A B` checks that.
 
 # BM25/vector ensemble-weight sweep — retrieval-only, $0, near-deterministic, no re-embed.
 sweep-bm25 *ARGS:
     uv run --extra {{torch}} python -m scripts.sweep_bm25_weight {{ARGS}}
 
+# Never trust a chunking result from a run that skipped its preflight (KI-41).
 # Parent/child chunk-size sweep — re-embeds the corpus per grid point (slow; GPU strongly advised).
 sweep-chunking *ARGS:
     uv run --extra {{torch}} python -m scripts.sweep_chunking {{ARGS}}
@@ -97,16 +76,12 @@ api *ARGS:
 sidecar-check:
     uv run --no-sync python -m scripts.build_sidecar --check
 
-# Build the frozen FastAPI sidecar (PR-M4; CPU-synced venv + packaging extra — see KI-3).
+# Build the frozen FastAPI sidecar (CPU-synced venv + packaging extra — see KI-3).
 sidecar:
     uv run --no-sync python -m scripts.build_sidecar
 
-# Read-only, seconds, exits non-zero on a real problem. Checks the five version strings agree
-# (incl. uv.lock), the artifact is newer than every tracked source file, the sidecar did not lose a
-# bundle (KI-34's size cliff), that RG-012 passed on THIS artifact, and that no developer command
-# reached the shipped UI (KI-39). A green run is necessary, not sufficient — the judgment steps
-# are in docs/RELEASE.md.
-# Release preflight — the MECHANICAL half of docs/RELEASE.md.
+# A green run is necessary, not sufficient: the judgment steps are in docs/RELEASE.md.
+# Release preflight — the mechanical half of docs/RELEASE.md (read-only, seconds).
 preflight:
     uv run --no-sync python -m scripts.release_preflight
 
@@ -114,33 +89,21 @@ preflight:
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration
 
-# Blocking since 2026-09-30 (docs/security.md S-8): fails on any advisory not reviewed in
-# pip-audit-ignore.toml. The same command CI runs; a CUDA venv audits a few more packages.
 # Dependency advisories, blocking — the CI gate (reviewed ignores in pip-audit-ignore.toml).
 audit:
     uv run --no-sync python -m scripts.pip_audit_gate
 
-# Able to fail since 2026-10-01 (docs/security.md S-13): fails on a secret in a tracked file that
-# .secrets.baseline does not record. The same command CI runs; it never rewrites the baseline.
-# The recipe is not called `secrets` because the scanner reads that name, followed by its command
-# on the next line, as a keyword with a value, and the gate would then flag its own recipe.
+# Not named `secrets`: the scanner would read that recipe name as a key and flag this file.
 # Secret scan over the tracked files, blocking — the CI gate.
 secret-scan:
     uv run --no-sync python -m scripts.secret_scan_gate
 
-# ⚠ USE THIS, NOT `mypy --strict src`. Strictness already comes from [tool.mypy] strict=true, so
-# the flag adds nothing — except that it ALSO re-enables warn_unused_ignores (pyproject turns it
-# off), which makes it a DIFFERENT option set. mypy keys its incremental cache on the options, so
-# alternating the two forms invalidates the whole cache every time: measured on this repo,
-# `mypy src` is 2.4s warm and 40.5s right after a `--strict` run. That flip-flop was making every
-# commit pay ~40s in the pre-commit mypy hook. Same reason CI uses the bare form.
+# Never `mypy --strict src`: it is a different option set and wipes the cache (CONTEXT.md §8).
 # Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/`).
 typecheck:
     uv run --no-sync mypy src
 
-# Pinned to its OWN cache dir so it cannot cold-start `typecheck` (or be cold-started by it). Note
-# it is *stricter than CI*: it reports unused `type: ignore`s, which the shipped config
-# deliberately allows.
+# Own cache dir, so it cannot cold-start `typecheck`; stricter than CI (unused ignores).
 # Escape hatch for the divergent `--strict` flag set — prefer `just typecheck`.
 typecheck-strict:
     uv run --no-sync mypy --strict --cache-dir .mypy_cache-strict src
@@ -149,26 +112,12 @@ typecheck-strict:
 torch-check:
     uv run --extra {{torch}} python -c "import torch; print(torch.__version__, 'cuda', torch.cuda.is_available())"
 
-# ⚠ NOT `cargo clean` — that wipes all of target/, which here also holds the current installers
-# (target/release/bundle, ~3.1 GB at 0.5.1; only the NSIS .exe is on the GitHub release, so the MSI
-# has no copy anywhere) and a ~1.5 GB build-time copy of the frozen sidecar. This drops only the
-# recompilable half: target/debug in full, target/release except bundle/. The frozen backend in
-# src-tauri/backend is outside target/ and so is never at risk — no run of this forces a re-freeze.
-# Installer pruning stays manual and stays in docs/RELEASE.md §8. The active-build guard is scoped to
-# what each scope can actually break: a build in THIS repo blocks the target clean, while any build
-# on the machine blocks `-Registry` (that cache is shared). Other projects compile here constantly,
-# so a machine-wide guard would just train you to pass -Force.
-# Flags: `-DryRun` reports and deletes nothing (never blocked); `-Registry` also drops
-# ~/.cargo/registry/src (~1.3 GB, re-extracted offline from the .crate tarballs — shared with every
-# Rust project on the machine, hence opt-in); `-Force` overrides the guard.
+# Not `cargo clean`: target/ holds the installers. Flags: -DryRun, -Registry, -Force (see the script).
 # Reclaim Rust build space — keeps the release installers and the frozen sidecar.
 clean *ARGS:
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean_build.ps1 {{ARGS}}
 
-# --- cpc conventions (vendored, LOCAL-ONLY — ADR-021) -----------------------------------------
-# tools/conventions/ is gitignored (private tooling, public repo — ADR-001/ADR-007); on a fresh
-# clone these recipes are unavailable by design. Facade only (cpc ADR-011): each recipe aliases a
-# directly-runnable command; nothing lives ONLY here.
+# --- cpc conventions: tools/conventions/ is local-only (ADR-001/ADR-007), absent on a fresh clone ---
 
 # Fast docs/route gate.
 check:

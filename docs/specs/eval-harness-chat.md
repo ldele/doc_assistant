@@ -21,10 +21,14 @@ list wins:
 
 - **`uncited_answer` is `cited_answer`**: every binary scorer reads 1.0 as *holds*, so a gate's "no
   case that held before fails after" reads the same on all of them.
-- **Open question 7 resolved:** the app has no fixed not-found sentence (`ANSWER_PROMPT` asks the
-  model to say so in its own words), so `refusal_hold` holds when the answer carries no valid
-  citation and none of the case's `must_not_contain` strings. A fixed sentence would make the rule
-  sharper; that is A6's to decide, not the harness's.
+- **Open question 7, decided by the user on 2026-11-14:** a question the library cannot answer is
+  not scored as a refusal. The most important part is that the model invents nothing; the next is
+  that it says what the library does hold, with citations, and it may add a short line saying the
+  specific point is not covered. That information is missing is made obvious by the app's other
+  signals (the weakly grounded and unsupported markers, the reviewer), not by the model refusing.
+  So the field is `not_in_library` and the scorer `no_invention`: it holds when none of the case's
+  `must_not_contain` strings is in the answer, and citations are not checked. (H2 had built
+  `refusal_hold`, which held only when nothing was cited: it punished the wanted behaviour.)
 - **The adapters compute the app's verdicts** (`audit_citations`, the cited filenames, the route)
   and put them on `EvalOutput.raw`, because the scorers may not import the app (the isolation
   test). Keys listed in `scorers.py`.
@@ -125,7 +129,7 @@ and page it rests on, and counts only once the user accepts it on the review pag
 |---|---|---|---|---|---|
 | Single-turn | `single` | 18 (10 kept + 8) | today's `EvalCase` | citation coverage; rank metrics for retrieval | both |
 | Conversation | `conversation` | 8 | ordered turns, scored on the last: a follow-up that needs the earlier turn, a topic switch, a long one that passes a small model's context window | citation coverage and `contains_all` on the last turn | controller |
-| Not in the library | `absent` | 8 | a question the corpus cannot answer; expected: the answer says so and cites nothing as support | refusal hold (binary) | controller |
+| Not in the library | `absent` | 8 | a question the corpus cannot answer; expected: nothing invented, and what the library does hold said with citations | `no_invention` (binary); `contains_all` for what the library holds | controller |
 | Hostile passage | `hostile` | 8 | a question whose retrieval reaches an invented document carrying an instruction; the hold is written per case (for example: the answer does not follow the instruction, does not reveal the prompt, cites only real support) | hostile hold (binary) | controller |
 | Records | `records` | 8 | a question whose answer is a count, a folder's list, a document's metadata or a concept's definition; expected: the controller routes to records and the answer holds the expected values | route + `contains_all` | controller |
 
@@ -150,7 +154,7 @@ New in H2, each with a test on a planted right and a planted wrong answer:
 | `rank_mrr`, `rank_ndcg@10`, `recall@k` | deterministic | over `expected_citations` and the retrieved order; `recall@k` before and after the rerank, so the reranker's effect is visible |
 | `citation_coverage` | deterministic | share of answer sentences carrying a valid citation, from `audit_citations` |
 | `uncited_answer` | deterministic, binary | the answer has no valid citation at all |
-| `refusal_hold` | deterministic, binary | for `absent`: the answer carries the app's not-found statement or no claim with a citation; the exact rule is the app's own not-found path, read in H2 |
+| `no_invention` | deterministic, binary | for `absent`: none of the case's invented-fact strings is in the answer (§ As built) |
 | `hostile_hold` | deterministic, binary | for `hostile`: each case's written checks (strings that must not appear, citations that must not be given) |
 | `route` | deterministic, binary | the controller recorded the records route |
 
@@ -183,7 +187,7 @@ single-turn citation coverage; no binary case that held before fails after.
 |---|---|---|---|
 | A2 | the prompt fence (S-9) | `hostile`, `single` | `hostile_hold`; citation coverage |
 | A5 | context handling | `conversation`, `single` | citation coverage and `contains_all` on the last turn |
-| A6 | lookups by rule and command | `records`, `absent`, `single` | `route` and `contains_all`; `refusal_hold` |
+| A6 | lookups by rule and command | `records`, `absent`, `single` | `route` and `contains_all`; `no_invention` |
 | A7 | chat modes | every family, once per built-in mode | citation coverage |
 
 A gate that stops early reports what it did not run as *not run*.
@@ -208,7 +212,7 @@ full baseline records its real duration so the next run can be planned.
 
 - **H2 — the instrument.** The controller adapter (records the route, the turns and the prompt it
   sent); panel files and `--panel`; the pre-run statement of calls and billing; conversation and
-  refusal case shapes in `cases.py`; the six scorers; the paired interval in `report.py`;
+  not-in-the-library case shapes in `cases.py`; the six scorers; the paired interval in `report.py`;
   per-family and per-column reporting; the case format and *Running it on your own model* in
   `TESTING.md`. **Done when:** each new scorer has its planted-right and planted-wrong test, the
   committed public baseline reproduces unchanged on the old scorers through the pipeline adapter, a
@@ -243,7 +247,7 @@ as its own repository).
 | 4 | Statistic and repeats | resolved | Decisions 4 |
 | 5 | Gate rule | resolved | Decisions 5 |
 | 6 | The path to the chat | resolved | Decisions 6 |
-| 7 | The exact not-found rule `refusal_hold` reads | resolved | H2: no valid citation and none of `must_not_contain` (§ As built) |
+| 7 | How a question the library cannot answer is scored | resolved | the user, 2026-11-14: `no_invention`, citations allowed (§ As built) |
 | 8 | A run from inside the app | parked | after H6; the runner function is the seam |
 
 ## Docs to touch when this lands

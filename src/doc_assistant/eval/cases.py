@@ -19,9 +19,10 @@ Locked design choices:
   last turn is the one scored, the earlier ones are replayed first. An adapter
   that cannot replay turns records an error for the case, never a silent
   single-turn answer.
-* Expected behaviour that is not text (the route a turn took, a refusal, what
-  a hostile passage must not make the answer do) has its own fields, so a
-  scorer reads a stated expectation rather than inferring one.
+* Expected behaviour that is not text (the route a turn took, a question the
+  library cannot answer, what a hostile passage must not make the answer do)
+  has its own fields, so a scorer reads a stated expectation rather than
+  inferring one.
 
 The loader returns plain dataclasses, not Pydantic models, so this
 module has zero runtime deps beyond stdlib + PyYAML.
@@ -50,7 +51,7 @@ class EvalCase:
     family: str = "single"
     prior_turns: list[str] = field(default_factory=list)
     expected_route: str | None = None
-    expect_refusal: bool = False
+    not_in_library: bool = False
     must_not_contain: list[str] = field(default_factory=list)
     must_not_cite: list[str] = field(default_factory=list)
 
@@ -86,9 +87,9 @@ def _parse_case(raw: dict[str, Any]) -> EvalCase:
         query, prior_turns = str(raw["query"]), []
     else:
         raise ValueError(f"Case {case_id!r}: missing required field 'query' (or 'turns')")
-    expect_refusal = raw.get("expect_refusal", False)
-    if not isinstance(expect_refusal, bool):
-        raise ValueError(f"Case {case_id!r}: 'expect_refusal' must be true or false")
+    not_in_library = raw.get("not_in_library", False)
+    if not isinstance(not_in_library, bool):
+        raise ValueError(f"Case {case_id!r}: 'not_in_library' must be true or false")
     route = raw.get("expected_route")
     return EvalCase(
         id=case_id,
@@ -105,7 +106,7 @@ def _parse_case(raw: dict[str, Any]) -> EvalCase:
         family=str(raw.get("family") or "single"),
         prior_turns=prior_turns,
         expected_route=str(route) if route is not None else None,
-        expect_refusal=expect_refusal,
+        not_in_library=not_in_library,
         must_not_contain=_coerce_str_list(
             raw.get("must_not_contain"), "must_not_contain", case_id
         ),

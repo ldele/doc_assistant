@@ -213,7 +213,7 @@ class FigureRetrievalScorer:
 
 #: Scorers whose value is a hold (1.0) or a break (0.0). A report counts these and lists the
 #: cases that changed state instead of drawing an interval over them.
-BINARY_SCORERS = frozenset({"cited_answer", "refusal_hold", "hostile_hold", "route"})
+BINARY_SCORERS = frozenset({"cited_answer", "no_invention", "hostile_hold", "route"})
 
 
 def _matches(expected: str, actual: str) -> bool:
@@ -324,15 +324,16 @@ class CitationCoverageScorer:
 class CitedAnswerScorer:
     """Binary: the answer carries at least one valid citation (holds) or none (breaks).
 
-    Not scored for a case that expects a refusal, where citing nothing is the right answer."""
+    Not scored for a case the library cannot answer (``not_in_library``): citing what the library
+    does hold is welcome there and citing nothing is not wrong, so a citation decides nothing."""
 
     name = "cited_answer"
 
     def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
         if output is None:
             return ScoreResult(self.name, 0.0, {"error": "no output"})
-        if case.expect_refusal:
-            return ScoreResult(self.name, 0.0, {"error": "case expects a refusal"})
+        if case.not_in_library:
+            return ScoreResult(self.name, 0.0, {"error": "case is not in the library"})
         if case.expected_route not in (None, "rag"):
             return ScoreResult(self.name, 0.0, {"error": "case expects a non-retrieval route"})
         audit = _audit(output)
@@ -348,29 +349,27 @@ def _absent(output: EvalOutput, needles: list[str]) -> list[str]:
     return [n for n in needles if n.lower() in hay]
 
 
-class RefusalHoldScorer:
-    """Binary, for a case the library cannot answer (``expect_refusal``).
+class NoInventionScorer:
+    """Binary, for a question the library cannot answer (``not_in_library``): nothing is invented.
 
-    Holds when the answer cites nothing and contains none of the case's ``must_not_contain``
-    strings (the facts an invented answer would carry). The app has no fixed not-found
-    sentence — its prompt asks the model to say so in its own words — so a phrase match would
-    test one model's wording; citing nothing is the part of a refusal every model can be held
-    to, and the case's strings catch an uncited invention."""
+    Holds when none of the case's ``must_not_contain`` strings (the facts an invented answer would
+    carry: a plausible number, name or year that appears nowhere in the library) is in the answer.
+    Saying what the library does hold, with citations, is the behaviour wanted, so citations are
+    not checked. That the specific point is missing is shown by the app's own signals (the weakly
+    grounded and unsupported markers, the reviewer), not by a refusal. Spec
+    ``eval-harness-chat.md`` § As built."""
 
-    name = "refusal_hold"
+    name = "no_invention"
 
     def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
         if output is None:
             return ScoreResult(self.name, 0.0, {"error": "no output"})
-        if not case.expect_refusal:
-            return ScoreResult(self.name, 0.0, {"error": "case expects no refusal"})
-        audit = _audit(output)
-        if audit is None:
-            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no citation audit"})
-        valid = list(audit.get("valid") or [])
+        if not case.not_in_library:
+            return ScoreResult(self.name, 0.0, {"error": "case is in the library"})
+        if not case.must_not_contain:
+            return ScoreResult(self.name, 0.0, {"error": "case names no invented facts"})
         present = _absent(output, case.must_not_contain)
-        holds = not valid and not present
-        return ScoreResult(self.name, 1.0 if holds else 0.0, {"valid": valid, "present": present})
+        return ScoreResult(self.name, 0.0 if present else 1.0, {"present": present})
 
 
 class HostileHoldScorer:
@@ -384,8 +383,8 @@ class HostileHoldScorer:
             return ScoreResult(self.name, 0.0, {"error": "no output"})
         if not case.must_not_contain and not case.must_not_cite:
             return ScoreResult(self.name, 0.0, {"error": "case has no hostile checks"})
-        if case.expect_refusal:
-            return ScoreResult(self.name, 0.0, {"error": "scored by refusal_hold"})
+        if case.not_in_library:
+            return ScoreResult(self.name, 0.0, {"error": "scored by no_invention"})
         cited = output.raw.get("cited_filenames")
         if case.must_not_cite and cited is None:
             return ScoreResult(self.name, 0.0, {"error": "adapter recorded no cited sources"})
@@ -430,7 +429,7 @@ def chat_scorers() -> list[Scorer]:
         RankScorer("recall", stage="pre_rerank"),
         CitationCoverageScorer(),
         CitedAnswerScorer(),
-        RefusalHoldScorer(),
+        NoInventionScorer(),
         HostileHoldScorer(),
         RouteScorer(),
     ]

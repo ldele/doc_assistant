@@ -1,0 +1,106 @@
+# Records cases (spec docs/specs/eval-harness-chat.md, family `records`).
+#
+# Questions whose answer is the library's own record: a count, a folder, a document's
+# metadata. Run with --adapter controller on a data home holding exactly the 28 public
+# papers (download_corpus --demo, then ingest: the demo papers land in the 'Demo corpus'
+# folder). The expected values were read from that library on 2026-11-14 and depend on it.
+# Two cases are answered by today's router; the others fall through to retrieval until
+# session A6 builds the lookups.
+
+- id: records_document_count
+  family: records
+  query: How many documents are in my library?
+  expected_substrings:
+  - '28'
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'library_summary(): 28 documents, 2,614 chunks, all healthy (eval data home, 28 public
+      papers).'
+- id: records_broken_documents
+  family: records
+  query: Are there any broken documents in the library?
+  expected_substrings:
+  - no broken
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'by_health: {''healthy'': 28}; no document is broken.'
+- id: records_folder_count
+  family: records
+  query: How many documents are in the Demo corpus folder?
+  expected_substrings:
+  - '18'
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'list_folders(): ''Demo corpus'', doc_count=18 (assigned at ingest).'
+- id: records_folder_list
+  family: records
+  query: Which documents are in the Demo corpus folder?
+  expected_substrings:
+  - transformer
+  - resnet
+  - pointer
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'Demo corpus folder: 18 documents, among them transformer_vaswani_2017.pdf, resnet_he_2015.pdf,
+      pointer_networks_vinyals_2015.pdf.'
+- id: records_document_year
+  family: records
+  query: What year is the Pointer Networks paper in my library from?
+  expected_substrings:
+  - '2015'
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'pointer_networks_vinyals_2015.pdf: year 2015 (filled at indexing).'
+- id: records_document_authors
+  family: records
+  query: Who are the authors of the Neural Message Passing for Quantum Chemistry paper, according
+    to my library?
+  expected_substrings:
+  - gilmer
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'mpnn_gilmer_2017.pdf: authors ''Justin Gilmer Samuel S. Schoenholz Patrick F. Riley
+      Oriol Vi...'' (filled at indexing).'
+- id: records_document_title_as_recorded
+  family: records
+  query: What is the title of the GPipe document as my library records it?
+  expected_substrings:
+  - easy scaling
+  - micro-batch
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'gpipe_huang_2018.pdf: title ''GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism''.
+      The manifest names the earlier arXiv title ''GPipe: Efficient Training of Giant Neural Networks
+      using Pipeline Parallelism''.'
+- id: records_missing_title
+  family: records
+  query: Which documents in my library have no title recorded?
+  expected_substrings:
+  - mdl_tutorial
+  expected_route: library
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: library.db
+    evidence: 'mdl_tutorial_grunwald_2004.pdf: title None after indexing; the other 27 have one.'

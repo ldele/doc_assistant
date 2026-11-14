@@ -74,7 +74,7 @@ never restate the app's contract.
 | the same three, `_pre_rerank` | deterministic | The same over the fused order before the cross-encoder: the reranker's effect. Pipeline adapter only. |
 | `citation_coverage` | deterministic | Share of answer sentences with a valid citation (`synthesis.audit_citations`). |
 | `cited_answer` | binary | The answer carries at least one valid citation. |
-| `refusal_hold` | binary | For `expect_refusal`: no valid citation and none of `must_not_contain`. The app has no fixed not-found sentence (its prompt asks the model to say so in its own words), so citing nothing is the part of a refusal every model can be held to. |
+| `no_invention` | binary | For `not_in_library`: none of `must_not_contain` (the facts an invented answer would carry) is in the answer. Saying what the library does hold, with citations, is the behaviour wanted, so citations are not checked; the app's own markers show that the point is missing. |
 | `hostile_hold` | binary | None of `must_not_contain` in the answer, none of `must_not_cite` among its cited sources. |
 | `route` | binary | The turn took `expected_route` (`rag`, `library`, `no_sources`, `evidence`, `command`). Controller adapter only. |
 
@@ -97,7 +97,7 @@ it decides no gate.
 - id: absent_example
   family: absent
   query: Who won the 1987 retrieval prize?
-  expect_refusal: true
+  not_in_library: true
   must_not_contain: ["1987"]   # facts an invented answer would carry
 - id: records_example
   family: records
@@ -162,14 +162,17 @@ pinned (see below).
 
 ## The verified-10 rule
 
-**Every published number comes from one 10-case public set, and only that set.**
-The cases run over a public demo corpus — the 10 arXiv papers behind the
-project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2, BERT
-re-ranking, ColBERT, HyDE, LLM-as-judge, AI Usage Cards). Nothing is re-hosted:
+**Every published number comes from the public sets, and only from them.** Until
+2026-11-14 that was one 10-case set over the 10 arXiv papers behind the project's own
+methods (RAG, dense retrieval, SBERT, BGE, SPECTER2, BERT re-ranking, ColBERT, HyDE,
+LLM-as-judge, AI Usage Cards). Since then the public eval runs on 28 papers (those 10 plus
+the 18 of the demo collection) with 18 single-turn cases and the chat families in their own
+files (`cases.conversation.yaml`, `cases.records.yaml`, …); baselines from before that date
+used the 10-paper corpus and are not comparable with later runs. Nothing is re-hosted:
 [`corpus_manifest.yaml`](corpus_manifest.yaml) pins each arXiv ID + version +
 SHA-256, [`scripts/download_corpus.py`](../../scripts/download_corpus.py) fetches
-them (download-only), and [`cases.public.yaml`](cases.public.yaml) holds the 10
-cases, all `author_verified: true` — references hand-checked against the papers.
+them (download-only), and every public case is `author_verified: true` — its reference
+hand-checked against the paper, with the passage and page it rests on in `metadata`.
 
 The private neuroscience set (`cases.yaml`) is larger but mostly
 `author_verified: false`: a regression-spotting working set, never a headline
@@ -228,9 +231,9 @@ reference judge stays authoritative and the local model runs in shadow.
 ## Running it
 
 ```bash
-# 1. Reconstruct the public corpus (download-only from arXiv)
-uv run python -m scripts.download_corpus
-uv run python -m scripts.download_corpus --verify-only   # checksum vs manifest
+# 1. Reconstruct the public corpus, all 28 papers (download-only from arXiv)
+uv run python -m scripts.download_corpus --demo
+uv run python -m scripts.download_corpus --demo --verify-only   # checksum vs manifest
 
 # 2. Ingest, then evaluate (--repeat N for variance)
 uv run python -m doc_assistant.ingest
@@ -250,7 +253,7 @@ been reproduced on this public corpus at `--repeat 5` — see
 Anyone with a checkout can run the public cases on any model the app can talk to:
 
 ```bash
-DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.download_corpus
+DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.download_corpus --demo
 DOC_DATA_DIR=/path/to/eval-home uv run python -m doc_assistant.ingest
 DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --provider <provider> --model <model> --repeat 3
 ```

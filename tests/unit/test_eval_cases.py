@@ -125,13 +125,13 @@ def test_family_defaults_to_single_and_expectations_parse(tmp_path):
         [
             "- id: x",
             "  query: q",
-            "  expect_refusal: true",
+            "  not_in_library: true",
             "  expected_route: library",
             "  must_not_contain: [A]",
             "  must_not_cite: [b.md]",
         ],
     )
-    assert c.family == "single" and c.expect_refusal and c.expected_route == "library"
+    assert c.family == "single" and c.not_in_library and c.expected_route == "library"
     assert c.must_not_contain == ["A"] and c.must_not_cite == ["b.md"]
 
 
@@ -140,9 +140,9 @@ def test_query_and_turns_together_are_refused(tmp_path):
         _load(tmp_path, ["- id: x", "  query: q", "  turns: [a]"])
 
 
-def test_expect_refusal_must_be_a_bool(tmp_path):
+def test_not_in_library_must_be_a_bool(tmp_path):
     with pytest.raises(ValueError, match="true or false"):
-        _load(tmp_path, ["- id: x", "  query: q", "  expect_refusal: maybe"])
+        _load(tmp_path, ["- id: x", "  query: q", "  not_in_library: maybe"])
 
 
 def test_missing_query_and_turns_is_refused(tmp_path):

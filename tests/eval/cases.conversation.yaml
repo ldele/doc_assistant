@@ -1,0 +1,196 @@
+# Conversation cases (spec docs/specs/eval-harness-chat.md, family `conversation`).
+#
+# Each case is an ordered list of user turns: the earlier ones are replayed as separate
+# messages in one conversation, and only the last is scored. Run with --adapter controller
+# (the pipeline adapter cannot replay turns) on a data home holding the 28 public papers
+# (download_corpus --demo). Every case was checked against its paper by the author
+# on the review page; metadata keeps the passage and page it rests on.
+
+- id: conv_transformer_why_scale_dot_product
+  family: conversation
+  turns:
+  - What is the attention function used in the Transformer paper called, and how is it computed?
+  - Why do they divide the dot products by that factor?
+  expected_answer: The Transformer scales the query-key dot products by 1/sqrt(d_k). The authors suspect
+    that for large values of d_k the dot products grow large in magnitude, pushing the softmax into
+    regions where it has extremely small gradients; the scaling counteracts this. They note that additive
+    attention outperforms unscaled dot-product attention for larger d_k.
+  expected_substrings:
+  - softmax
+  - small gradients
+  expected_citations:
+  - transformer_vaswani_2017
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: transformer_vaswani_2017.pdf
+    evidence_page: 4
+    evidence: We suspect that for large values of dk, the dot products grow large in magnitude, pushing
+      the softmax function into regions where it has extremely small gradients
+    review_note: Since the question is two-part, should the answer's layout be in two parts as well?
+- id: conv_dpr_best_model_negatives
+  family: conversation
+  turns:
+  - How does DPR encode questions and passages for retrieval?
+  - And which negative passages did its best model train with?
+  expected_answer: DPR's best model is trained with in-batch negatives, i.e. the gold passages of
+    the other questions in the same mini-batch, plus one BM25 negative passage per question. Re-using
+    gold passages from the same batch as negatives makes the computation efficient while performing
+    well.
+  expected_substrings:
+  - bm25
+  - batch
+  expected_citations:
+  - dpr_karpukhin_2020
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: dpr_karpukhin_2020.pdf
+    evidence_page: 3
+    evidence: Our best model uses gold passages from the same mini-batch and one BM25 negative passage.
+- id: conv_colbert_late_interaction_aggregation
+  family: conversation
+  turns:
+  - What does ColBERT mean by late interaction?
+  - How are the per-token similarities turned into a single relevance score?
+  expected_answer: In ColBERT, every query embedding interacts with all document embeddings through
+    a MaxSim operator, which takes the maximum similarity (e.g. cosine similarity) over the document
+    embeddings. The scalar outputs of these MaxSim operators are then summed across the query terms
+    to give the relevance score.
+  expected_substrings:
+  - maxsim
+  - sum
+  - query
+  expected_citations:
+  - colbert_khattab_2020
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: colbert_khattab_2020.pdf
+    evidence_page: 2
+    evidence: every query embedding interacts with all document embeddings via a MaxSim operator,
+      which computes maximum similarity (e.g., cosine similarity), and the scalar outputs of these
+      operators are summed across query terms.
+- id: conv_zaremba_why_not_recurrent_dropout
+  family: conversation
+  turns:
+  - Where does the Zaremba et al. paper apply dropout in an LSTM?
+  - Why do they leave the other connections alone?
+  expected_answer: Zaremba et al. apply dropout only to the non-recurrent connections and not to the
+    recurrent ones. Standard dropout perturbs the recurrent connections, which makes it difficult
+    for the LSTM to learn to store information for long periods of time; leaving them untouched lets
+    the LSTM benefit from dropout without sacrificing its memorization ability.
+  expected_substrings:
+  - recurrent
+  - long periods
+  - dropout
+  expected_citations:
+  - rnn_regularization_zaremba_2014
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: rnn_regularization_zaremba_2014.pdf
+    evidence_page: 4
+    evidence: Standard dropout perturbs the recurrent connections, which makes it difficult for the
+      LSTM to learn to store information for long periods of time.
+- id: conv_switch_hyde_to_gpipe_microbatches
+  family: conversation
+  turns:
+  - How does HyDE produce the document it embeds for retrieval?
+  - How does GPipe split a mini-batch during pipeline-parallel training?
+  expected_answer: GPipe partitions the model's layers into cells placed on separate accelerators,
+    splits each mini-batch of training examples into smaller micro-batches, and pipelines the execution
+    of the micro-batches over the cells. Gradients are accumulated across all micro-batches and applied
+    at the end of the mini-batch (synchronous gradient descent), so updates are consistent regardless
+    of the number of partitions.
+  expected_substrings:
+  - micro-batch
+  - pipeline
+  - accumulated
+  expected_citations:
+  - gpipe_huang_2018
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: gpipe_huang_2018.pdf
+    evidence_page: 2
+    evidence: We first split a mini-batch of training examples into smaller micro-batches, then pipeline
+      the execution of each set of micro-batches over cells.
+- id: conv_switch_scaling_laws_to_pointer_networks
+  family: conversation
+  turns:
+  - According to Kaplan et al., how does language-model loss scale with model size?
+  - How do Pointer Networks use attention differently from earlier sequence-to-sequence attention
+    models?
+  expected_answer: 'Earlier attention models use attention to blend the encoder''s hidden units into
+    a context vector at each decoder step. A Pointer Net instead uses attention as a pointer: the
+    softmax over the attention scores is used directly as the output distribution, selecting a member
+    of the input sequence as the output. This lets it handle output dictionaries whose size depends
+    on the input length.'
+  expected_substrings:
+  - pointer
+  - input sequence
+  - blend
+  expected_citations:
+  - pointer_networks_vinyals_2015
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: pointer_networks_vinyals_2015.pdf
+    evidence_page: 1
+    evidence: It differs from the previous attention attempts in that, instead of using attention
+      to blend hidden units of an encoder to a context vector at each decoder step, it uses attention
+      as a pointer to select a member of the input sequence as the output.
+- id: conv_long_bahdanau_alignment_model
+  family: conversation
+  turns:
+  - What limitation of encoder-decoder neural machine translation do Bahdanau et al. point out?
+  - How does their model get around it?
+  - What exactly does the decoder attend over?
+  - And how is the model that scores those parametrized and trained?
+  expected_answer: The scores e_ij come from an alignment model a(s_{i-1}, h_j) that rates how well
+    the inputs around source position j match the output at position i, using the previous decoder
+    state and the j-th annotation. Bahdanau et al. parametrize this alignment model as a feedforward
+    neural network trained jointly with all the other components of the system. Because it computes
+    a soft alignment, the gradient of the cost can be backpropagated through it.
+  expected_substrings:
+  - alignment model
+  - feedforward
+  - jointly
+  expected_citations:
+  - nmt_attention_bahdanau_2014
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: nmt_attention_bahdanau_2014.pdf
+    evidence_page: 3
+    evidence: We parametrize the alignment model a as a feedforward neural network which is jointly
+      trained with all the other components of the proposed system.
+- id: conv_long_llm_judge_position_bias_mitigation
+  family: conversation
+  turns:
+  - Which biases of LLM-as-a-judge do Zheng et al. examine?
+  - What is the first one about?
+  - Where do they think it comes from?
+  - How do they propose to mitigate it?
+  - Which of those approaches do they use in their experiments, and what happens when the two verdicts
+    disagree?
+  expected_answer: 'For position bias, Zheng et al. use the conservative approach in their experiments:
+    the judge is called twice with the order of the two answers swapped, and a win is declared only
+    when an answer is preferred in both orders. If the results are inconsistent after swapping, the
+    comparison is counted as a tie. The alternative they mention, assigning positions randomly, is
+    not the one used.'
+  expected_substrings:
+  - swap
+  - both orders
+  - tie
+  expected_citations:
+  - llm_judge_zheng_2023
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: llm_judge_zheng_2023.pdf
+    evidence_page: 6
+    evidence: A conservative approach is to call a judge twice by swapping the order of two answers
+      and only declare a win when an answer is preferred in both orders. If the results are inconsistent
+      after swapping, we can call it a tie.

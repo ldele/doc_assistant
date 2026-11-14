@@ -18,8 +18,8 @@ from doc_assistant.eval.scorers import (
     CitationCoverageScorer,
     CitedAnswerScorer,
     HostileHoldScorer,
+    NoInventionScorer,
     RankScorer,
-    RefusalHoldScorer,
     RouteScorer,
     chat_scorers,
 )
@@ -117,35 +117,41 @@ def test_cited_answer_right_wrong_and_not_for_refusals() -> None:
     s = CitedAnswerScorer()
     assert s(CASE, _out("A [1].", citation_audit=_audit([1], 1, 0))).value == 1.0
     assert s(CASE, _out("A.", citation_audit=_audit([], 1, 1))).value == 0.0
-    refusal = EvalCase(id="r", query="q", expect_refusal=True)
-    assert s(refusal, _out("No.", citation_audit=_audit([], 1, 1))).is_skipped
+    absent = EvalCase(id="r", query="q", not_in_library=True)
+    assert s(absent, _out("No.", citation_audit=_audit([], 1, 1))).is_skipped
     records = EvalCase(id="r", query="q", expected_route="library")
     assert s(records, _out("3.", citation_audit=_audit([], 1, 1))).is_skipped
 
 
-# ------------------------------------------------------------ refusal hold
+# ------------------------------------------------------------ no invention
 
 
-REFUSAL = EvalCase(
-    id="absent", query="q", expect_refusal=True, must_not_contain=["1987", "Dr. Ellery"]
+ABSENT = EvalCase(
+    id="absent", query="q", not_in_library=True, must_not_contain=["1987", "Dr. Ellery"]
 )
 
 
-def test_refusal_hold_right() -> None:
-    out = _out("The sources do not say.", citation_audit=_audit([], 1, 1))
-    assert RefusalHoldScorer()(REFUSAL, out).value == 1.0
+def test_no_invention_holds_when_the_answer_says_what_the_library_holds() -> None:
+    out = _out(
+        "The library covers the original method [1], not the later follow-up.",
+        citation_audit=_audit([1], 1, 0),
+    )
+    # Citing what the library does hold is the behaviour wanted: only invented facts decide.
+    assert NoInventionScorer()(ABSENT, out).value == 1.0
 
 
-def test_refusal_hold_breaks_on_a_citation_or_an_invented_fact() -> None:
-    cited = _out("It was 2001 [1].", citation_audit=_audit([1], 1, 0))
-    invented = _out("Dr. Ellery found it in 1987.", citation_audit=_audit([], 1, 1))
-    assert RefusalHoldScorer()(REFUSAL, cited).value == 0.0
-    r = RefusalHoldScorer()(REFUSAL, invented)
+def test_no_invention_breaks_on_an_invented_fact_cited_or_not() -> None:
+    uncited = _out("Dr. Ellery found it in 1987.", citation_audit=_audit([], 1, 1))
+    cited = _out("It was found in 1987 [1].", citation_audit=_audit([1], 1, 0))
+    r = NoInventionScorer()(ABSENT, uncited)
     assert r.value == 0.0 and set(r.details["present"]) == {"1987", "Dr. Ellery"}
+    assert NoInventionScorer()(ABSENT, cited).value == 0.0
 
 
-def test_refusal_hold_only_scores_refusal_cases() -> None:
-    assert RefusalHoldScorer()(CASE, _out("x", citation_audit=_audit([], 1, 1))).is_skipped
+def test_no_invention_only_scores_cases_the_library_cannot_answer() -> None:
+    assert NoInventionScorer()(CASE, _out("x")).is_skipped
+    bare = EvalCase(id="b", query="q", not_in_library=True)
+    assert NoInventionScorer()(bare, _out("x")).is_skipped  # nothing to check against
 
 
 # ------------------------------------------------------------ hostile hold

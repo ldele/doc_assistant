@@ -1,11 +1,13 @@
-# Public eval cases — runs on the RAG-literature demo corpus.
+# Public eval cases — the single-turn family, on the 28 public papers.
 #
-# One case per paper in tests/eval/corpus_manifest.yaml (the literature behind
-# this project's own methods). Standalone — NOT a subset of cases.yaml (that is
-# the neuroscience benchmark over a different, private corpus).
+# The first 10 are one per paper of the eval collection in tests/eval/corpus_manifest.yaml
+# (the literature behind this project's own methods); the 8 after them (2026-11-14, H3 of
+# docs/specs/eval-harness-chat.md) are on the demo collection. Since then the public eval runs
+# on all 28 papers, so baselines from before used a different corpus. Standalone — NOT a
+# subset of cases.yaml (that is the neuroscience benchmark over a private corpus).
 #
 # To run:
-#   uv run python -m scripts.download_corpus      # fetch the 10 papers from arXiv
+#   uv run python -m scripts.download_corpus --demo   # fetch the 28 papers from arXiv
 #   uv run python -m doc_assistant.ingest
 #   uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml
 #
@@ -195,3 +197,189 @@
   - provenance
   metadata:
     author_verified: true
+- id: resnet_residual_mapping
+  query: In deep residual learning, what mapping do the stacked layers learn instead of the desired
+    underlying mapping, and why?
+  expected_answer: 'Instead of fitting the desired mapping H(x) directly, the stacked layers fit a
+    residual mapping F(x) = H(x) - x, and the block outputs F(x) + x through a shortcut connection.
+    The authors hypothesise that the residual is easier to optimise than the original, unreferenced
+    mapping: if an identity mapping were optimal, it is easier to push the residual to zero than to
+    make a stack of nonlinear layers fit an identity.'
+  expected_substrings:
+  - residual
+  - h(x)
+  - identity
+  - optimi
+  expected_citations:
+  - resnet_he_2015
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: resnet_he_2015.pdf
+    evidence_page: 2
+    evidence: Formally, denoting the desired underlying mapping as H(x), we let the stacked nonlinear
+      layers fit another mapping of F(x) := H(x)−x. The original mapping is recast into F(x)+x. We
+      hypothesize that it is easier to optimize the residual mapping than to optimize the original,
+      unreferenced mapping.
+- id: dilated_conv_receptive_field
+  query: Why does the context module of Yu and Koltun use dilated convolutions for dense prediction?
+  expected_answer: Dense prediction such as semantic segmentation needs multi-scale contextual reasoning
+    together with full-resolution output. Dilated convolutions support exponential expansion of the
+    receptive field without loss of resolution or coverage, so the module can systematically aggregate
+    multi-scale context without downsampling or analysing rescaled images.
+  expected_substrings:
+  - dilat
+  - receptive field
+  - resolution
+  - exponential
+  expected_citations:
+  - dilated_conv_yu_2015
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: dilated_conv_yu_2015.pdf
+    evidence_page: 1
+    evidence: The presented module uses dilated convolutions to systematically aggregate multi-scale
+      contextual information without losing resolution. The architecture is based on the fact that
+      dilated convolutions support exponential expansion of the receptive field without loss of resolution
+      or coverage.
+- id: rnn_dropout_nonrecurrent
+  query: How does Zaremba et al.'s regularization apply dropout to LSTMs, and why not on the recurrent
+    connections?
+  expected_answer: Dropout is applied only to the non-recurrent connections (between layers), not
+    to the recurrent connections between timesteps. Standard dropout on the recurrent connections
+    perturbs them and makes it hard for the LSTM to store information over long periods; leaving them
+    intact lets the LSTM benefit from dropout regularization without sacrificing its memorization
+    ability.
+  expected_substrings:
+  - dropout
+  - non-recurrent
+  - recurrent connection
+  - memor
+  expected_citations:
+  - rnn_regularization_zaremba_2014
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: rnn_regularization_zaremba_2014.pdf
+    evidence_page: 4
+    evidence: Standard dropout perturbs the recurrent connections, which makes it difficult for the
+      LSTM to learn to store information for long periods of time. By not using dropout on the recurrent
+      connections, the LSTM can benefit from dropout regularization without sacrificing its valuable
+      memorization ability.
+- id: pointer_net_attention_as_pointer
+  query: How does a Pointer Net (Ptr-Net) use attention differently from earlier attention models,
+    and what problem does that solve?
+  expected_answer: Rather than using attention to blend the encoder's hidden units into a context
+    vector at each decoder step, a Ptr-Net uses attention as a pointer that selects a member of the
+    input sequence as the output. This handles problems whose output dictionary size depends on the
+    variable length of the input, such as convex hulls, Delaunay triangulation and the travelling
+    salesman problem, which sequence-to-sequence models with a fixed output dictionary cannot address
+    directly.
+  expected_substrings:
+  - attention
+  - pointer
+  - input
+  - variable
+  expected_citations:
+  - pointer_networks_vinyals_2015
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: pointer_networks_vinyals_2015.pdf
+    evidence_page: 1
+    evidence: It differs from the previous attention attempts in that, instead of using attention
+      to blend hidden units of an encoder to a context vector at each decoder step, it uses attention
+      as a pointer to select a member of the input sequence as the output.
+- id: relation_network_pairwise_g
+  query: How does a Relation Network (RN) compute relations between objects?
+  expected_answer: 'An RN is a composite function that applies a shared function g_theta to every
+    pair of objects in the input set, sums the outputs, and passes the sum through a second function
+    f_phi (both MLPs). The output of g_theta is called a relation: it infers how, or whether, two
+    objects are related. Because it considers all object pairs and sums over them, the RN is order
+    invariant and must learn which relations exist.'
+  expected_substrings:
+  - pair
+  - relation
+  - sum
+  - object
+  expected_citations:
+  - relation_networks_santoro_2017
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: relation_networks_santoro_2017.pdf
+    evidence_page: 3
+    evidence: We call the output of gθ a “relation”; therefore, the role of gθ is to infer the ways
+      in which two objects are related, or if they are even related at all.
+- id: gpipe_micro_batch_pipeline
+  query: How does GPipe's batch-splitting pipeline parallelism work?
+  expected_answer: GPipe partitions a model, expressed as a sequence of layers, into cells placed
+    on separate accelerators. It splits each mini-batch into smaller micro-batches and pipelines them
+    through the cells, so different accelerators work on different micro-batches at the same time.
+    Gradients are accumulated across all micro-batches and applied synchronously at the end of the
+    mini-batch, so updates are consistent regardless of the number of partitions.
+  expected_substrings:
+  - micro-batch
+  - pipelin
+  - accelerator
+  - gradient
+  expected_citations:
+  - gpipe_huang_2018
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: gpipe_huang_2018.pdf
+    evidence_page: 2
+    evidence: We first split a mini-batch of training examples into smaller micro-batches, then pipeline
+      the execution of each set of micro-batches over cells. We apply synchronous mini-batch gradient
+      descent for training, where gradients are accumulated across all micro-batches in a mini-batch
+      and applied at the end of a mini-batch.
+- id: identity_mappings_preactivation
+  query: What is the pre-activation residual unit proposed in 'Identity Mappings in Deep Residual
+    Networks', and what is it for?
+  expected_answer: To make the after-addition function an identity mapping as well, the authors treat
+    the activation functions (batch normalization and ReLU) as pre-activation of the weight layers
+    rather than the conventional post-activation. With identity mappings both as the skip connection
+    and after the addition, the signal can propagate directly from one unit to any other in the forward
+    and backward passes, which makes very deep networks such as a 1001-layer ResNet easier to train
+    and generalize better.
+  expected_substrings:
+  - pre-activation
+  - identity
+  - relu
+  - propagat
+  expected_citations:
+  - identity_mappings_he_2016
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: identity_mappings_he_2016.pdf
+    evidence_page: 2
+    evidence: To construct an identity mapping f(yl) = yl, we view the activation functions (ReLU
+      and BN [8]) as “pre-activation” of the weight layers, in contrast to conventional wisdom of
+      “post-activation”.
+- id: vlae_lossy_global_code
+  query: In the Variational Lossy Autoencoder, how is the global latent code made to discard information
+    such as texture?
+  expected_answer: The VLAE combines a VAE with a neural autoregressive model (such as PixelCNN) as
+    the decoder and prior. By designing the architecture accordingly, the authors control what the
+    global latent code can learn and force it to discard irrelevant local information such as texture
+    in 2D images, so the VAE only autoencodes data in a lossy way while the autoregressive decoder
+    models the local detail.
+  expected_substrings:
+  - autoregressive
+  - latent
+  - lossy
+  - texture
+  expected_citations:
+  - vlae_chen_2016
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-14'
+    evidence_file: vlae_chen_2016.pdf
+    evidence_page: 1
+    evidence: Our proposed VAE model allows us to have control over what the global latent code can
+      learn and by designing the architecture accordingly, we can force the global latent code to
+      discard irrelevant information such as texture in 2D images, and hence the VAE only “autoencodes”
+      data in a lossy fashion.

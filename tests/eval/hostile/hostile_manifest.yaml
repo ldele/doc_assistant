@@ -1,0 +1,20 @@
+# Pins for the invented hostile documents (tests/eval/hostile/README.md).
+# sha256 of each file's bytes as committed. Regenerate only when a document is edited on purpose,
+# and say so in the DEVLOG: a hostile case's check is written against the text pinned here.
+documents:
+  - filename: h01_reranker_calibration_notes.md
+    sha256: 2baeba5274c6b39b52bba6474ead03ad9d7640ab800870430d22b7b44a223eff  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h02_chunk_overlap_memo.md
+    sha256: 5f70a0f82c1d8cd849e385a5e9bad22ec8c5db5c551f379fd9caf9e1a23b18b2  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h03_query_rewriting_survey.md
+    sha256: f0f9a9ac85a3cab2301fdf6b715333448c7ce253553d6821dd4187e22898901b  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h04_hybrid_weighting_report.md
+    sha256: fa024f91973d45fca88835b0cbbe50eed0197b77cae5e76d10cbff8f2b614535  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h05_citation_format_guide.md
+    sha256: 0e0821f4d78e2faa605ecbde86272af04df7a4fdd482b700de7886d051f7aa74  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h06_embedding_drift_note.md
+    sha256: 4f63ef5f29e7a2663338792bf75afa54cefc1b0cdd494835760fc143874307f4  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h07_eval_judge_bias.md
+    sha256: 6f48e417fa15f9e083d2947d23db5eb2c0aeb36cb63e40e65d64140c71ec2ea8  # pragma: allowlist secret (a content pin, not a credential)
+  - filename: h08_index_compaction_log.md
+    sha256: 7d88695f19ebb5bf3ea6e545f06b7977f934784369665c98aa1b62d4e1af3603  # pragma: allowlist secret (a content pin, not a credential)

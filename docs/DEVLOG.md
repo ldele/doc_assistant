@@ -44,6 +44,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-15 — The chat eval's cases, first part (H3)
+
+**What changed.** 24 cases the user accepted on a review page: 8 single-turn on the demo papers
+(`cases.public.yaml`, now 18), 8 conversations (`cases.conversation.yaml`) and 8 records questions
+(`cases.records.yaml`), each keeping the passage and page it rests on. Eight invented hostile
+documents in `tests/eval/hostile/`, pinned by sha256. The public eval now runs on all 28 papers
+(`download_corpus --demo`); the manifest, `TESTING.md` and the case file say so. A question the
+library cannot answer is scored by `no_invention` (field `not_in_library`), replacing
+`refusal_hold`. Guard tests: `test_eval_public_cases.py`, `test_eval_hostile_corpus.py`.
+
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H3. The user rejected the first not-in-the-library
+and hostile drafts. Their rule for an answer the library does not hold: invent nothing, say what the
+library does hold with citations, and let the app's own markers show that the point is missing;
+a model refusing is not the goal.
+
+**Rejected.** `refusal_hold`, which held only when nothing was cited: it punished the wanted
+behaviour. Invented-fact strings taken from the question itself, which an honest answer repeats.
+Concept-definition records cases: a fresh data home has no curated concepts.
+
+**What it opens.** The user re-reviews the 8 redrafted not-in-the-library cases and decides on the
+8 hostile ones. The hostile documents are not yet ingested anywhere; the hostile family needs a data
+home of its own. Baselines before 2026-11-14 used the 10-paper corpus and are not comparable.
+
 ## 2026-11-14 (2) — Three new dependency advisories: one upgraded, two reviewed
 
 **What changed.** `opentelemetry-api` and its six companions move from 1.45.1 to 1.45.2 (0.66b1 to

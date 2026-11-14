@@ -17,14 +17,15 @@
 # fully-shareable demonstration set.
 #
 # TWO COLLECTIONS. Entries with no `collection` field are the EVAL collection:
-# the verified-10 benchmark corpus that cases.public.yaml and every committed
-# baseline in tests/eval/baselines/ were authored against. It stays closed —
-# extra corpus documents are retrieval distractors that change benchmark
-# difficulty and would invalidate the baselines. Entries with `collection: demo`
+# the verified-10 corpus that cases.public.yaml's first 10 cases and every baseline
+# in tests/eval/baselines/ dated before 2026-11-14 were authored against. Since
+# 2026-11-14 (H3, docs/specs/eval-harness-chat.md) the public eval runs on BOTH
+# collections, 28 papers: the extra documents are retrieval distractors that change
+# difficulty, so an earlier baseline is not comparable with a later run. Entries with `collection: demo`
 # are the DEMO collection (fetched only via `download_corpus --demo`): classic
 # deep-learning papers from the rumoured Sutskever->Carmack reading list
 # (30papers.com) — a bigger, richer corpus for exploring the app (library,
-# concept graph, wiki), never part of the benchmark regime. Pins recorded
+# concept graph, wiki), and since 2026-11-14 part of the public eval too. Pins recorded
 # 2026-07-20 from the then-latest arXiv version of each paper.
 
 documents:

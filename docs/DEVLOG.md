@@ -44,6 +44,22 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-14 (2) — Three new dependency advisories: one upgraded, two reviewed
+
+**What changed.** `opentelemetry-api` and its six companions move from 1.45.1 to 1.45.2 (0.66b1 to
+0.66b2 for the two beta packages) for CVE-2026-126360, a regex denial of service in the trace-context
+propagator; Chroma pulls them in. CVE-2026-126191 and CVE-2026-126193 in `soupsieve` are reviewed
+ignores in `pip-audit-ignore.toml`. `just audit` passes again.
+
+**Why.** Published after the last run; the audit gate fails CI on any unreviewed advisory. Both
+`soupsieve` advisories need an attacker to supply the CSS selector string, and nothing here runs a
+selector: `extractors.py` and `ingest/cache.py` walk the tree with `find_all` and `get_text`.
+
+**Rejected.** Taking `soupsieve` 4.1: it needs Python 3.11.5 against the 3.10 floor, so the lock
+forks (2.10 below, 4.1 above), the same reason CVE-2026-126190 was reviewed on 2026-11-13.
+
+**What it opens.** The three `soupsieve` ignores lift together when the Python floor reaches 3.11.5.
+
 ## 2026-11-14 — The eval harness instrument for the chat work (H2)
 
 **What changed.** The harness can now measure the chat, on any model. Cases have a `family`,

@@ -77,3 +77,26 @@ scripts/ calls select, select_one or css.select: extractors.py walks the tree wi
 smooth and get_text, and ebooklib calls no selector either. The fix (4.0.0) needs Python 3.11.5 \
 while the project floor is 3.10, so taking it forks the lock."""
 reverse_if = "A CSS selector is run on document markup; or requires-python moves to 3.11.5 or later (then upgrade)."
+
+[[ignore]]
+id = "CVE-2026-126191"  # GHSA-6655-6qjp-jx7x
+package = "soupsieve"
+reviewed = "2026-11-14"
+why = """Exponential regex backtracking when a crafted CSS selector string is compiled \
+(soupsieve.compile, BeautifulSoup .select / .select_one). It needs the attacker to supply the \
+selector itself. Nothing in src/, apps/ or scripts/ compiles or runs a selector: extractors.py and \
+ingest/cache.py walk the tree with find_all and get_text, and no input of the app is ever passed \
+to a selector. The fix (3.0.2; 4.1 is what resolves) needs Python 3.11.5 while the project floor \
+is 3.10, so taking it forks the lock (as CVE-2026-126190)."""
+reverse_if = "Code runs a CSS selector, above all one built from user or document input; or requires-python moves to 3.11.5 or later (then upgrade)."
+
+[[ignore]]
+id = "CVE-2026-126193"  # GHSA-7g44-g9rc-x53w
+package = "soupsieve"
+reviewed = "2026-11-14"
+why = """Unbounded recursion in the CSS selector parser on deeply nested pseudo-classes \
+(:is, :not, :where, :has), raising RecursionError. It needs the attacker to supply the selector \
+string. Nothing in src/, apps/ or scripts/ compiles or runs a selector (extractors.py and \
+ingest/cache.py use find_all and get_text), and no input of the app reaches one. The fix (3.0.2) \
+needs Python 3.11.5 while the project floor is 3.10, so taking it forks the lock."""
+reverse_if = "Code runs a CSS selector, above all one built from user or document input; or requires-python moves to 3.11.5 or later (then upgrade)."

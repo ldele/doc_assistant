@@ -28,6 +28,8 @@ from doc_assistant.eval.comparability import (
     Status,
     compare,
 )
+from doc_assistant.eval.paired import PairedComparison, compare_groups
+from doc_assistant.eval.scorers import BINARY_SCORERS
 from doc_assistant.eval.store import Store
 
 
@@ -281,3 +283,12 @@ def format_diff(rows: list[RunDiffRow], *, run_a_label: str = "A", run_b_label: 
             f"{r.value_b:.3f} | {sign}{r.delta:.3f} |"
         )
     return "\n".join(lines)
+
+
+def paired_runs(store: Store, runs_a: list[str], runs_b: list[str]) -> PairedComparison:
+    """Paired comparison of two groups of trials (baseline ``runs_a``, candidate ``runs_b``),
+    per family and scorer (spec ``eval-harness-chat.md`` § The statistic). The caller pairs
+    groups of one column only; run ``compare_runs`` first to know whether they may be paired."""
+    return compare_groups(
+        store.case_score_rows(runs_a), store.case_score_rows(runs_b), binary=BINARY_SCORERS
+    )

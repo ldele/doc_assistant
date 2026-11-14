@@ -358,3 +358,33 @@ def test_assigning_a_reranker_bypasses_the_load(monkeypatch: pytest.MonkeyPatch)
     injected = _Fake()
     rag.reranker = injected
     assert rag.reranker is injected
+
+
+# ---- the eval harness's trace (spec eval-harness-chat.md): observe, never change ------------
+
+
+def test_trace_records_the_fused_order_and_changes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
+    monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", False)
+    docs = [
+        Document(page_content=f"c{i}", metadata={"doc_hash": f"h{i}", "filename": f"f{i}.pdf"})
+        for i in range(3)
+    ]
+
+    class _Reverse:
+        def predict(self, pairs: list) -> list[float]:
+            return [float(i) for i in range(len(pairs))]  # the last candidate ranks first
+
+    rag = _bare_pipeline()
+    rag.ensemble = RunnableLambda(lambda _q: docs)
+    rag.reranker = _Reverse()
+
+    plain = rag.retrieve_with_scores("q", top_k=3)
+    trace: dict = {}
+    traced = rag.retrieve_with_scores("q", top_k=3, trace=trace)
+
+    assert trace["pre_rerank"] == ["f0.pdf", "f1.pdf", "f2.pdf"]
+    assert [d.metadata["filename"] for d, _ in traced] == ["f2.pdf", "f1.pdf", "f0.pdf"]
+    assert [(d.page_content, s) for d, s in traced] == [(d.page_content, s) for d, s in plain]

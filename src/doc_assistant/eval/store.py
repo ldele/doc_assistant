@@ -120,6 +120,9 @@ _SCHEMA = [
     SET scoreable = (details_json NOT LIKE '%"error"%')
     WHERE scoreable IS NULL
     """,
+    # The case's family (spec eval-harness-chat.md): reports break down by it. Rows written
+    # before it existed were all single-turn questions, which is what NULL reads as.
+    "ALTER TABLE case_results ADD COLUMN IF NOT EXISTS family VARCHAR",
 ]
 
 
@@ -211,7 +214,7 @@ class Store:
                 self.conn.execute(
                     "INSERT INTO case_results (run_id, case_id, query, answer, "
                     "citations_json, latency_ms, token_input, token_output, error, "
-                    "timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "timestamp, family) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         run_id,
                         r.case_id,
@@ -226,6 +229,7 @@ class Store:
                         r.output.token_output if r.output else None,
                         r.error,
                         r.timestamp,
+                        r.family,
                     ],
                 )
                 for s in r.scores:
@@ -373,6 +377,38 @@ class Store:
             [run_id],
         ).fetchall()
         return [{"case_id": r[0], "scorer_name": r[1], "value": float(r[2])} for r in rows]
+
+    def case_score_rows(self, run_ids: list[str]) -> list[dict[str, Any]]:
+        """Every score row of the given runs with its case's family and whether it was scored.
+
+        The input of a paired comparison: one row per (run, case, scorer). ``family`` is
+        ``single`` for rows written before the column existed.
+        """
+        if not run_ids:
+            return []
+        placeholders = ",".join(["?"] * len(run_ids))
+        rows = self.conn.execute(
+            f"""
+            SELECT s.run_id, s.case_id, s.scorer_name, s.value, s.scoreable,
+                   COALESCE(c.family, 'single')
+            FROM scores s
+            LEFT JOIN case_results c ON c.run_id = s.run_id AND c.case_id = s.case_id
+            WHERE s.run_id IN ({placeholders})
+            ORDER BY s.case_id, s.scorer_name
+            """,  # nosec B608 -- placeholders are bind markers, not user data
+            run_ids,
+        ).fetchall()
+        return [
+            {
+                "run_id": r[0],
+                "case_id": r[1],
+                "scorer_name": r[2],
+                "value": float(r[3]),
+                "scoreable": bool(r[4]) if r[4] is not None else True,
+                "family": str(r[5]),
+            }
+            for r in rows
+        ]
 
     def aggregate_runs(self, run_ids: list[str]) -> dict[str, dict[str, float | int | None]]:
         """Aggregate scoreable scores across multiple runs (e.g., N trials of the same eval).

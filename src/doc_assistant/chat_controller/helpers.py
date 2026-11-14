@@ -506,6 +506,7 @@ def _build_source_views(
                 chunk_key=_chunk_key(meta),
                 figure_id=figure_id,
                 reranker_score=round(float(score), 4),  # D3 strip signal (ADR-027)
+                filename=meta.get("filename") or None,
             )
         )
     return views

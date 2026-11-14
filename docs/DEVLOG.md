@@ -44,6 +44,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-14 — The eval harness instrument for the chat work (H2)
+
+**What changed.** The harness can now measure the chat, on any model. Cases have a `family`,
+conversation `turns`, and stated expectations (`expected_route`, `expect_refusal`,
+`must_not_contain`, `must_not_cite`). Eleven deterministic scorers (`chat_scorers()`): MRR, nDCG@10
+and recall@10, after and before the rerank; citation coverage; and four that hold or break
+(`cited_answer`, `refusal_hold`, `hostile_hold`, `route`). `eval/paired.py` compares two groups of
+trials per family with a paired bootstrap interval, and counts holds with the cases that broke.
+`eval/panel.py` reads panel files. A second adapter drives `ChatController` and replays turns.
+`run_eval` takes `--panel`, `--adapter`, `--allow-billed` and `--paired-baseline`; before a run it
+states each column's turns, reviewer, judge and who bills, and refuses billing it was not told to
+allow. In the app, observation only: the pipeline's `trace`, `TurnResult.route`,
+`SourceView.filename`. `TESTING.md` documents all of it, with running it on your own model.
+
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H2. Four chat sessions are gated on measurements
+the old harness could not take: the old adapter never reached the router, the history or the
+framing.
+
+**Rejected.** A refusal rule that matches a not-found phrase: the app has none, its prompt asks
+each model for its own words. Scorers that import the app's audit: they must stay extractable, so
+the adapters hand them the app's verdicts. Switching models with `reconfigure`, which saves the
+choice into the library's settings.
+
+**What it opens.** H3, the cases. The controller adapter writes an answer record per turn, so it
+runs only on a data home of its own. Its trace of the order before the rerank does not exist, so
+those scorers are not scored on it.
+
 ## 2026-11-13 (3) — The eval harness spec for the chat work (H1)
 
 **What changed.** `docs/specs/eval-harness-chat.md`, a draft: the executor brief for H2 to H6 of

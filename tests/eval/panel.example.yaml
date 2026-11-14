@@ -1,0 +1,21 @@
+# An example panel for scripts/run_eval --panel. It is an example, not the project's panel:
+# copy it and name the models you want to run. Which panel a release's gates used is recorded in
+# that release's baseline (spec docs/specs/eval-harness-chat.md, Columns and panels).
+#
+# A column is a provider, a model and an adapter. `provider` is any provider id the app knows
+# (Settings lists them; a server of your own is the id Settings gave it). A panel should hold at
+# least two model families, and one column per adapter in use, so a model trait and an adapter
+# fault can be told apart. Comparisons with an interval are made within a column only.
+#
+#   adapter: pipeline    RAGPipeline directly (retrieval + answer; old runs were measured so)
+#   adapter: controller  the app's ChatController (router, history, framing; needs DOC_DATA_DIR)
+#   kind: replay         a model given the recorded prompts outside the app: listed, not run here
+columns:
+  - name: llama-8b
+    provider: ollama
+    model: llama3.1:8b
+    adapter: controller
+  - name: qwen-7b
+    provider: ollama
+    model: qwen2.5:7b
+    adapter: controller

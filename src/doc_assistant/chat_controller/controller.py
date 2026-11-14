@@ -304,16 +304,16 @@ class ChatController:
                 # (stateful) rather than in the stateless commands.execute_command dispatcher.
                 if cmd in ("export", "export-conversation", "export_conversation"):
                     msg, path = self.export_conversation(session, dev=False)
-                    yield Result(self._command_result(msg, download_path=path))
+                    yield Result(self._command_result(msg, download_path=path, route="command"))
                 elif cmd in ("export-debug", "export_debug"):
                     msg, path = self.export_conversation(session, dev=True)
-                    yield Result(self._command_result(msg, download_path=path))
+                    yield Result(self._command_result(msg, download_path=path, route="command"))
                 else:
-                    yield Result(self._command_result(execute_command(cmd, arg)))
+                    yield Result(self._command_result(execute_command(cmd, arg), route="command"))
             except Exception as e:
                 # A failing command (empty/missing DB, no API key, …) must not break the
                 # turn or the SSE stream — surface it as a normal result.
-                yield Result(self._command_result(f"⚠ `/{cmd}` failed: {e}"))
+                yield Result(self._command_result(f"⚠ `/{cmd}` failed: {e}", route="command"))
             return
 
         # --- Chunk 2a: claim edit follow-up (a prior "✎ Edit" set this) ---
@@ -322,17 +322,21 @@ class ChatController:
             session.awaiting_edit = None
             try:
                 adjudicate_claim(pending_edit["id"], "edited", edited_text=text)
-                yield Result(self._command_result(f"✏️ Claim #{pending_edit['n']} updated."))
+                yield Result(
+                    self._command_result(
+                        f"✏️ Claim #{pending_edit['n']} updated.", route="claim_edit"
+                    )
+                )
             except Exception as e:
-                yield Result(self._command_result(f"⚠ Edit failed: {e}"))
+                yield Result(self._command_result(f"⚠ Edit failed: {e}", route="claim_edit"))
             return
 
         # --- Library metadata questions (answered from SQLite) ---
         if is_library_query(text):
             try:
-                yield Result(self._command_result(answer_library_query(text)))
+                yield Result(self._command_result(answer_library_query(text), route="library"))
             except Exception as e:
-                yield Result(self._command_result(f"⚠ Library query failed: {e}"))
+                yield Result(self._command_result(f"⚠ Library query failed: {e}", route="library"))
             return
 
         # --- RAG pipeline ---
@@ -355,7 +359,9 @@ class ChatController:
 
     # -- internal ---------------------------------------------------------
 
-    def _command_result(self, answer: str, *, download_path: Path | None = None) -> TurnResult:
+    def _command_result(
+        self, answer: str, *, download_path: Path | None = None, route: str = "command"
+    ) -> TurnResult:
         """Wrap a command/library/edit string as a minimal TurnResult (no sources,
         claims, or telemetry blocks)."""
         return TurnResult(
@@ -372,6 +378,7 @@ class ChatController:
             usage_md="",
             citation_note_md="",
             download_path=download_path,
+            route=route,
         )
 
     def _attach_source_evaluation(
@@ -823,6 +830,7 @@ class ChatController:
         session.history.append({"role": "user", "content": user_question})
         session.history.append({"role": "assistant", "content": "(human mode: evidence only)"})
         return TurnResult(
+            route="evidence",
             answer=(
                 "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
                 + render_evidence_markdown(retrieved_chunks)
@@ -892,6 +900,7 @@ class ChatController:
             ),
         )
         return TurnResult(
+            route="no_sources",
             answer=answer + overrides_note,
             mode="ai",
             sources=[],

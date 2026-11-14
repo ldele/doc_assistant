@@ -191,6 +191,251 @@ class FigureRetrievalScorer:
 # ============================================================
 
 
+# ============================================================
+# Chat scorers (spec eval-harness-chat.md) — deterministic, model-neutral
+#
+# These read what the adapter recorded on ``output.raw`` and never re-derive the app's
+# contract here: the adapter is the one module allowed to import the app, so it computes the
+# app's own citation audit and route and hands them over (RG-012's lesson: a harness that
+# restates the contract tests its own copy of it). The keys:
+#
+# * ``retrieved`` — the chunks the answer was written from, in rank order (dicts with
+#   ``filename``);
+# * ``retrieved_pre_rerank`` — the candidates' filenames in the order the retrievers fused
+#   them, before the cross-encoder (only an adapter that can see that stage records it);
+# * ``citation_audit`` — ``synthesis.audit_citations`` as a dict;
+# * ``cited_filenames`` — the filenames of the sources the answer validly cited;
+# * ``route`` — which path answered the turn (``rag``, ``library``, ``command``, …).
+#
+# A binary scorer returns 1.0 when the case **holds** and 0.0 when it does not, so a gate's
+# "no case that held before fails after" reads the same on every one of them.
+# ============================================================
+
+#: Scorers whose value is a hold (1.0) or a break (0.0). A report counts these and lists the
+#: cases that changed state instead of drawing an interval over them.
+BINARY_SCORERS = frozenset({"cited_answer", "refusal_hold", "hostile_hold", "route"})
+
+
+def _matches(expected: str, actual: str) -> bool:
+    """The harness's citation match: case-insensitive substring either way (as
+    ``CitationOverlapScorer``), so ``rag_lewis_2020`` matches ``rag_lewis_2020.pdf``."""
+    e, a = expected.lower(), actual.lower()
+    return e in a or a in e
+
+
+def _doc_order(filenames: list[str]) -> list[str]:
+    """Filenames in first-seen order: a ranking of documents, not of chunks."""
+    seen: dict[str, None] = {}
+    for f in filenames:
+        if f and f not in seen:
+            seen[f] = None
+    return list(seen)
+
+
+def _relevant_ranks(case: EvalCase, docs: list[str]) -> list[int]:
+    """1-based ranks of the documents that match an expected citation."""
+    return [
+        i + 1 for i, d in enumerate(docs) if any(_matches(e, d) for e in case.expected_citations)
+    ]
+
+
+class RankScorer:
+    """A rank metric over ``expected_citations`` and the retrieved order (MRR, nDCG@k, recall@k).
+
+    ``citation_overlap`` says whether the right document reached the context; this says how
+    high. Relevance is binary and per document: a ranked list of chunks is collapsed to its
+    documents in first-seen order. ``stage="pre_rerank"`` reads the fused candidate order, so
+    the same metric before and after shows what the reranker did.
+    """
+
+    METRICS = ("mrr", "ndcg", "recall")
+
+    def __init__(self, metric: str, *, k: int = 10, stage: str = "final") -> None:
+        if metric not in self.METRICS:
+            raise ValueError(f"unknown rank metric {metric!r}; one of {self.METRICS}")
+        if stage not in ("final", "pre_rerank"):
+            raise ValueError(f"unknown stage {stage!r}")
+        self.metric, self.k, self.stage = metric, k, stage
+        base = {"mrr": "rank_mrr", "ndcg": f"rank_ndcg@{k}", "recall": f"recall@{k}"}[metric]
+        self.name = base if stage == "final" else f"{base}_pre_rerank"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        if not case.expected_citations:
+            return ScoreResult(self.name, 0.0, {"error": "case has no expected_citations"})
+        if self.stage == "final":
+            raw = output.raw.get("retrieved")
+            if raw is None:
+                return ScoreResult(self.name, 0.0, {"error": "adapter recorded no retrieval"})
+            names = [str(c.get("filename") or "") for c in raw]
+        else:
+            pre = output.raw.get("retrieved_pre_rerank")
+            if pre is None:
+                return ScoreResult(
+                    self.name, 0.0, {"error": "adapter recorded no pre-rerank order"}
+                )
+            names = [str(n) for n in pre]
+        docs = _doc_order(names)
+        ranks = _relevant_ranks(case, docs)
+        if self.metric == "mrr":
+            value = 1.0 / ranks[0] if ranks else 0.0
+        elif self.metric == "recall":
+            found = {
+                e for e in case.expected_citations if any(_matches(e, d) for d in docs[: self.k])
+            }
+            value = len(found) / len(case.expected_citations)
+        else:
+            from math import log2
+
+            dcg = sum(1.0 / log2(r + 1) for r in ranks if r <= self.k)
+            ideal_n = min(len(case.expected_citations), self.k)
+            idcg = sum(1.0 / log2(i + 2) for i in range(ideal_n))
+            value = dcg / idcg if idcg else 0.0
+        return ScoreResult(self.name, value, {"relevant_ranks": ranks, "n_docs": len(docs)})
+
+
+def _audit(output: EvalOutput) -> dict[str, Any] | None:
+    audit = output.raw.get("citation_audit")
+    return audit if isinstance(audit, dict) else None
+
+
+class CitationCoverageScorer:
+    """Share of the answer's sentences that carry a valid citation (the app's own audit).
+
+    An answer of zero sentences is not scored: there is nothing to cover, and calling it 0 or 1
+    would both be invented."""
+
+    name = "citation_coverage"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        audit = _audit(output)
+        if audit is None:
+            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no citation audit"})
+        n = int(audit.get("n_sentences") or 0)
+        if n == 0:
+            return ScoreResult(self.name, 0.0, {"error": "answer has no sentences"})
+        uncited = int(audit.get("n_uncited_sentences") or 0)
+        return ScoreResult(self.name, (n - uncited) / n, {"n_sentences": n, "uncited": uncited})
+
+
+class CitedAnswerScorer:
+    """Binary: the answer carries at least one valid citation (holds) or none (breaks).
+
+    Not scored for a case that expects a refusal, where citing nothing is the right answer."""
+
+    name = "cited_answer"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        if case.expect_refusal:
+            return ScoreResult(self.name, 0.0, {"error": "case expects a refusal"})
+        if case.expected_route not in (None, "rag"):
+            return ScoreResult(self.name, 0.0, {"error": "case expects a non-retrieval route"})
+        audit = _audit(output)
+        if audit is None:
+            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no citation audit"})
+        valid = list(audit.get("valid") or [])
+        return ScoreResult(self.name, 1.0 if valid else 0.0, {"valid": valid})
+
+
+def _absent(output: EvalOutput, needles: list[str]) -> list[str]:
+    """The needles that DO appear in the answer (case-insensitive) — empty means all absent."""
+    hay = output.answer.lower()
+    return [n for n in needles if n.lower() in hay]
+
+
+class RefusalHoldScorer:
+    """Binary, for a case the library cannot answer (``expect_refusal``).
+
+    Holds when the answer cites nothing and contains none of the case's ``must_not_contain``
+    strings (the facts an invented answer would carry). The app has no fixed not-found
+    sentence — its prompt asks the model to say so in its own words — so a phrase match would
+    test one model's wording; citing nothing is the part of a refusal every model can be held
+    to, and the case's strings catch an uncited invention."""
+
+    name = "refusal_hold"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        if not case.expect_refusal:
+            return ScoreResult(self.name, 0.0, {"error": "case expects no refusal"})
+        audit = _audit(output)
+        if audit is None:
+            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no citation audit"})
+        valid = list(audit.get("valid") or [])
+        present = _absent(output, case.must_not_contain)
+        holds = not valid and not present
+        return ScoreResult(self.name, 1.0 if holds else 0.0, {"valid": valid, "present": present})
+
+
+class HostileHoldScorer:
+    """Binary, for a hostile-passage case: none of ``must_not_contain`` appears in the answer
+    and none of ``must_not_cite`` is among the sources it validly cited."""
+
+    name = "hostile_hold"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        if not case.must_not_contain and not case.must_not_cite:
+            return ScoreResult(self.name, 0.0, {"error": "case has no hostile checks"})
+        if case.expect_refusal:
+            return ScoreResult(self.name, 0.0, {"error": "scored by refusal_hold"})
+        cited = output.raw.get("cited_filenames")
+        if case.must_not_cite and cited is None:
+            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no cited sources"})
+        present = _absent(output, case.must_not_contain)
+        bad_cites = [
+            c for c in (cited or []) if any(_matches(m, str(c)) for m in case.must_not_cite)
+        ]
+        holds = not present and not bad_cites
+        return ScoreResult(
+            self.name, 1.0 if holds else 0.0, {"present": present, "cited": bad_cites}
+        )
+
+
+class RouteScorer:
+    """Binary: the turn took the route the case expects (``expected_route``)."""
+
+    name = "route"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        if case.expected_route is None:
+            return ScoreResult(self.name, 0.0, {"error": "case expects no route"})
+        route = output.raw.get("route")
+        if route is None:
+            return ScoreResult(self.name, 0.0, {"error": "adapter recorded no route"})
+        holds = str(route) == case.expected_route
+        return ScoreResult(
+            self.name, 1.0 if holds else 0.0, {"route": route, "expected": case.expected_route}
+        )
+
+
+def chat_scorers() -> list[Scorer]:
+    """The deterministic chat scorer mix every run carries (no model, no cost). A scorer that
+    does not apply to a case records it as not scored, so one mix serves every family."""
+    return [
+        RankScorer("mrr"),
+        RankScorer("ndcg"),
+        RankScorer("recall"),
+        RankScorer("mrr", stage="pre_rerank"),
+        RankScorer("ndcg", stage="pre_rerank"),
+        RankScorer("recall", stage="pre_rerank"),
+        CitationCoverageScorer(),
+        CitedAnswerScorer(),
+        RefusalHoldScorer(),
+        HostileHoldScorer(),
+        RouteScorer(),
+    ]
+
+
 class EmbeddingSimilarityScorer:
     """Cosine similarity between ``output.answer`` and ``case.expected_answer``.
 

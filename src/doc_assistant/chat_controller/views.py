@@ -69,6 +69,7 @@ class SourceView:
     figure_id: str | None = None  # PR-M3: the id the web/API renders via GET /api/figures/{id}
     reranker_score: float = 0.0  # per-source rerank score (D3 strip signal, ADR-027)
     evaluation: SourceEpistemics | None = None  # always-on per-source assessment (D3)
+    filename: str | None = None  # the source's file name, as retrieval recorded it (the eval)
 
 
 @dataclass
@@ -124,3 +125,8 @@ class TurnResult:
     # ADR-027 D3 — strip-level freshness for the always-on source-evaluation surface (per-source
     # assessment rides on each SourceView.evaluation). None = no sidecar / 0-doc → no strip.
     source_eval: SourceEvalSummary | None = None
+    # Which path answered the turn: ``rag`` (retrieval and a model), ``evidence`` (human
+    # synthesis mode), ``no_sources`` (retrieval found nothing, no model asked), ``library``
+    # (the rule-based records router), ``command`` (a slash command) or ``claim_edit``. Read by
+    # the eval harness's ``route`` scorer; not sent to the window today.
+    route: str = "rag"

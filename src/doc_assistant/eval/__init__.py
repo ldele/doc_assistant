@@ -20,27 +20,43 @@ from doc_assistant.eval.cases import EvalCase, load_cases_yaml
 from doc_assistant.eval.results import EvalOutput, EvalResult, ScoreResult
 from doc_assistant.eval.runner import Runner
 from doc_assistant.eval.scorers import (
+    BINARY_SCORERS,
+    CitationCoverageScorer,
     CitationOverlapScorer,
+    CitedAnswerScorer,
     ContainsAllScorer,
     EmbeddingSimilarityScorer,
     ExactMatchScorer,
+    HostileHoldScorer,
     LLMJudgeScorer,
+    RankScorer,
+    RefusalHoldScorer,
+    RouteScorer,
     Scorer,
+    chat_scorers,
 )
 from doc_assistant.eval.store import Store
 
 __all__ = [
+    "BINARY_SCORERS",
+    "CitationCoverageScorer",
     "CitationOverlapScorer",
+    "CitedAnswerScorer",
     "ContainsAllScorer",
     "EmbeddingSimilarityScorer",
     "EvalCase",
     "EvalOutput",
     "EvalResult",
     "ExactMatchScorer",
+    "HostileHoldScorer",
     "LLMJudgeScorer",
+    "RankScorer",
+    "RefusalHoldScorer",
+    "RouteScorer",
     "Runner",
     "ScoreResult",
     "Scorer",
     "Store",
+    "chat_scorers",
     "load_cases_yaml",
 ]

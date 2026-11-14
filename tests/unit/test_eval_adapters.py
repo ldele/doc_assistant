@@ -15,9 +15,10 @@ The two things it is responsible for are the two that quietly corrupt a run rath
   (`tests/eval/TESTING.md`), and it reads exactly the list this adapter builds. Duplicate or
   mis-ordered filenames here move a scorer that is supposed to have no variance at all.
 
-The pipeline is a hand-rolled stub rather than a mock: the adapter only needs `retrieve`,
-`stream_answer` and `embeddings`, and stating that in ~20 lines documents the required shape better
-than a `Mock` that would accept any call at all — including the ones a future refactor breaks.
+The pipeline is a hand-rolled stub rather than a mock: the adapter only needs
+`retrieve_with_scores`, `stream_answer` and `embeddings`, and stating that in ~20 lines documents
+the required shape better than a `Mock` that would accept any call at all — including the ones a
+future refactor breaks.
 """
 
 from __future__ import annotations
@@ -68,9 +69,13 @@ class _StubPipeline:
         self.retrieve_calls: list[str] = []
         self.stream_calls: list[tuple[str, int]] = []
 
-    def retrieve(self, query: str) -> list[_Doc]:
+    def retrieve_with_scores(
+        self, query: str, *, trace: dict[str, Any] | None = None
+    ) -> list[tuple[_Doc, float]]:
         self.retrieve_calls.append(query)
-        return list(self.docs)
+        if trace is not None:
+            trace["pre_rerank"] = [d.metadata.get("filename") for d in reversed(self.docs)]
+        return [(d, 1.0) for d in self.docs]
 
     def stream_answer(self, query: str, docs: list[_Doc], counter: Any = None) -> Iterator[str]:
         self.stream_calls.append((query, len(docs)))
@@ -266,3 +271,27 @@ def test_the_returned_callable_is_reusable(pipeline: _StubPipeline) -> None:
     embed("one")
     embed("two")
     assert pipeline.embeddings.calls == ["one", "two"]
+
+
+# ============================================================
+# rag_pipeline_adapter — what the chat scorers read (spec eval-harness-chat.md)
+# ============================================================
+
+
+def test_raw_carries_the_apps_audit_route_and_pre_rerank_order() -> None:
+    pipeline = _StubPipeline(
+        docs=[_Doc(filename="a.pdf"), _Doc(filename="b.pdf")], answer_chunks=["X [2]. Y."]
+    )
+    raw = rag_pipeline_adapter(pipeline)("q").raw
+    assert raw["route"] == "rag"
+    assert raw["retrieved_pre_rerank"] == ["b.pdf", "a.pdf"]  # the stub reverses them
+    assert raw["citation_audit"]["valid"] == [2]
+    assert raw["citation_audit"]["n_sentences"] == 2
+    assert raw["citation_audit"]["n_uncited_sentences"] == 1
+    assert raw["cited_filenames"] == ["b.pdf"]
+
+
+def test_out_of_range_citation_cites_no_file() -> None:
+    pipeline = _StubPipeline(docs=[_Doc(filename="a.pdf")], answer_chunks=["X [3]."])
+    raw = rag_pipeline_adapter(pipeline)("q").raw
+    assert raw["citation_audit"]["out_of_range"] == [3] and raw["cited_filenames"] == []

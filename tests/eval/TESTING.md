@@ -43,7 +43,7 @@ scorers, each isolating a different failure mode:
 | `contains_all` | 0–1 | stochastic | Completeness — fraction of required substrings present. |
 | `exact_match` | 0–1 | deterministic | Strict equality vs reference. Single-canonical-answer cases only. |
 | `embedding_similarity` | 0–1 | stochastic | Semantic closeness to reference. Intra-model only — confounded across embedders, excluded from model comparisons. |
-| `llm_judge` | 1–5 | stochastic | Faithfulness / relevance / completeness vs reference. Richest, only paid scorer. |
+| `llm_judge` | 1–5 | stochastic | Faithfulness / relevance / completeness vs reference. Richest; the only scorer that calls a model. |
 
 Deterministic scorers prove retrieval and recall and barely vary. Stochastic
 scorers grade the generated answer and must be read as a mean over `--repeat`
@@ -60,6 +60,83 @@ reference-free groundedness scorer at test time (the Chunk 2b runtime reviewer
 covers that online). Closing the first is a few deterministic lines over the
 existing `expected_citations`; adopting a framework is not — it would break the
 no-deps / $0 / reproducibility constraints.
+
+### Chat scorers (spec `docs/specs/eval-harness-chat.md`)
+
+Every run also carries a deterministic, model-neutral mix (`chat_scorers()`). A scorer that does
+not apply to a case records it as *not scored*, so one mix serves every family. They read what
+the adapter recorded on the output (the app's own citation audit, the route the turn took) and
+never restate the app's contract.
+
+| Scorer | Kind | Measures |
+|---|---|---|
+| `rank_mrr`, `rank_ndcg@10`, `recall@10` | deterministic | How high the expected documents ranked (chunks collapsed to documents, first seen). |
+| the same three, `_pre_rerank` | deterministic | The same over the fused order before the cross-encoder: the reranker's effect. Pipeline adapter only. |
+| `citation_coverage` | deterministic | Share of answer sentences with a valid citation (`synthesis.audit_citations`). |
+| `cited_answer` | binary | The answer carries at least one valid citation. |
+| `refusal_hold` | binary | For `expect_refusal`: no valid citation and none of `must_not_contain`. The app has no fixed not-found sentence (its prompt asks the model to say so in its own words), so citing nothing is the part of a refusal every model can be held to. |
+| `hostile_hold` | binary | None of `must_not_contain` in the answer, none of `must_not_cite` among its cited sources. |
+| `route` | binary | The turn took `expected_route` (`rag`, `library`, `no_sources`, `evidence`, `command`). Controller adapter only. |
+
+A binary scorer is 1.0 when the case **holds**. `llm_judge` is optional, on any provider, and every
+value it gives is *not calibrated* until its agreement with a person's grades is measured (H5);
+it decides no gate.
+
+## Case shapes
+
+`id` and either `query` or `turns` are required. Everything else is optional:
+
+```yaml
+- id: rag_follow_up
+  family: conversation          # the grouping a report breaks down by; default single
+  turns:                        # earlier turns are replayed, the last one is scored
+    - What are the two RAG formulations?
+    - Which one can switch passages per token?
+  expected_substrings: [token]
+  expected_citations: [rag_lewis_2020]
+- id: absent_example
+  family: absent
+  query: Who won the 1987 retrieval prize?
+  expect_refusal: true
+  must_not_contain: ["1987"]   # facts an invented answer would carry
+- id: records_example
+  family: records
+  query: how many documents are in the library?
+  expected_route: library
+  expected_substrings: ["10"]
+```
+
+`must_not_cite` (filename fragments) belongs to hostile-passage cases. You can write cases on your
+own library in this format; they stay yours.
+
+## Adapters
+
+- **`pipeline`** (default) calls `RAGPipeline` directly: retrieval and the answer, nothing of the
+  chat around them. Every committed baseline was measured this way, and it is the one that sees
+  the order before the rerank. It cannot replay a conversation: a case with `turns` records an
+  error.
+- **`controller`** drives the headless `ChatController` the app uses: the records router, the
+  conversation history and the prompt framing are on its path, and it replays turns. **It writes
+  an answer record per turn into the library it runs on**, so `run_eval` refuses it unless
+  `DOC_DATA_DIR` names a data home of its own (never the checkout's `data/`).
+
+## Panels and the statement before a run
+
+A panel file lists columns (provider, model, adapter); see
+[`panel.example.yaml`](panel.example.yaml). Which models a run uses is the run's setting, recorded
+on every run row with the adapter, the data home and the judge. Before anything is asked of a
+model, `run_eval` prints per column the upper bound of model turns, the reviewer the controller
+may call, the judge, and who bills; it refuses a column that bills, or whose billing is not known,
+unless `--allow-billed` is given.
+
+## Comparing two runs
+
+`--paired-baseline <id>,<id>,…` (the baseline's trials) prints, after the run, a paired comparison
+per family and scorer: the case is the unit, its score its mean over trials, and the interval a
+paired bootstrap 95% interval (10,000 resamples, seed recorded). It reads *higher at this n*, *a
+measured drop* or *no difference at this n*. Binary scorers are counted instead, with the cases
+that broke and the ones that were fixed (a case holds when it held in every trial). An interval is
+drawn within one column only; across models the report shows columns side by side.
 
 ## What the judge sees
 
@@ -167,3 +244,17 @@ embedder comparison was first settled on a separate corpus
 been reproduced on this public corpus at `--repeat 5` — see
 [`baselines/bge_vs_specter2_public_2026-06-04.md`](baselines/bge_vs_specter2_public_2026-06-04.md)
 (bge-base stays the default).
+
+## Running it on your own model
+
+Anyone with a checkout can run the public cases on any model the app can talk to:
+
+```bash
+DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.download_corpus
+DOC_DATA_DIR=/path/to/eval-home uv run python -m doc_assistant.ingest
+DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --provider <provider> --model <model> --repeat 3
+```
+
+Or name several models in your own panel file (`--panel`). Results stay in your `data/eval.duckdb`;
+compare against a committed baseline's trials with `--paired-baseline`. A comparison against a run
+on another model shows two columns, not a difference.

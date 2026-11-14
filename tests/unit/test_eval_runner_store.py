@@ -14,7 +14,7 @@ from doc_assistant.eval.report import (
     format_diff,
     format_run_summary,
 )
-from doc_assistant.eval.results import EvalOutput
+from doc_assistant.eval.results import EvalOutput, EvalResult, ScoreResult
 from doc_assistant.eval.runner import Runner
 from doc_assistant.eval.scorers import ContainsAllScorer
 from doc_assistant.eval.store import Store
@@ -397,3 +397,42 @@ def test_flaky_cases_empty_run_ids():
 
     with _Store(":memory:") as s:
         assert s.flaky_cases([]) == []
+
+
+# ------------------------------------------------------------ conversations and families
+
+
+def test_query_only_system_refuses_a_conversation_case():
+    case = EvalCase(id="conv", query="and then?", prior_turns=["first?"], family="conversation")
+    (r,) = Runner([ContainsAllScorer()]).run([case], _good_sut)
+    assert r.output is None and "replays no earlier turns" in (r.error or "")
+    assert r.family == "conversation"
+
+
+def test_case_system_receives_the_whole_case():
+    seen = []
+
+    def _sut(case):
+        seen.append((case.id, list(case.prior_turns)))
+        return EvalOutput(answer="ok")
+
+    case = EvalCase(id="conv", query="q", prior_turns=["a"])
+    Runner([ContainsAllScorer()]).run([case], _sut, takes_case=True)
+    assert seen == [("conv", ["a"])]
+
+
+def test_store_keeps_each_case_family(store: Store):
+    results = [
+        EvalResult(case_id="a", output=EvalOutput(answer="x"), scores=[ScoreResult("s", 1.0)]),
+        EvalResult(
+            case_id="b",
+            output=EvalOutput(answer="x"),
+            scores=[ScoreResult("s", 0.0, {"error": "n/a"})],
+            family="records",
+        ),
+    ]
+    run_id = store.persist_run(results, system_name="t")
+    rows = {r["case_id"]: r for r in store.case_score_rows([run_id])}
+    assert rows["a"]["family"] == "single" and rows["a"]["scoreable"]
+    assert rows["b"]["family"] == "records" and not rows["b"]["scoreable"]
+    assert store.case_score_rows([]) == []

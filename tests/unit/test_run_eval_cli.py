@@ -17,6 +17,7 @@ Pure functions only — no pipeline, no models, no store.
 from __future__ import annotations
 
 import pytest
+from scripts import run_eval
 from scripts.run_eval import index_composition, resolve_generator
 
 from doc_assistant import sparse_index
@@ -97,3 +98,53 @@ class TestIndexComposition:
 
         assert recorded == {"index_doc_count": None, "index_doc_digest": None}
         assert "index_doc_count" in recorded
+
+
+# ------------------------------------------------------------ panels, billing, data home (H2)
+
+from pathlib import Path  # noqa: E402
+
+from doc_assistant.eval.cases import EvalCase  # noqa: E402
+from doc_assistant.eval.panel import Column  # noqa: E402
+
+
+def test_controller_needs_an_explicit_data_home(monkeypatch, tmp_path):
+    monkeypatch.delenv("DOC_DATA_DIR", raising=False)
+    assert "DOC_DATA_DIR" in (run_eval.controller_data_home_error(tmp_path, tmp_path) or "")
+    monkeypatch.setenv("DOC_DATA_DIR", str(tmp_path / "data"))
+    err = run_eval.controller_data_home_error(tmp_path / "data", tmp_path)
+    assert err is not None and "data/" in err
+    assert run_eval.controller_data_home_error(tmp_path / "evalhome", tmp_path) is None
+
+
+def test_plan_counts_turns_and_names_who_bills(monkeypatch):
+    billed = {("vendor", "big")}
+    monkeypatch.setattr(run_eval, "_bills", lambda p, m: (p, m) in billed)
+    monkeypatch.setattr("doc_assistant.llm.resolve_reviewer", lambda p, m: ("vendor", "big"))
+    cases = [EvalCase(id="a", query="q"), EvalCase(id="b", query="q", prior_turns=["x", "y"])]
+    cols = [
+        Column("local", "ollama", "m1"),
+        Column("ctl", "ollama", "m1", adapter="controller"),
+        Column("t", "", "m2", kind="replay"),
+    ]
+    plan = run_eval.plan_columns(cols, cases, repeat=3, judge=None)
+    assert [p.column.name for p in plan] == ["local", "ctl"]  # replay columns are not run
+    assert plan[0].turns == 12 and plan[0].billed == [] and plan[0].reviewer is None
+    assert plan[1].billed == ["vendor/big"]  # its reviewer bills even if the model does not
+    text = run_eval.format_plan(plan, repeat=3, judge=None)
+    assert "| local | pipeline | ollama/m1 | 12 |" in text and "nobody" in text
+
+
+def test_plan_counts_the_judge(monkeypatch):
+    monkeypatch.setattr(run_eval, "_bills", lambda p, m: p == "judgeco")
+    plan = run_eval.plan_columns(
+        [Column("c", "ollama", "m")],
+        [EvalCase(id="a", query="q")],
+        repeat=2,
+        judge=("judgeco", "j"),
+    )
+    assert plan[0].billed == ["judgeco/j"]
+
+
+def test_example_panel_is_shipped():
+    assert (Path(run_eval.PROJECT_ROOT) / "tests" / "eval" / "panel.example.yaml").exists()

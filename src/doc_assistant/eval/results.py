@@ -62,3 +62,4 @@ class EvalResult:
     latency_ms: float = 0.0
     error: str | None = None
     timestamp: datetime = field(default_factory=_utcnow)
+    family: str = "single"

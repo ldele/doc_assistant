@@ -336,6 +336,7 @@ def test_dispatch_library_query(monkeypatch):
     controller = ChatController(rag=FakeRAG([], []))
     result = _final(_results(controller, Session(), "how many pdfs?"))
     assert result.answer == "LIBRARY ANSWER"
+    assert result.route == "library"  # the eval's route scorer reads this
 
 
 def test_failing_command_is_surfaced_not_raised(monkeypatch):
@@ -349,6 +350,7 @@ def test_failing_command_is_surfaced_not_raised(monkeypatch):
     result = _final(_results(controller, Session(), "/library"))
     assert "/library` failed" in result.answer and "no such table" in result.answer
     assert result.sources == [] and result.record_id is None
+    assert result.route == "command"
 
 
 def test_failing_library_query_is_surfaced(monkeypatch):
@@ -371,6 +373,8 @@ def test_dispatch_rag_path_taken(monkeypatch, temp_db):
     assert [type(e).__name__ for e in events if isinstance(e, Token)] == ["Token", "Token"]
     result = _final(events)
     assert result.answer == "Cells meet [1]." and len(result.sources) == 3
+    assert result.route == "rag"
+    assert result.sources[0].filename == "a.pdf"  # read by the eval's controller adapter
 
 
 class _UnreachableRAG(FakeRAG):
@@ -1278,3 +1282,76 @@ def test_human_mode_with_no_sources_keeps_its_own_answer(
     )
 
     assert result.mode == "human"
+
+
+# ============================================================
+# The eval harness's controller adapter (spec eval-harness-chat.md, decision 6) — driven over
+# the real ChatController with the fake pipeline, so the adapter's contract is asserted against
+# the controller it will run on, not a stub of it.
+# ============================================================
+
+
+def test_controller_adapter_records_route_audit_and_cited_files(monkeypatch, temp_db):
+    from doc_assistant.eval.adapters import controller_adapter
+    from doc_assistant.eval.cases import EvalCase
+
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Cells ", "meet [1]."]))
+    out = controller_adapter(controller)(EvalCase(id="c", query="How do neurons connect?"))
+    assert out.answer == "Cells meet [1]."
+    assert out.raw["route"] == "rag"
+    assert out.raw["citation_audit"]["valid"] == [1]
+    assert out.raw["cited_filenames"] == ["a.pdf"]
+    assert out.raw["retrieved"][0]["filename"] == "a.pdf"
+    assert "retrieved_pre_rerank" not in out.raw  # the controller does not expose that stage
+
+
+def test_controller_adapter_replays_earlier_turns_in_one_fresh_session(monkeypatch, temp_db):
+    from doc_assistant.eval.adapters import controller_adapter
+    from doc_assistant.eval.cases import EvalCase
+
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    seen: list[str] = []
+    real = ChatController.handle_message
+
+    def _spy(self, session, text, **kw):
+        seen.append(f"{len(session.history)}:{text}")
+        yield from real(self, session, text, **kw)
+
+    monkeypatch.setattr(ChatController, "handle_message", _spy)
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Ok [1]."]))
+    sut = controller_adapter(controller)
+    out = sut(EvalCase(id="c", query="and then?", prior_turns=["first?", "second?"]))
+    assert seen == ["0:first?", "2:second?", "4:and then?"]
+    assert out.raw["n_turns"] == 3
+    seen.clear()
+    sut(EvalCase(id="d", query="alone"))
+    assert seen == ["0:alone"]  # no history leaks from the previous case
+
+
+def test_controller_adapter_library_route(monkeypatch):
+    from doc_assistant.eval.adapters import controller_adapter
+    from doc_assistant.eval.cases import EvalCase
+
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: True)
+    monkeypatch.setattr(chat_controller.controller, "answer_library_query", lambda t: "3 PDFs.")
+    controller = ChatController(rag=FakeRAG([], []))
+    out = controller_adapter(controller)(EvalCase(id="r", query="how many pdfs?"))
+    assert out.raw["route"] == "library" and out.answer == "3 PDFs."
+    assert out.raw["cited_filenames"] == []
+
+
+def test_controller_adapter_raises_on_a_failed_turn(monkeypatch):
+    from doc_assistant.eval.adapters import controller_adapter
+    from doc_assistant.eval.cases import EvalCase
+
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+
+    def _boom(*a, **kw):
+        raise RuntimeError("engine down")
+        yield  # pragma: no cover
+
+    controller = ChatController(rag=FakeRAG([], []))
+    monkeypatch.setattr(controller, "_handle_rag", _boom)
+    with pytest.raises(RuntimeError, match="turn failed"):
+        controller_adapter(controller)(EvalCase(id="f", query="q"))

@@ -3,7 +3,9 @@
 Caller provides:
 
 * a list of ``EvalCase``,
-* a ``SystemUnderTest`` callable mapping a query to ``EvalOutput``,
+* a ``SystemUnderTest`` callable mapping a query to ``EvalOutput`` — or, with
+  ``takes_case=True``, a ``CaseSystem`` mapping the whole ``EvalCase`` (an
+  adapter that replays a conversation's earlier turns needs them),
 * a list of ``Scorer`` instances.
 
 The runner times each case, catches exceptions (one bad case shouldn't
@@ -26,6 +28,11 @@ from doc_assistant.eval.scorers import Scorer
 log = structlog.get_logger(__name__)
 
 SystemUnderTest: TypeAlias = Callable[[str], EvalOutput]
+CaseSystem: TypeAlias = Callable[[EvalCase], EvalOutput]
+
+#: The error a query-only system records for a conversation case: answering its last turn alone
+#: would score a different question, so the case is not run at all.
+NO_TURN_REPLAY = "this adapter replays no earlier turns; run conversation cases on one that does"
 
 
 class Runner:
@@ -39,9 +46,10 @@ class Runner:
     def run(
         self,
         cases: list[EvalCase],
-        system_under_test: SystemUnderTest,
+        system_under_test: SystemUnderTest | CaseSystem,
         *,
         progress: Callable[[int, int, EvalCase], None] | None = None,
+        takes_case: bool = False,
     ) -> list[EvalResult]:
         """Run every case once, score with every scorer.
 
@@ -61,7 +69,12 @@ class Runner:
             output: EvalOutput | None
             error: str | None
             try:
-                output = system_under_test(case.query)
+                if takes_case:
+                    output = system_under_test(case)  # type: ignore[arg-type]
+                elif case.prior_turns:
+                    raise RuntimeError(NO_TURN_REPLAY)
+                else:
+                    output = system_under_test(case.query)  # type: ignore[arg-type]
                 error = None
             except Exception as e:
                 log.exception("system_under_test_raised", case_id=case.id)
@@ -87,6 +100,7 @@ class Runner:
                     scores=scores,
                     latency_ms=latency_ms,
                     error=error,
+                    family=case.family,
                 )
             )
         return results

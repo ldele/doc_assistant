@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-13 (accepted by the user; H1: written after a scoped grill of six questions; revised the same day to the user's steer: model-neutral, no budget in the spec, a run of your own on your own model) · class: living -->
+<!-- status: active · updated: 2026-11-14 (H2 built, § As built); 2026-11-13 (accepted by the user; H1: written after a scoped grill of six questions; revised the same day to the user's steer: model-neutral, no budget in the spec, a run of your own on your own model) · class: living -->
 
 # Spec — The eval harness, reinforced for the chat work (ROADMAP 113, sessions H2 to H6)
 
@@ -13,6 +13,32 @@
 > **What this spec is not.** It says how a run works and what it measures, on any model. Which
 > models a given run uses, and what it may cost, are a run's settings: recorded with the run, never
 > fixed here. This release's own choices (its budget, its first panel) live in the plan.
+
+## As built — H2 (2026-11-14)
+
+Built in the session after the spec was accepted. Where the build departs from the text below, this
+list wins:
+
+- **`uncited_answer` is `cited_answer`**: every binary scorer reads 1.0 as *holds*, so a gate's "no
+  case that held before fails after" reads the same on all of them.
+- **Open question 7 resolved:** the app has no fixed not-found sentence (`ANSWER_PROMPT` asks the
+  model to say so in its own words), so `refusal_hold` holds when the answer carries no valid
+  citation and none of the case's `must_not_contain` strings. A fixed sentence would make the rule
+  sharper; that is A6's to decide, not the harness's.
+- **The adapters compute the app's verdicts** (`audit_citations`, the cited filenames, the route)
+  and put them on `EvalOutput.raw`, because the scorers may not import the app (the isolation
+  test). Keys listed in `scorers.py`.
+- **App changes, all observation-only:** `RAGPipeline.retrieve_with_scores(trace=...)` records the
+  fused order before the rerank; `TurnResult.route` names the path that answered (`rag`,
+  `evidence`, `no_sources`, `library`, `command`, `claim_edit`); `SourceView.filename`. None
+  reaches the window or changes what is retrieved.
+- **The controller adapter cannot see the order before the rerank**, so the `_pre_rerank` rank
+  scorers are not scored on it. It writes an answer record per turn, so `run_eval` refuses it unless
+  `DOC_DATA_DIR` names a data home other than the checkout's `data/`.
+- **One `RAGPipeline` serves every column** of a run: the model is switched with
+  `set_chat_model`, never persisted, and the controller is built over the same pipeline.
+- **The paired interval is a flag of the run** (`--paired-baseline`), one app column only; it lives
+  in `eval/paired.py`, with `report.paired_runs` reading the store.
 
 ## Goal
 
@@ -217,7 +243,7 @@ as its own repository).
 | 4 | Statistic and repeats | resolved | Decisions 4 |
 | 5 | Gate rule | resolved | Decisions 5 |
 | 6 | The path to the chat | resolved | Decisions 6 |
-| 7 | The exact not-found rule `refusal_hold` reads | parked | H2, read from the app's not-found path |
+| 7 | The exact not-found rule `refusal_hold` reads | resolved | H2: no valid citation and none of `must_not_contain` (§ As built) |
 | 8 | A run from inside the app | parked | after H6; the runner function is the seam |
 
 ## Docs to touch when this lands

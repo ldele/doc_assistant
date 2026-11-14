@@ -580,6 +580,7 @@ class RAGPipeline:
         *,
         use_multi_query: bool | None = None,
         scope: frozenset[str] | None = None,
+        trace: dict[str, Any] | None = None,
     ) -> list[tuple[Document, float]]:
         """Retrieve top-k as ``(doc, reranker_score)`` pairs.
 
@@ -596,6 +597,11 @@ class RAGPipeline:
         filter**, not a quality knob: it changes *which documents* are searchable, never *how*
         retrieval works. ``None`` = the whole library (today's path, byte-identical); a non-empty
         set scopes both arms before scoring; an **empty** set retrieves nothing.
+
+        ``trace`` (the eval harness, spec ``eval-harness-chat.md``) is a dict the call fills with
+        ``pre_rerank``: the candidates' filenames in the order the retrievers fused them, after
+        the cap and before the cross-encoder. Observation only: ``None`` (every app caller)
+        records nothing, and a dict changes nothing that is retrieved or returned.
         """
         # ADR-025 F2: an EMPTY scope retrieves nothing. It must never widen to the whole corpus —
         # answering over every document when the caller asked for a folder is the `is_archived`
@@ -642,6 +648,9 @@ class RAGPipeline:
                 queries=len(queries),
             )
             all_candidates = all_candidates[:RERANK_CANDIDATE_CAP]
+
+        if trace is not None:
+            trace["pre_rerank"] = [str(d.metadata.get("filename") or "") for d in all_candidates]
 
         # Rerank against the original query.
         # The ignore is the sentence-transformers stub, not this call: its `predict` overloads

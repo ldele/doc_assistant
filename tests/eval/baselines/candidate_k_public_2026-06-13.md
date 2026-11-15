@@ -1,5 +1,11 @@
 # CANDIDATE_K split — public corpus A/B (2026-06-13)
 
+> **2026-11-15 — the private half is done** (ROADMAP 69,
+> [`h4_retrieval_and_citation_2026-11-15.md`](h4_retrieval_and_citation_2026-11-15.md)): on the
+> 34-case private set, 20 against 10 is no difference at that n (MRR +0.015 [−0.015, +0.064]); 20
+> brings one more document into the top 10 and loses none. The verdict below stands: keep 20, a
+> no-regression default, not a measured win.
+
 Measures the 2026-06-07 retrieval-K split (`CANDIDATE_K`, commit `09115c8`) through the
 **real** pipeline on the public corpus, to decide whether the shipped default
 `CANDIDATE_K=20` should stay or revert to the pre-split `CANDIDATE_K=10`. Closes the

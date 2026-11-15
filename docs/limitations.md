@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-09 (row 95 dated to 0.8.0; moved verbatim from the README's Limitations section, links re-based) · class: living -->
+<!-- status: active · updated: 2026-11-15 (citation coverage re-measured on the fixed build); 2026-11-09 (row 95 dated to 0.8.0; moved verbatim from the README's Limitations section, links re-based) · class: living -->
 
 # Limitations
 
@@ -9,15 +9,15 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
 
 ## Answers
 
-- **Local models cite less, and the gap is measured.** Across 27 questions on a 97-document
-  library, with the shipped prompt and the same retrieval, Claude Haiku 4.5 carried inline
-  citations on 83.5% of its sentences, `llama3.1:8b` on 37.6% and `qwen2.5:7b` on 18.0% (one run
-  each, so read them to about ±2 points, ±5 for qwen;
-  [baseline](../tests/eval/baselines/citation_coverage_2026-08-07.md)). On a local model more claims
-  carry no citation and show as *uncited*: 12 of the 27 `llama3.1:8b` answers cited nothing.
-  **These local figures predate a fix in 0.7.0** that stopped Ollama from silently cutting the
-  start of long prompts, where the instructions to cite sit; on the release's three test questions
-  `llama3.1:8b` went from 0 cited answers to 3. They will be re-measured. Small
+- **How much an answer cites depends on the model.** On 27 questions, re-measured on 2026-11-15
+  with the shipped prompt (three runs each), `llama3.1:8b` carried inline citations on 89% of its
+  sentences (85-94% per run) and `qwen2.5:7b` on 70% (66-75%); 1 of 81 `qwen2.5:7b` answers cited
+  nothing, and no `llama3.1:8b` answer
+  ([baseline](../tests/eval/baselines/h4_retrieval_and_citation_2026-11-15.md)). Claude Haiku 4.5
+  was at 83.5% on 2026-08-07 (one run, not re-run). The local figures published before, 37.6% and
+  18.0%, were taken while Ollama silently cut the start of long prompts, where the instructions to
+  cite sit; 0.7.0 fixed that. A sentence that carries no citation shows as *uncited*. A citation
+  says where a claim comes from, not that the source supports it. Small
   local models also place documents into a
   taxonomy at 70-87% precision, and their self-reported confidence carries almost no signal; on one
   model it was *anti*-correlated with correctness, so do not auto-accept on it. The app states this

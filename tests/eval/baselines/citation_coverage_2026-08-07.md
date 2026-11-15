@@ -1,4 +1,10 @@
-<!-- status: active · updated: 2026-08-07 · class: baseline -->
+<!-- status: active · updated: 2026-11-15 (the local rows were taken on a cut prompt; re-run in h4_retrieval_and_citation_2026-11-15.md) · class: baseline -->
+
+> **2026-11-15 — the local rows below describe a cut prompt (KI-66, RG-035).** Every Ollama prompt
+> longer than ~4,096 tokens lost its start, and with it the instruction to cite. Re-run on the
+> fixed build, same 27 cases, three runs: `llama3.1:8b` 89.3%, `qwen2.5:7b` 70.0%
+> ([`h4_retrieval_and_citation_2026-11-15.md`](h4_retrieval_and_citation_2026-11-15.md)). The
+> Haiku row was never cut and stands.
 
 # Citation coverage — before/after the unbracketed source header (2026-08-06/07)
 

@@ -44,6 +44,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-15 (3) — H4's retrieval checks and RG-035's first re-run
+
+**What changed.** `tests/eval/baselines/h4_retrieval_and_citation_2026-11-15.md`: the reranker
+on and off, and `CANDIDATE_K` 20 against 10 (ROADMAP 69), retrieval only, on the private set (34
+cases) and the public 28 (18 cases). Both show no difference at this n. Citation coverage on the
+fixed build, three runs on the private 27: `llama3.1:8b` 89.3%, `qwen2.5:7b` 70.0%, up from 37.6%
+and 18.0%, with Ollama logging `truncated = 0` on all 210 calls. The README's and
+`docs/limitations.md`'s citation figures were replaced. `citation_coverage_2026-08-07.md` and
+`candidate_k_public_2026-06-13.md` carry dated lines. No code changed.
+
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H4. RG-035 (1) asked for KI-36's rates on the
+fixed build before A2 uses them as its *before*.
+
+**Rejected.** Running the citation re-run through the controller on a copy of the working
+library: the pipeline adapter reads the library without writing to it and builds the same prompt
+and audit. The difference is stated in the baseline. Dropping the reranker on these intervals:
+they contain zero, and the integrity layer reads its scores.
+
+**What it opens.** H5 (the judge, checked against the user's grades). KI-36: open for
+`qwen2.5:7b` only, or closed, which is the user's call. RG-035 rows (2) and (3) are still to run.
+
 ## 2026-11-15 (2) — The first chat-eval baseline (H4)
 
 **What changed.** `tests/eval/baselines/h4_chat_baseline_2026-11-15.md`: the five case families

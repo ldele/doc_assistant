@@ -161,9 +161,9 @@ Data flow and module contracts: [`docs/architecture.md`](docs/architecture.md).
 The short list. Each of these, with counts and what to do about it, is in
 [`docs/limitations.md`](docs/limitations.md).
 
-- **Local models cite less.** On 27 questions, Claude Haiku 4.5 put a citation on 83.5% of its
-  sentences, `llama3.1:8b` on 37.6% (one run each, measured before a fix in 0.7.0; to be
-  re-measured). Uncited claims are flagged, and nothing is blocked.
+- **How much an answer cites depends on the model.** On 27 questions, `llama3.1:8b` put a
+  citation on 89% of its sentences and `qwen2.5:7b` on 70% (three runs each, 2026-11-15); Claude
+  Haiku 4.5 on 83.5% (one run, 2026-08-07). Uncited claims are flagged, and nothing is blocked.
 - **A flag measures relevance, not truth.** An unflagged claim is not a verified claim.
 - **Scanned PDFs need an OCR engine, and the app ships none.** Without `tesseract` on your PATH a
   pure-image PDF extracts to nothing and is marked *broken*.

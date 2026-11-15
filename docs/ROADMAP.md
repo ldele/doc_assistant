@@ -223,8 +223,8 @@ chips withheld (KI-33), epistemics toggle (E3), in-context + show-the-page from 
 three-question citation gate (row 46).
 **Next:** the MCP server (row **65**) and rows **37**, **101** and **102**, then the interface
 pass (**103**). Security step S-9 lands before any tool: document text must not be able to steer
-one. Row 37's hard boundary stays. Anything touching `contested` waits on KL3. Local-model citation
-coverage is a floor (KI-36): every chat feature must state which model it was verified on.
+one. Row 37's hard boundary stays. Anything touching `contested` waits on KL3. Citation coverage
+depends on the model (KI-36): every chat feature must state which model it was verified on.
 
 ### F4 · Projects & navigation
 

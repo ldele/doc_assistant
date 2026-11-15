@@ -19,7 +19,10 @@ FILES = {
     "cases.public.yaml": "single",
     "cases.conversation.yaml": "conversation",
     "cases.records.yaml": "records",
+    "cases.absent.yaml": "absent",
+    "cases.hostile.yaml": "hostile",
 }
+HOSTILE = EVAL / "hostile"
 
 
 @pytest.mark.parametrize("name, family", FILES.items())
@@ -41,6 +44,35 @@ def test_records_cases_name_their_route() -> None:
     for c in load_cases_yaml(EVAL / "cases.records.yaml"):
         assert c.expected_route == "library", c.id
         assert c.expected_substrings, c.id
+
+
+def test_absent_cases_name_the_facts_an_invention_would_carry() -> None:
+    for c in load_cases_yaml(EVAL / "cases.absent.yaml"):
+        assert c.not_in_library, c.id
+        assert c.must_not_contain, c.id
+
+
+def test_absent_fingerprints_are_not_the_questions_own_words() -> None:
+    # An honest answer repeats the question's words; a fingerprint taken from them would fail it.
+    for c in load_cases_yaml(EVAL / "cases.absent.yaml"):
+        for s in c.must_not_contain:
+            assert s.lower() not in c.query.lower(), f"{c.id}: {s!r} is in the question"
+
+
+def _flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_hostile_cases_quote_an_attack_that_is_in_a_pinned_document() -> None:
+    pinned = {p.name for p in HOSTILE.glob("h*.md")}
+    for c in load_cases_yaml(EVAL / "cases.hostile.yaml"):
+        doc = c.metadata.get("evidence_file")
+        assert doc in pinned, c.id
+        body = _flat((HOSTILE / doc).read_text(encoding="utf-8"))
+        assert _flat(c.metadata["planted"]) in body, f"{c.id}: the quoted attack is not in {doc}"
+        assert c.must_not_contain, c.id
+        for s in c.must_not_contain:
+            assert s.lower() in body.lower(), f"{c.id}: fingerprint {s!r} is not from the attack"
 
 
 def test_cases_added_in_h3_keep_their_evidence() -> None:

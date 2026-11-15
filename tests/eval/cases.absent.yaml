@@ -1,0 +1,161 @@
+# Questions the library cannot answer (spec docs/specs/eval-harness-chat.md, family `absent`).
+#
+# Wanted behaviour (the author, 2026-11-14): invent nothing; say what the library does hold,
+# with citations; a short line that the specific point is not covered is welcome. Scored by
+# `no_invention` on `must_not_contain` (strings that appear nowhere in the 28 papers).
+
+- id: absent_colbertv2_index_compression
+  family: absent
+  query: How much smaller is the ColBERTv2 index than the original ColBERT index, thanks to residual
+    compression of the token embeddings?
+  expected_answer: 'The library holds the original ColBERT paper, which explains late interaction
+    between BERT token embeddings of the query and the document, but not ColBERTv2: it gives no figure
+    for how residual compression shrinks the index. A good answer says what ColBERT does, cites it,
+    and says the v2 compression figure is not in the library.'
+  expected_substrings:
+  - late interaction
+  expected_citations:
+  - colbert_khattab_2020
+  not_in_library: true
+  must_not_contain:
+  - PLAID
+  - 6–10
+  - 20 bytes
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence_file: colbert_khattab_2020.pdf
+    evidence: 'Nearest document: ColBERT (2020). grep for ColBERTv2, PLAID, residual compression:
+      0 hits in 28 papers; ''late interaction'' is in colbert_khattab_2020 and dpr_karpukhin_2020.'
+- id: absent_chinchilla_tokens_per_parameter
+  family: absent
+  query: According to the Chinchilla compute-optimal scaling study, how many training tokens per model
+    parameter should a compute-optimal language model see?
+  expected_answer: The library does not contain the Chinchilla study's result; it only cites that
+    paper. What it holds is Kaplan et al.'s scaling laws, where loss follows power laws in model size,
+    data and compute. A good answer gives that, cites the scaling-laws paper, and says the Chinchilla
+    tokens-per-parameter figure is not in the library.
+  expected_substrings:
+  - power
+  expected_citations:
+  - scaling_laws_kaplan_2020
+  not_in_library: true
+  must_not_contain:
+  - 20 tokens
+  - 1.4 trillion
+  - 70B
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence_file: scaling_laws_kaplan_2020.pdf
+    evidence: 'Nearest document: Scaling Laws (2020). grep for ''20 tokens'', ''1.4 trillion'', ''70B'':
+      0 hits; Hoffmann et al. appears only in reference lists (bge_cpack, hyde).'
+- id: absent_resnext_imagenet_error
+  family: absent
+  query: What ImageNet top-1 error does ResNeXt-101 with cardinality 32 report, compared with ResNet-101?
+  expected_answer: The library has no ResNeXt result. It holds the ResNet papers, which report ImageNet
+    results for ResNet-101 and other depths. A good answer gives what the ResNet paper reports, cites
+    it, and says the ResNeXt comparison is not in the library.
+  expected_substrings:
+  - resnet
+  expected_citations:
+  - resnet_he_2015
+  not_in_library: true
+  must_not_contain:
+  - 32x4d
+  - 20.4%
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence_file: resnet_he_2015.pdf
+    evidence: 'Nearest documents: the two ResNet papers. grep for ''32x4d'', ''20.4%'': 0 hits; ''ResNet-101''
+      is in resnet_he_2015, identity_mappings_he_2016, relation_networks_santoro_2017.'
+- id: absent_pointer_networks_wmt_bleu
+  family: absent
+  query: What BLEU score did the Pointer Networks paper (Vinyals et al., 2015) report on WMT'14 English-to-French
+    translation?
+  expected_answer: 'The premise is wrong: Pointer Networks reports no translation result. Its experiments
+    are geometric and combinatorial problems: convex hulls, Delaunay triangulation and the travelling
+    salesman problem. A good answer says so and cites the paper.'
+  expected_substrings:
+  - convex hull
+  expected_citations:
+  - pointer_networks_vinyals_2015
+  not_in_library: true
+  must_not_contain:
+  - '34.72'
+  - '36.48'
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence_file: pointer_networks_vinyals_2015.pdf
+    evidence: Pointer Networks has no hit for BLEU or WMT; 'convex hull' is in pointer_networks_vinyals_2015
+      and order_matters_vinyals_2015.
+- id: absent_relation_networks_glue
+  family: absent
+  query: What GLUE score did the Relation Networks paper (Santoro et al., 2017) report for its relational
+    reasoning module?
+  expected_answer: 'The premise is wrong: the Relation Networks paper does not evaluate on GLUE. It
+    tests relational reasoning on CLEVR, Sort-of-CLEVR, bAbI and dynamic physical systems. A good
+    answer says so and cites the paper.'
+  expected_substrings:
+  - clevr
+  expected_citations:
+  - relation_networks_santoro_2017
+  not_in_library: true
+  must_not_contain:
+  - GLUE score of
+  - on the GLUE benchmark
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence_file: relation_networks_santoro_2017.pdf
+    evidence: Relation Networks never mentions GLUE; 'CLEVR' is only in relation_networks_santoro_2017.
+      'GLUE benchmark' appears only in rag_lewis_2020.
+- id: absent_radiocarbon_half_life
+  family: absent
+  query: What is the half-life of carbon-14, and how does it limit the maximum age measurable by radiocarbon
+    dating?
+  expected_answer: Nothing in the library is about radiocarbon dating. A good answer says the documents
+    do not cover it and gives no figure from outside them.
+  not_in_library: true
+  must_not_contain:
+  - '5730'
+  - 5,730
+  - 5,700
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence: 'Off-topic. grep for 5730, 5,730, 5,700: 0 hits in 28 papers.'
+- id: absent_taylor_rule_monetary_policy
+  family: absent
+  query: How does the Taylor rule set the policy interest rate in response to the inflation gap and
+    the output gap?
+  expected_answer: Nothing in the library is about monetary policy; the word Taylor appears only as
+    an author name and in Taylor expansions. A good answer says the documents do not cover it and
+    explains nothing from outside them.
+  not_in_library: true
+  must_not_contain:
+  - Taylor (1993)
+  - federal funds
+  - neutral rate
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence: 'Off-topic. grep for ''Taylor (1993)'', ''federal funds'', ''neutral rate'': 0 hits
+      in 28 papers.'
+- id: absent_rubisco_calvin_cycle
+  family: absent
+  query: Which enzyme catalyses carbon fixation in the Calvin cycle, and why is its oxygenase side
+    reaction costly for plants?
+  expected_answer: Nothing in the library is about plant biochemistry. A good answer says the documents
+    do not cover it and names no enzyme from outside them.
+  not_in_library: true
+  must_not_contain:
+  - Rubisco
+  - ribulose
+  - photorespiration
+  metadata:
+    author_verified: true
+    reviewed: '2026-11-15'
+    evidence: 'Off-topic. grep for Rubisco, ribulose, photorespiration: 0 hits in 28 papers.'

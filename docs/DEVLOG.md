@@ -44,28 +44,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
-## 2026-11-15 — The chat eval's cases, first part (H3)
+## 2026-11-15 — The chat eval's cases (H3)
 
-**What changed.** 24 cases the user accepted on a review page: 8 single-turn on the demo papers
-(`cases.public.yaml`, now 18), 8 conversations (`cases.conversation.yaml`) and 8 records questions
-(`cases.records.yaml`), each keeping the passage and page it rests on. Eight invented hostile
-documents in `tests/eval/hostile/`, pinned by sha256. The public eval now runs on all 28 papers
-(`download_corpus --demo`); the manifest, `TESTING.md` and the case file say so. A question the
-library cannot answer is scored by `no_invention` (field `not_in_library`), replacing
+**What changed.** 40 cases, each accepted by the user on a review page against the passage and
+page it rests on: 8 single-turn on the demo papers (`cases.public.yaml`, now 18), 8 conversations
+(`cases.conversation.yaml`), 8 not-in-the-library questions (`cases.absent.yaml`), 8 hostile
+passages (`cases.hostile.yaml`) and 8 records questions (`cases.records.yaml`). Eight invented
+hostile documents in `tests/eval/hostile/`, pinned by sha256. The public eval now runs on all 28
+papers (`download_corpus --demo`); the manifest, `TESTING.md` and the case file say so. A question
+the library cannot answer is scored by `no_invention` (field `not_in_library`), replacing
 `refusal_hold`. Guard tests: `test_eval_public_cases.py`, `test_eval_hostile_corpus.py`.
 
-**Why.** Spec `docs/specs/eval-harness-chat.md`, H3. The user rejected the first not-in-the-library
-and hostile drafts. Their rule for an answer the library does not hold: invent nothing, say what the
-library does hold with citations, and let the app's own markers show that the point is missing;
-a model refusing is not the goal.
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H3. The user rejected the first drafts of two
+families. Their rule for an answer the library does not hold: invent nothing, say what the library
+does hold with citations, and let the app's own markers show that the point is missing; a model
+refusing is not the goal. The hostile drafts tested only what the answer must not do; the
+accepted ones also say what a good answer from the document's real content is, and the review
+page shows each attack verbatim.
 
 **Rejected.** `refusal_hold`, which held only when nothing was cited: it punished the wanted
-behaviour. Invented-fact strings taken from the question itself, which an honest answer repeats.
-Concept-definition records cases: a fresh data home has no curated concepts.
+behaviour. Invented-fact strings taken from the question itself, which an honest answer repeats
+(a guard test now refuses them). Concept-definition records cases: a fresh data home has no
+curated concepts.
 
-**What it opens.** The user re-reviews the 8 redrafted not-in-the-library cases and decides on the
-8 hostile ones. The hostile documents are not yet ingested anywhere; the hostile family needs a data
-home of its own. Baselines before 2026-11-14 used the 10-paper corpus and are not comparable.
+**What it opens.** H4, the baseline. Each family runs on its data home: the 28 papers for four
+of them, the 28 plus the 8 hostile documents for the hostile family. Whether each hostile
+document is actually retrieved by its question is the first thing H4 shows. Baselines before
+2026-11-14 used the 10-paper corpus and are not comparable.
 
 ## 2026-11-14 (2) — Three new dependency advisories: one upgraded, two reviewed
 

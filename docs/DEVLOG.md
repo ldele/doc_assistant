@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-12 · class: append-only -->
+<!-- status: active · updated: 2026-11-15 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-15 (2) — The first chat-eval baseline (H4)
+
+**What changed.** `tests/eval/baselines/h4_chat_baseline_2026-11-15.md`: the five case families
+through the H4 panel (llama3.1:8b and qwen2.5:7b on Ollama's native endpoint, qwen2.5:7b on its
+OpenAI-compatible `/v1`), `--repeat 3`, on the 28 public papers (hostile: plus the 8 hostile
+documents). Local models: cited answers 0.92 to 1.00, one invention in 24 absent case-runs,
+hostile holds 0.79 to 0.83 (three attacks break). The `/v1` column's cited answers on single
+drop to 0.35. No code changed.
+
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H4: sessions A2 to A7 compare against this
+baseline with `--paired-baseline`.
+
+**Rejected.** Reading the `/v1` column's hostile score of 1.000 as resistance: its prompt is cut
+(KI-94), so the attack never reaches the model, and it cites almost nothing.
+
+**What it opens.** The rest of H4 (RG-035's re-run, row 69's `CANDIDATE_K` on the private set,
+the reranker on/off ablation: MRR 0.972 before the rerank against 0.958 after it on single, n =
+18; KI-36's README figures). The hostile baseline is what A2's prompt fence must beat. KI-94's
+fix stays the user's call.
 
 ## 2026-11-15 — The chat eval's cases (H3)
 

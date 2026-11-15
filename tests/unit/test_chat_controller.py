@@ -1304,6 +1304,8 @@ def test_controller_adapter_records_route_audit_and_cited_files(monkeypatch, tem
     assert out.raw["cited_filenames"] == ["a.pdf"]
     assert out.raw["retrieved"][0]["filename"] == "a.pdf"
     assert "retrieved_pre_rerank" not in out.raw  # the controller does not expose that stage
+    result = _final(_results(controller, Session(), "How do neurons connect?"))
+    assert (out.token_input or 0) == result.usage.turn_input  # the turn's own usage
 
 
 def test_controller_adapter_replays_earlier_turns_in_one_fresh_session(monkeypatch, temp_db):

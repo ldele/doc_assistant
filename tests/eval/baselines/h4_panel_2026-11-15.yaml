@@ -1,0 +1,20 @@
+# The panel of the first chat-eval baseline (H4, 2026-11-15). A setting of that run, recorded here
+# so it can be repeated; not the project's panel (spec docs/specs/eval-harness-chat.md, Columns
+# and panels). This release's choice: models on this computer only, nothing billed.
+#
+# `ollama-v1` is Ollama's OpenAI-compatible endpoint (http://localhost:11434/v1), saved as a
+# server of your own with "This server does not bill me" ticked in the eval data home's
+# settings.json; same weights as qwen-7b, so a gap between the two is the adapter, not the model.
+columns:
+  - name: llama-8b
+    provider: ollama
+    model: llama3.1:8b
+    adapter: controller
+  - name: qwen-7b
+    provider: ollama
+    model: qwen2.5:7b
+    adapter: controller
+  - name: qwen-7b-v1
+    provider: server-ollama-openai-compatible
+    model: qwen2.5:7b
+    adapter: controller

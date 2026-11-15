@@ -134,12 +134,11 @@ def controller_adapter(controller: ChatController) -> Callable[[EvalCase], EvalO
         session = Session()
         for earlier in case.prior_turns:
             _turn(session, earlier)
-        before_in = session.counter.input_tokens
-        before_out = session.counter.output_tokens
         result = _turn(session, case.query)
         filenames = [s.filename for s in result.sources]
-        token_in = session.counter.input_tokens - before_in
-        token_out = session.counter.output_tokens - before_out
+        # The scored turn's own usage, as the app reports it to the window (the session counter
+        # is the controller's running total and is not what one turn cost).
+        token_in, token_out = result.usage.turn_input, result.usage.turn_output
         return EvalOutput(
             answer=result.answer.strip(),
             citations=list(dict.fromkeys(f for f in filenames if f)),

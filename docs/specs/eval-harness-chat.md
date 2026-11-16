@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-14 (H2 built, § As built); 2026-11-13 (accepted by the user; H1: written after a scoped grill of six questions; revised the same day to the user's steer: model-neutral, no budget in the spec, a run of your own on your own model) · class: living -->
+<!-- status: active · updated: 2026-11-16 (H5 built, § As built — H5); 2026-11-14 (H2 built, § As built); 2026-11-13 (accepted by the user; H1: written after a scoped grill of six questions; revised the same day to the user's steer: model-neutral, no budget in the spec, a run of your own on your own model) · class: living -->
 
 # Spec — The eval harness, reinforced for the chat work (ROADMAP 113, sessions H2 to H6)
 
@@ -13,6 +13,17 @@
 > **What this spec is not.** It says how a run works and what it measures, on any model. Which
 > models a given run uses, and what it may cost, are a run's settings: recorded with the run, never
 > fixed here. This release's own choices (its budget, its first panel) live in the plan.
+
+## As built — H5 (2026-11-16)
+
+`eval/judge_agreement.py`: decision agreement (binding), Spearman's rho with a bootstrap interval,
+and the mean absolute deviation, on the answers a person and a judge both graded; `Agreement.gate()`
+applies TESTING.md's thresholds (>= 0.9, <= 0.5). The first check, 30 answers graded by the author:
+neither local judge passes (`tests/eval/baselines/h5_judge_agreement_2026-11-16.md`), so
+decision 1 holds unchanged. The judge's rubric grades against a reference answer, not against the
+cited passages: what the spec calls the judge's agreement is agreement on that, and grounding
+stays with the deterministic scorers. Records cases have no written answer; their reference for
+grading is written from the library's record.
 
 ## As built — H2 (2026-11-14)
 

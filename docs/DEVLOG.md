@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-15 · class: append-only -->
+<!-- status: active · updated: 2026-11-16 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-16 — The judge, checked against the user's grades (H5)
+
+**What changed.** `src/doc_assistant/eval/judge_agreement.py`: decision agreement, Spearman's rho
+with a bootstrap interval, and the mean absolute deviation, on the answers a person and a judge
+both graded, plus the gate (>= 0.9 and <= 0.5, from TESTING.md); tests in
+`tests/unit/test_eval_judge_agreement.py`. The user graded 30 H4 answers blind, and two local
+judges graded the same answers: `qwen2.5:7b` 0.82 decision agreement, `llama3.1:8b` 0.63. Neither
+passes, so both stay in shadow. Claude Haiku, run as one Claude Code subagent per answer at the
+user's request, reached 0.81: a stronger model did no better on this rubric. Record: `tests/eval/baselines/h5_judge_agreement_2026-11-16.md` and
+`tests/eval/judge_check/h5_2026-11-16/`; `evals/README.md`, `TESTING.md` and the spec say so.
+
+**Why.** Spec `docs/specs/eval-harness-chat.md`, H5: every `llm_judge` value was marked *not
+calibrated* until a person's grades existed to compare it with.
+
+**Rejected.** Loosening the gate to the first distribution: it gave no reason to. Showing the
+cited passages on the grading page: the user's grades would then measure something the judge never
+sees. The pinned API reference judge: refused for a lack of API credit; the Haiku subagent run stands
+in for it, outside the harness's pinning.
+
+**What it opens.** H6, the write-up. Grading exposed KI-95 (a folder count answered with the
+library's count) and the records references the H4 sample had stitched from expected strings. The
+user's note for later: answer templates, ranked behind the library and its references (plan, Later).
 
 ## 2026-11-15 (3) — H4's retrieval checks and RG-035's first re-run
 

@@ -1,0 +1,218 @@
+{
+ "provider": "claude-code-subagent",
+ "model": "haiku",
+ "repeats": 1,
+ "note": "one isolated subagent per answer, same rendered judge prompt; not the pinned API judge (no temperature or version control)",
+ "items": {
+  "a01": [
+   {
+    "faithfulness": 5,
+    "relevance": 4,
+    "completeness": 1
+   }
+  ],
+  "a02": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a03": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a04": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a05": [
+   {
+    "faithfulness": 1,
+    "relevance": 1,
+    "completeness": 1
+   }
+  ],
+  "a06": [
+   {
+    "faithfulness": 1,
+    "relevance": 3,
+    "completeness": 1
+   }
+  ],
+  "a07": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 5
+   }
+  ],
+  "a08": [
+   {
+    "faithfulness": 2,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a09": [
+   {
+    "faithfulness": 1,
+    "relevance": 4,
+    "completeness": 1
+   }
+  ],
+  "a10": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 5
+   }
+  ],
+  "a11": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 2
+   }
+  ],
+  "a12": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 5
+   }
+  ],
+  "a13": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a14": [
+   {
+    "faithfulness": 2,
+    "relevance": 4,
+    "completeness": 2
+   }
+  ],
+  "a15": [
+   {
+    "faithfulness": 3,
+    "relevance": 4,
+    "completeness": 3
+   }
+  ],
+  "a16": [
+   {
+    "faithfulness": 3,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a17": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a18": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 5
+   }
+  ],
+  "a19": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a20": [
+   {
+    "faithfulness": 2,
+    "relevance": 4,
+    "completeness": 3
+   }
+  ],
+  "a21": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a22": [
+   {
+    "faithfulness": 1,
+    "relevance": 2,
+    "completeness": 1
+   }
+  ],
+  "a23": [
+   {
+    "faithfulness": 5,
+    "relevance": 2,
+    "completeness": 1
+   }
+  ],
+  "a24": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a25": [
+   {
+    "faithfulness": 2,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ],
+  "a26": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 2
+   }
+  ],
+  "a27": [
+   {
+    "faithfulness": 2,
+    "relevance": 4,
+    "completeness": 2
+   }
+  ],
+  "a28": [
+   {
+    "faithfulness": 3,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a29": [
+   {
+    "faithfulness": 5,
+    "relevance": 5,
+    "completeness": 4
+   }
+  ],
+  "a30": [
+   {
+    "faithfulness": 4,
+    "relevance": 5,
+    "completeness": 3
+   }
+  ]
+ }
+}

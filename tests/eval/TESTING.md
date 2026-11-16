@@ -202,20 +202,25 @@ drift, or cross-run numbers stop being comparable. So the judge model + version
 are **pinned and recorded per run**; swapping is an explicit, logged event. Same
 contract for the Chunk 2b reviewer.
 
-**Local judge — gated, not assumed (planned, not yet implemented).** A local judge
-is cheaper but a weaker grader. Before it is trusted for headline numbers or the
-Chunk 2c loop, it must reproduce the reference judge's *decisions* (not its scores) on
-the verified 10, at `--repeat ≥ 3`:
+**A judge is gated against a person, not assumed (H5, built 2026-11-16).** A judge, local or
+paid, is trusted for a named use only once its grades follow a person's on the same answers. The
+check is `doc_assistant.eval.judge_agreement`: the person grades answers blind on the judge's
+rubric, the judge grades the same answers at `--repeat >= 3`, and three numbers are computed on the
+answers both graded:
 
-- **Decision agreement (binding)** — same winner on each config pair the
-  reference ranks. Proposed ≥ 0.9.
-- **Rank correlation** — Spearman/Kendall on per-case scores.
-- **Per-case deviation** — MAD on the 1–5 scale ≤ 0.5.
+- **Decision agreement (binding)**: of the pairs of answers the person grades at least 1 point
+  apart, the share the judge orders the same way (a judge tie is a miss). Must be >= 0.9.
+- **Rank correlation**: Spearman's rho, with a bootstrap 95% interval over answers.
+- **Per-answer deviation**: the mean absolute difference on the 1-5 scale. Must be <= 0.5.
 
-These are **proposed** thresholds, to be made config-driven and tuned on the first
-real distribution when the local-judge harness lands (not built yet — `config.py`
-exposes only `JUDGE_PROVIDER`/`JUDGE_MODEL`, no agreement/MAD gate). Until then the
-reference judge stays authoritative and the local model runs in shadow.
+The thresholds were proposed before any judge was measured and kept after the first distribution.
+**First result (2026-11-16, 30 answers, one person):** `qwen2.5:7b` 0.82 decision agreement and
+0.64 deviation, `llama3.1:8b` 0.63 and 0.74, Claude Haiku (one run as a subagent) 0.81 and 0.72. None passes, so both run in shadow and every
+`llm_judge` value stays marked *not calibrated*
+([`baselines/h5_judge_agreement_2026-11-16.md`](baselines/h5_judge_agreement_2026-11-16.md); the
+grades are in [`judge_check/`](judge_check/)). The pinned API reference judge was not run. The rubric
+grades against a reference answer, never against the cited passages, so no judge here speaks to
+grounding.
 
 ## Limitations
 

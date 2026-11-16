@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-11 (chunk sizes re-measured 2026-08-08 — RG-026 closed, the lock holds) · class: living -->
+<!-- status: active · updated: 2026-11-16 (§ The judge, checked against a person: H5); 2026-08-11 (chunk sizes re-measured 2026-08-08 — RG-026 closed, the lock holds) · class: living -->
 
 # Evals — benchmark results
 
@@ -62,6 +62,24 @@ redistributable; it gates day-to-day retrieval work but is not citable by third 
 > matters even when per-query scoping is perfect. Note the count is what **retrieval can reach**,
 > not what the library lists: on this box that is 96, not 97, because one document extracted to
 > zero chunks.
+
+## The judge, checked against a person
+
+The optional `llm_judge` grades an answer against a written reference answer (faithfulness,
+relevance, completeness, 1 to 5). On 2026-11-16 the author graded 30 answers blind on that rubric,
+six per case family, and two local judges graded the same answers three times each:
+
+| Judge | Answers | Orders answer pairs as the person does (gate: >= 0.9) | Spearman rho [95% interval] | Mean distance on the 1-5 scale (gate: <= 0.5) |
+|---|---|---|---|---|
+| `qwen2.5:7b` | 29 | 0.82 (106 of 130 pairs) | 0.30 [-0.17, +0.66] | 0.64 |
+| `llama3.1:8b` | 29 | 0.63 (82 of 130 pairs) | 0.34 [-0.08, +0.68] | 0.74 |
+| Claude Haiku (one run, as a Claude Code subagent) | 29 | 0.81 (105 of 130 pairs) | 0.30 [-0.15, +0.63] | 0.72 |
+
+**None passes, and the stronger model did no better, so no judge score decides anything here** and every `llm_judge` value is marked
+*not calibrated*. One person, 30 answers, the Haiku run outside the app's pinned judge; the judge never sees the cited
+passages, so it says nothing about grounding. Detail and the grades:
+[`h5_judge_agreement_2026-11-16.md`](../tests/eval/baselines/h5_judge_agreement_2026-11-16.md).
+To put a judge of your own through the same check, see `tests/eval/TESTING.md` § the judge.
 
 ## The headline benchmark
 

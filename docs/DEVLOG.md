@@ -44,6 +44,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-16 (4) — The read surface: ADR-066's seven tools as functions (A3)
+
+**What changed.** New package `src/doc_assistant/read_surface/`: `search_library`, `list_folders`,
+`list_documents`, `get_document`, `list_conversations`, `get_conversation` and `get_concept`, with
+their result shapes in `shapes.py` under `SURFACE_VERSION = 1`. Search takes the engine's retrieval
+as a parameter; each passage carries its text, the fenced copy (`pipeline.fence_passage`, now shared
+with the prompt) and the text check's labels. A conversation's labels (the documents and folders
+its answers cited) are derived from the answer records on every read. Tests:
+`tests/unit/test_read_surface.py`, the shape snapshot `test_read_surface_shapes.py`, and
+`tests/integration/test_empty_home_get_routes.py`, which walks every GET route on an empty library
+(42, no 500). `docs/security.md` gains T6, an MCP client; ADR-066 gains *As built — A3*.
+
+**Why.** ADR-066's build order: the read surface before the endpoint (A4) and the chat's lookups
+(A6). Measured on an invented 10,000-document library: 4–13 ms a page of documents.
+
+**Rejected.** Reusing `library.list_documents` and `conversations.list_conversations`: the first
+reads every document for one page, the second caps at 100 with no page. Bounding *Look in my
+library* with `top_docs` alone: it would store a wrong document count in each definition's evidence
+(KI-18's note).
+
+**What it opens.** A4: the endpoint, its switches, token and call log. The shapes are frozen once
+it serves them, so they are the thing to review now.
+
 ## 2026-11-16 (3) — The text check once per document, after extraction (A2b)
 
 **What changed.** New `src/doc_assistant/document_checks.py` and table `document_text_checks`

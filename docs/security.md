@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 · class: living -->
+<!-- status: active · updated: 2026-11-16 (T6: an MCP client, A3) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -33,6 +33,7 @@ what is deliberately not done (§7), and the shape cpc could standardise (§8).
 | T3 | **Another process as the same user** | the data home: `credentials.json`, `library.db`, the extraction cache | any program the user runs |
 | T4 | **A stolen laptop without full-disk encryption** | everything on disk | the research history and the API key, in plaintext |
 | T5 | **The supply chain** | whatever a dependency does | a compromised `marked`, a floating CI action tag |
+| T6 | **An AI program the user connects through MCP** (ADR-066; from A4) | the read surface's seven tools (`src/doc_assistant/read_surface/`): passages, records, and conversations if their switch is on; never a write in this release | its model may hold tools this app never gives (the web, files, sending messages), so text planted in a document can make *it* act. The surface fences each passage and names what the text check found in it (A2, A2b), but this app cannot make another program respect either |
 
 Out of scope on purpose: a hostile LLM provider (the key is theirs to bill; document text already
 goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; `truststore` on

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
+<!-- status: active · updated: 2026-11-16 (As built — A3: the read surface, appended); 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
 
 # ADR-066 — The library is offered to a model as records and passages: an MCP endpoint in the engine, lookups by rule in the chat, and modes that only change the framing
 
@@ -204,7 +204,7 @@ grow. Each choice leaves a named seam:
 
 ## Enforced by
 
-Planned; nothing is built yet.
+Planned when accepted; A3's part is built (see *As built — A3* below).
 
 - One test per tool on an empty library: an empty result, a zero count, no error.
 - A test that every tool result names a source for each item it returns.
@@ -229,3 +229,27 @@ Planned; nothing is built yet.
 - **Decided on judgment, not measurement:** seven tools and not five or nine; two built-in
   modes; a second switch for conversations. Each is cheap to change before a client depends on
   it, and costly after.
+
+## As built — A3, the read surface (2026-11-16)
+
+Appended, not edited in: the choices above stand. Session A3 built the seven tools as functions in
+`src/doc_assistant/read_surface/`, with no server yet (that is A4).
+
+- **The names are the table's.** `read_surface.TOOLS` lists them in its order. The shapes are
+  dataclasses in `read_surface/shapes.py` under `SURFACE_VERSION = 1`. A snapshot,
+  `tests/unit/test_read_surface_shapes.py`, fails on a removed or renamed field (choice 8).
+- **Search** takes the engine's retrieval as a parameter (`RAGPipeline.retrieve_with_scores`), so
+  it loads no model. Each passage carries its text, the same text inside the chat's fence
+  (`pipeline.fence_passage`, shared with the prompt) and the text check's labels (choice 9). An
+  unknown or empty scope returns nothing and says why; it never widens. An empty library never
+  reaches retrieval.
+- **Labels** (choice 7) are derived from the answer records on every read. A filter by document
+  or folder reads every live conversation's cited sources; conversations grow with use, not with
+  the library.
+- **`get_concept`** finds a concept by id, name or form, case aside, and returns its exact and
+  broad forms and its chosen definition with that definition's source. A term is never returned.
+- **Measured:** on an invented library of 10,000 documents, `list_documents` takes 4–13 ms a page,
+  `get_document` 4 ms, `list_folders` 4 ms. A test also walks every GET route of the app on an
+  empty library (`tests/integration/test_empty_home_get_routes.py`): 42 routes, no 500.
+- **Still to come:** the switches, the token, the call log and the "five tools without the
+  conversations switch" test are the endpoint's (A4). The rule-answered turn's provenance is A6's.

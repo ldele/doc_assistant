@@ -819,15 +819,19 @@ def format_docs_for_prompt(docs: list[Document]) -> str:
     ``prompt_version`` hashes the answer template, which describes this format, so a change here
     goes with a change there.
     """
-    parts: list[str] = []
-    for i, doc in enumerate(docs):
-        filename = _fence_attr(str(doc.metadata.get("filename", "unknown")))
-        page = doc.metadata.get("page")
-        attrs = f'n="{i + 1}" file="{filename}"'
-        if page:
-            attrs += f' page="{_fence_attr(str(page))}"'
-        parts.append(f"<source {attrs}>\n{_defuse_fence(doc.page_content)}\n</source>")
-    return "\n\n".join(parts)
+    return "\n\n".join(fence_passage(doc, i + 1) for i, doc in enumerate(docs))
+
+
+def fence_passage(doc: Document, n: int) -> str:
+    """One passage inside its fence, numbered ``n``. The chat's prompt and the read surface's
+    search results (ADR-066 choice 9) both write it here, so a passage cannot be fenced in one
+    and bare in the other."""
+    filename = _fence_attr(str(doc.metadata.get("filename", "unknown")))
+    page = doc.metadata.get("page")
+    attrs = f'n="{n}" file="{filename}"'
+    if page:
+        attrs += f' page="{_fence_attr(str(page))}"'
+    return f"<source {attrs}>\n{_defuse_fence(doc.page_content)}\n</source>"
 
 
 _FENCE_TAG_RE = re.compile(r"<(/?)(source\b)", re.IGNORECASE)

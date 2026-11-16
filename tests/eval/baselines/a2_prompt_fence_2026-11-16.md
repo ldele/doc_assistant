@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 (A2: the prompt fence against H4 on hostile and single, the language-switch attack 10 times per version, the passage scan and the link check) · class: baseline -->
+<!-- status: active · updated: 2026-11-16 (A2b: the check once per document); 2026-11-16 (A2: the prompt fence against H4 on hostile and single, the language-switch attack 10 times per version, the passage scan and the link check) · class: baseline -->
 
 # The prompt fence (A2, S-9), and the checks that hold on any model
 
@@ -125,6 +125,24 @@ taken against the rule, not a pass.
   This was checked in the app with a mocked turn: a sourced link stayed clickable, and an
   unknown address became text. A phishing link planted in a hostile passage also became text,
   once marked passages were left out of the list.
+
+## Once per document, after extraction (A2b)
+
+The same patterns run over each document's whole extracted text once, when it is indexed or
+re-checked (*Re-run… › Text checks*), and the result is kept in `document_text_checks`
+(`src/doc_assistant/document_checks.py`). The Library's Summary counts the marked documents, and
+the document page lists each marked paragraph with its page. The check reads the cached text by
+paragraph; `source_checks.find_in_document` is the function, `tests/integration/test_document_checks.py`
+the tests.
+
+| Data home | Documents | Marked | Time for all |
+|---|---|---|---|
+| hostile (28 papers + 8 hostile documents) | 36 | 8, the 8 hostile documents, one paragraph each | 0.5 s |
+| the 28 public papers | 28 | 0 | 0.4 s |
+| the author's library | 105 | 2, with 1 and 2 paragraphs | 2.3 s |
+
+These are about 0.02 s per document on one machine, so a whole-library check at ~10,000 documents
+is minutes, done in batches of 100. A new or re-read document is checked by the index run.
 
 ## What this does not show
 

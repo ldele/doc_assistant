@@ -8,7 +8,8 @@
   // This file keeps the block order and its anchors, and the split that puts the source pane
   // beside the page. Its parts, each in its own file: `PageIndex` (the index, *Source*,
   // *Re-run…*), `DocumentHeader` (title and metadata: the Metadata block), the letter-spacing
-  // block, `Connections`, `Chunks` (which owns its fetch: collapsed means not fetched),
+  // block, the text-check block (`TextCheck`, A2b), `Connections`, `Chunks` (which owns its
+  // fetch: collapsed means not fetched),
   // `Figures`, `References`, and `SourceViewer`.
   import type { LibraryDocument } from '../../lib/core/types'
   import Chunks from './Chunks.svelte'
@@ -18,6 +19,7 @@
   import PageIndex from './PageIndex.svelte'
   import References from './References.svelte'
   import LetterSpacing from './LetterSpacing.svelte'
+  import TextCheck from './TextCheck.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
   import SourceViewer from './SourceViewer.svelte'
   import { clampSplit } from '../../lib/library/sourceviewer'
@@ -132,6 +134,16 @@
     <div class="split" bind:this={splitEl}>
     <div class="scroller">
     <DocumentHeader {doc} />
+    <!-- A2b: paragraphs of this document written to an AI rather than a reader. Renders nothing
+         for a document checked with nothing found, which is nearly every document. -->
+    <TextCheck
+      {docId}
+      listed={doc}
+      onShowPage={(page) => {
+        viewerOpen = true
+        viewerPage = page
+      }}
+    />
     <!-- ADR-056: what extraction did to this document's letter-spaced runs. Renders nothing for
          a document that has none, which is nearly every document. -->
     <LetterSpacing

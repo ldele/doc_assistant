@@ -1,4 +1,4 @@
-<!-- status: built · updated: 2026-11-05 (built the same day, then revised to the user's seven recommendations; § As built lists where it departs from the text below) · class: living -->
+<!-- status: built · updated: 2026-11-16 (A2b: the text check's two issues); 2026-11-05 (built the same day, then revised to the user's seven recommendations; § As built lists where it departs from the text below) · class: living -->
 
 # Spec — Library summary: what went wrong at indexing, and what is in the documents (ROADMAP 112)
 
@@ -49,6 +49,12 @@ departs from the text below, this list wins:
   6. Bars per the dataviz guide: horizontal, one hue, value at the tip, *Types* ranked; *Years* keep
      decade order (a time scale; "sorted by count" was not applied there), *No year* a bar apart.
   7. Keeping each count run for a trend: not built, later work.
+- **A2b (2026-11-16): the text check.** Two issues join the list, `addressed_to_ai` (a current
+  check marked a paragraph) and `text_not_checked` (text, and no current check), counted in
+  `found.text_checks` (`marked`, `checked`, `not_checked`) and shown as rows of *From indexing*;
+  *Need attention* does not count them. A check is current while the document's `doc_hash` and
+  `source_checks.CHECKS_VERSION` match its row; a stale one is never shown as a finding. The fix
+  row names *Re-run… › Text checks*. One grouped read of `document_text_checks` per summary.
 - **A known limit:** "present at the folder's last look" is a registry row whose `last_seen` equals
   its root's newest. A scan that finds the folder empty stamps nothing, so after every file has
   left, the previous look's rows still count until a file returns. A per-root scan time would fix it;
@@ -102,6 +108,7 @@ knowledge layer only, so the ingest signals cite the code's own record and the k
 | References | `Citation` rows by `source_document_id` (`db/models.py:250-256`, **no index**) | **no** — *Re-run… › References* (`reingest.py`, `PARTS`) or `scripts/extract_citations.py` | ⚠️ **on record only**: a document whose references were parsed to nothing has no rows, exactly like one never parsed. Links into the library are KI-45's (frozen at extraction, part 2 open) and are not counted | `no_references`, with the total rows |
 | Figures | `Figure` rows (`db/models.py:320`, `document_id` indexed at `:343-345`); described = `vlm_description` (`:363`) | **no** — *Re-run… › Figures* (`reingest.py:317`) or `scripts/extract_figures.py`; PDF only | ⚠️ on record only, as references | `no_figures` among PDFs, with totals and described |
 | Letter-spacing | `<cache>.spacing.json` beside each cached text (`ingest/cache.py:444`, read at `:451`, written at `:551-556`; an empty record deletes the file); shown per document by `library/spacing.py:100` | yes, since ADR-056, for PDFs | ✅ where a record exists. **No file means none found, or text read before the record existed** (`ingest/cache.py:452`) | `letter_spaced` = a record with a run that reached the text |
+| Text addressed to an AI (A2b) | `DocumentTextCheck` rows (`document_text_checks`), one per checked document, written by `document_checks.check_documents` | yes, since A2b, for new or re-read documents; older ones through *Re-run… › Text checks* | ⚠️ fixed patterns: they miss a new phrasing and mark a paper that quotes an attack. *None found* is said only for a current check | `addressed_to_ai`; `text_not_checked` = text and no current check |
 | Keywords | `document_keywords` (`db/models.py:62-70`), by `extract_keywords` (`knowledge/keywords.py:1042`) | **no** — the CLI pass | ✅ as presence; what a keyword is worth is `docs/knowledge-layer.md` § 2 | `no_keywords` |
 | Files not in the library | registry `SourceFile` rows (`db/models.py:1199`), status `new` = file present, no document (`ingest/registry.py:45`); rows refreshed, `last_seen` stamped, by `scan_root` (`registry.py:331`, `:387`) whenever Settings › Documents lists files or an index runs; `excluded` is the user's | refreshed by it | ✅ **as of the last look at the folder**; *never indexed* and *failed* are one state here | `files_not_in_library`, `files_excluded`, `files_seen_at`; library scope only |
 | A failure's reason | `IngestRun` (`ingest/run.py:124`; the reason at `run.py:95-115`), held on `app.state.ingest_run` (`apps/api/routers/sources.py:76-81`) | yes, in memory | ✅ for this session's last run; **gone when the app closes**. `IngestionEvent.error_message` (`db/models.py:1038`) is never written | `last_run_failed`, `null` when no run this session |
@@ -180,7 +187,7 @@ CollectionSummary
 
 Issue ids, the `issue` filter's values, defined once in `summary.py`: `no_text`, `flagged`,
 `missing_title`, `missing_authors`, `missing_year`, `missing_doi`, `no_references`, `no_figures`,
-`no_keywords`, `letter_spaced`.
+`no_keywords`, `letter_spaced`, `addressed_to_ai`, `text_not_checked` (A2b).
 
 ### How every number behaves at 0 documents and at ~10,000
 

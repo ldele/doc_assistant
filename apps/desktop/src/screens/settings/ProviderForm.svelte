@@ -362,8 +362,9 @@
 
 {#snippet measured()}
   <p class="fine">
-    This app's citation checks ran on Claude Haiku and two local models. Other models work; their
-    citations are not measured.
+    This app's citation checks ran on Claude Haiku and two local models, and how often a model
+    follows instructions planted in a document on the two local models only. Other models work;
+    neither is measured for them.
   </p>
 {/snippet}
 
@@ -444,18 +445,26 @@
       No key. Needs about 5 GB of disk for an 8B model, and is happiest with a GPU.
     </p>
     {@render facts(p)}
-    <!-- The trade-off, stated where the choice is made (KI-36). Local models cite far less than a
-         hosted one on the SAME prompt and retrieval, so a local user meets a wall of "uncited"
-         claims with no explanation unless we give one here. No figures: the measurement ran on
-         the private library, and a release says nothing about it. It also predates KI-66 (Ollama
-         cut long prompts to their end, instructions to cite included), so the sentence says so
-         until the re-measure KI-36 asks for. -->
+    <!-- The trade-off, stated where the choice is made (KI-36, A2). Figures from the public test
+         set only (28 papers), never the private library: a release says nothing about it.
+         Citations: the share of answer sentences that carry a citation, single questions;
+         planted text: hostile runs held out of 24. Both from the A2 run of 2026-11-16,
+         tests/eval/baselines/a2_prompt_fence_2026-11-16.md; re-read them when it is re-run. -->
     <p class="detail">
-      <strong>Expect fewer citations.</strong> On the same prompt and retrieval, local models
-      carry fewer inline citations than Claude Haiku 4.5. That was measured before 0.7.0, which
-      stopped long prompts losing their instructions to cite, so the gap is likely smaller now.
-      Answers stay grounded in your documents; more claims will simply show as <em>uncited</em>.
+      <strong>What to expect from a local model.</strong> Measured on this app's public test set
+      (28 papers), on one computer: indicative, not a verdict.
     </p>
+    <ul class="detail">
+      <li>
+        <strong>Citations:</strong> <code>llama3.1:8b</code> cited 84% of its answer sentences,
+        <code>qwen2.5:7b</code> 60%. Uncited claims show as <em>uncited</em>.
+      </li>
+      <li>
+        <strong>Instructions planted in a document:</strong> <code>llama3.1:8b</code> resisted 18 of
+        24 tries, <code>qwen2.5:7b</code> 19 of 24. Such text can change what an answer says, so a
+        source carrying it is marked, and a link the answer was not given cannot be clicked.
+      </li>
+    </ul>
     <p class="detail muted">Looking for a server at <code>{setup.ollama_host}</code>.</p>
 
     {#if p.ready}
@@ -609,6 +618,11 @@
     margin: 0 0 0.35rem;
     font-size: 0.78rem;
     color: var(--fg-2);
+  }
+  ul.detail {
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.25rem;
   }
   .howto {
     margin: 0.4rem 0 0.6rem;

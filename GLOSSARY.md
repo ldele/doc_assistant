@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-13 · class: living -->
+<!-- status: active · updated: 2026-11-16 · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -255,6 +255,22 @@ browser` (the document page), `Sources panel` (the Manage files list)
 **Authoritative in:** `docs/decisions/ADR-064-the-frontends-folders-follow-the-screens.md` +
 `docs/architecture.md` § `apps/desktop/src/` — the screens (every screen and dialog, with its doors)
 + `apps/desktop/src/layout.test.ts` (the folder rules)
+
+## U-005 — text addressed to an AI, and the text check
+
+**Canonical:** `text addressed to an AI` (what is marked) · `text check` (what looks for it) ·
+`Text checks` (the *Re-run…* part) · `Text addressed to an AI` (the document page's block)
+**Definition:** Text written to an AI assistant rather than to a reader: a request to ignore
+instructions, a note to the assistant, a fake system message or chat turn, a request for the prompt,
+a demand on the answer. The *text check* reads for it with fixed patterns (`source_checks`, A2): on
+each passage an answer cites, and once per document after extraction (A2b), kept as a sidecar. It
+marks and changes nothing (ADR-043). A paper about AI that quotes such text is marked too, so a mark
+asks the reader to look; it is not a verdict on the document.
+**Forbidden:** — (in the UI, not `prompt injection`, `malicious`, `hostile` or `unsafe`: those are
+verdicts the check cannot make; *hostile* stays the eval family's name)
+**Authoritative in:** `src/doc_assistant/source_checks.py` + `src/doc_assistant/document_checks.py`
++ `apps/desktop/src/screens/document-page/TextCheck.svelte` +
+`tests/eval/baselines/a2_prompt_fence_2026-11-16.md`
 
 ## D-001 — Provenote vs doc_assistant
 

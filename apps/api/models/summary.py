@@ -62,11 +62,20 @@ class SpacingCountsPayload(BaseModel):
     pdfs: int
 
 
+class TextCheckCountsPayload(BaseModel):
+    #: Documents whose current check marked text addressed to an AI (A2b).
+    marked: int
+    checked: int
+    #: Documents with text and no current check: never checked, or their text or patterns moved.
+    not_checked: int
+
+
 class FoundCountsPayload(BaseModel):
     references: OnRecordPayload
     figures: FigureCountsPayload
     letter_spacing: SpacingCountsPayload
     keywords: OnRecordPayload
+    text_checks: TextCheckCountsPayload
 
 
 class TypeCountPayload(BaseModel):

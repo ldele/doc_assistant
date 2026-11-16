@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-12 · class: living -->
+<!-- status: archived · updated: 2026-11-16 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-010.md
 
+- **2026-11-13** — Repository upkeep: four tickets, and the easy fixes they found
+- **2026-11-12** (3) — ADR-066 proposed: the library is offered to a model as records and passages
+- **2026-11-12** (2) — ADR-062 accepted as proposed
+- **2026-11-12** — Settings opens before the engine answers (KI-93)
+- **2026-11-11** (6) — A broken extraction pool no longer stops an ingest run (KI-92)
+- **2026-11-11** (5) — The state lines say v0.7.3
+- **2026-11-11** (4) — The PDF fingerprint no longer carries the app's version (KI-91)
+- **2026-11-11** (3) — 0.7.3's notes say every PDF reads *changed* after the update
+- **2026-11-11** (2) — Preflight counts the Windows window config as a build input; CI is green again
+- **2026-11-11** — An engine error reaches the installed window as a 500, not as "Failed to fetch"
+- **2026-11-10** (2) — A digest is registered, and Docker joins the release gates
 - **2026-11-10** — cpc 1.18.1 → 1.22.1: two files leave `.claude/`, cpc's templates leave `docs/`
 - **2026-11-09** (3) — New README media: a three-beat demo GIF and five screenshots
 - **2026-11-09** (2) — ROADMAP 113: the eval harness is reinforced before the chat work

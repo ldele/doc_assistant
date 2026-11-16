@@ -11,6 +11,7 @@ export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferen
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
 export { getCollectionSummary, listIssueDocuments } from './summary'
+export { getDocumentTextCheck } from './textChecks'
 export { getDocumentSpacing, getIgnoreList, keepRunSpaced, removeIgnoreEntries, removeRunEntry, restoreIgnoreList, setKeepAllSpaced, setRunSpacing } from './spacing'
 export {
   addDocuments,

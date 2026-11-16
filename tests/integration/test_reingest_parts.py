@@ -119,6 +119,7 @@ def test_the_registry_order_is_cheapest_first() -> None:
     literal because the costs are prose and cannot be compared.
     """
     assert [p.id for p in reingest.PARTS] == [
+        "checks",
         "metadata",
         "crops",
         "figures",

@@ -42,6 +42,8 @@ export const ISSUE_LABELS: Record<SummaryIssue, string> = {
   no_figures: 'No figures on record',
   no_keywords: 'No keywords',
   letter_spaced: 'Letter-spaced text',
+  addressed_to_ai: 'Text addressed to an AI',
+  text_not_checked: 'Not checked for text addressed to an AI',
 }
 
 // The labels have to say what the bucket *is*, because the buckets are relative and adjacent:

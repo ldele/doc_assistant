@@ -49,6 +49,7 @@ from doc_assistant.db.models import (
     document_keywords,
 )
 from doc_assistant.db.session import session_scope
+from doc_assistant.document_checks import check_states
 from doc_assistant.library.citations import plausible_year
 from doc_assistant.library.documents import effective_metadata, is_customized
 
@@ -67,6 +68,7 @@ __all__ = [
     "MetadataCounts",
     "OnRecord",
     "SpacingCounts",
+    "TextCheckCounts",
     "TypeCount",
     "UnknownIssueError",
     "YearCounts",
@@ -109,6 +111,8 @@ class _Facts:
     folders: int
     #: ``None`` when the record was not read for this request (only the spacing issue needs it).
     letter_spaced: bool | None
+    #: The text check (A2b): ``None`` when never checked, else its state and paragraphs marked.
+    check: tuple[str, int] | None = None
 
 
 def _blank(value: str | None) -> bool:
@@ -117,6 +121,11 @@ def _blank(value: str | None) -> bool:
 
 def _no_text(d: _Facts) -> bool:
     return d.chunk_count == 0
+
+
+def _checked(d: _Facts) -> bool:
+    """A2b: the document has a check of its current text under the current patterns."""
+    return d.check is not None and d.check[0] == "current"
 
 
 def _flagged(d: _Facts) -> bool:
@@ -136,6 +145,10 @@ ISSUES: dict[str, Callable[[_Facts], bool]] = {
     "no_figures": lambda d: d.format == "pdf" and d.figures == 0,
     "no_keywords": lambda d: d.keywords == 0,
     "letter_spaced": lambda d: bool(d.letter_spaced),
+    # A2b: a current check that marked a paragraph. A stale one is reported under the next issue,
+    # never as a finding: its text or its patterns have moved since.
+    "addressed_to_ai": lambda d: _checked(d) and d.check is not None and d.check[1] > 0,
+    "text_not_checked": lambda d: not _no_text(d) and not _checked(d),
 }
 ISSUE_IDS: tuple[str, ...] = tuple(ISSUES)
 
@@ -199,11 +212,24 @@ class SpacingCounts:
 
 
 @dataclass(frozen=True)
+class TextCheckCounts:
+    """A2b: documents whose current check marked text addressed to an AI, out of those checked.
+
+    ``not_checked`` counts documents with text and no current check: never checked, or checked
+    before their text or the patterns last changed."""
+
+    marked: int
+    checked: int
+    not_checked: int
+
+
+@dataclass(frozen=True)
 class FoundCounts:
     references: OnRecord
     figures: FigureCounts
     letter_spacing: SpacingCounts
     keywords: OnRecord
+    text_checks: TextCheckCounts = field(default_factory=lambda: TextCheckCounts(0, 0, 0))
 
 
 @dataclass(frozen=True)
@@ -310,6 +336,7 @@ def _facts(session: Session, document_ids: set[str] | None, *, spacing: bool) ->
     }
     keywords = _per_document(session, document_keywords.c.document_id)
     folders = _per_document(session, document_folders.c.document_id)
+    checks = check_states(session)
 
     out: list[_Facts] = []
     for d in docs:
@@ -341,6 +368,7 @@ def _facts(session: Session, document_ids: set[str] | None, *, spacing: bool) ->
                     if spacing and fmt == "pdf"
                     else (False if spacing else None)
                 ),
+                check=checks.get(doc_id),
             )
         )
     return out
@@ -478,6 +506,11 @@ def summarise_collection(folder_id: str | None = None) -> CollectionSummary | No
             letter_spacing=SpacingCounts(recorded=_count(facts, "letter_spaced"), pdfs=pdfs),
             keywords=OnRecord(
                 on_record=with_keywords, none_on_record=_count(facts, "no_keywords")
+            ),
+            text_checks=TextCheckCounts(
+                marked=_count(facts, "addressed_to_ai"),
+                checked=sum(1 for d in facts if _checked(d)),
+                not_checked=_count(facts, "text_not_checked"),
             ),
         ),
         types=[

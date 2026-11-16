@@ -11,6 +11,8 @@ also checks the text itself, the same way whatever the model:
 - :func:`links_in` lists the web addresses in a text. An answer's link counts as sourced only
   when its address is in one of the passages the answer was given; the renderer shows any other
   link as plain text, so a link a document told the model to write cannot be clicked.
+- :func:`find_in_document` runs the same check over a whole document once, after extraction
+  (A2b): `document_checks` keeps the result, and the Library shows it before any question.
 
 The patterns are about how text addresses a model, not about any corpus: they are structural and
 need no tuning to the library (the robustness contract). A pattern can still miss a phrasing or
@@ -20,8 +22,10 @@ prompt to read the passage, not a verdict on it.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 #: (label, pattern). A label says what kind of address it is; the renderer shows one plain
 #: sentence for any of them, and the label is kept for the record and the tests.
@@ -87,6 +91,12 @@ _ADDRESS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
+#: Names the patterns above: a document checked under another version is checked again. Derived
+#: from the patterns themselves, so editing one cannot leave the old marks looking current.
+CHECKS_VERSION: str = hashlib.sha256(
+    "\n".join(f"{label}\t{p.pattern}\t{p.flags}" for label, p in _ADDRESS_PATTERNS).encode()
+).hexdigest()[:12]
+
 _URL_RE = re.compile(r"https?://[^\s<>()\[\]\"'`]+", re.I)
 _TRAILING = ".,;:!?*_"
 
@@ -99,6 +109,48 @@ def addressed_to_ai(text: str) -> list[str]:
     for label, pattern in _ADDRESS_PATTERNS:
         if label not in found and pattern.search(text):
             found.append(label)
+    return found
+
+
+#: How much of a marked paragraph a finding keeps: enough to recognise it on the page. Structural
+#: (a reading length), not tuned to any corpus.
+EXCERPT_CHARS = 280
+
+_PAGE_RE = re.compile(r"<!--\s*page:(\d+)\s*-->")
+_PARAGRAPH_SPLIT = re.compile(r"\n\s*\n")
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One paragraph of a document that addresses an AI: where, what kind, and how it starts."""
+
+    page: int | None
+    labels: tuple[str, ...]
+    excerpt: str
+
+
+def find_in_document(text: str) -> list[Finding]:
+    """Every paragraph of a document's extracted text that :func:`addressed_to_ai` marks.
+
+    Paragraphs are split at blank lines, and each carries the page of the last
+    ``<!-- page:N -->`` marker before it (``None`` for a format without pages). Read once per
+    document after extraction, so the Library can show the mark before any question is asked."""
+    found: list[Finding] = []
+    # `split` with a capturing group alternates text and page numbers: [text, "1", text, "2", …].
+    pieces = _PAGE_RE.split(text)
+    pages: list[int | None] = [None] + [int(n) for n in pieces[1::2]]
+    for page, segment in zip(pages, pieces[0::2], strict=True):
+        for paragraph in _PARAGRAPH_SPLIT.split(segment):
+            body = paragraph.strip()
+            labels = addressed_to_ai(body) if body else []
+            if labels:
+                flat = " ".join(body.split())
+                excerpt = (
+                    flat
+                    if len(flat) <= EXCERPT_CHARS
+                    else flat[:EXCERPT_CHARS].rsplit(" ", 1)[0] + " …"
+                )
+                found.append(Finding(page=page, labels=tuple(labels), excerpt=excerpt))
     return found
 
 

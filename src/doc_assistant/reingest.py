@@ -4,9 +4,10 @@ Settings offers one button: index the folder. That is the whole-corpus instrumen
 wrong one for a single bad extraction. This module is the per-document form: pick a document, pick
 the parts to re-derive, pay only for those.
 
-**Only four parts exist, and the reason is measurement, not taste** (`docs/performance.md`):
+**Only these parts exist, and the reason is measurement, not taste** (`docs/performance.md`):
 
-* the four here have a genuine per-document form;
+* the ones here have a genuine per-document form (*Text checks*, A2b, joined the first four on
+  2026-11-16: a read of the cached text, like *Metadata*);
 * `keywords` and `doc_vectors` (Connections) recompute corpus-wide by construction — scoping
   `extract_keywords` to one document was measured to save **4%** — and `epistemics` / `gaps` have
   no scope at all. Offering them per-document would spend a whole-corpus pass while implying
@@ -73,6 +74,16 @@ class ReingestPart:
 #: cheapest-first, which the client's cost summary relies on when it quotes the last selected part
 #: as the dearest one. A part inserted out of cost order makes that summary understate the wait.
 PARTS: tuple[ReingestPart, ...] = (
+    ReingestPart(
+        id="checks",
+        label="Text checks",
+        blurb=(
+            "Look again for text written to an AI assistant, such as planted instructions. "
+            "Marks it; changes nothing in the document."
+        ),
+        cost="instant",
+        moves_identity=False,
+    ),
     ReingestPart(
         id="metadata",
         label="Metadata",
@@ -202,7 +213,7 @@ def _load_docs(document_ids: Sequence[str]) -> list[_DocRow]:
 def _cached_text(doc: _DocRow) -> str | None:
     """The extracted markdown for this document, or None if it was never cached.
 
-    Reads what is already on disk and never extracts: three of the four parts are cheap precisely
+    Reads what is already on disk and never extracts: every part but `text` is cheap precisely
     because they work from the cache, and silently paying for an extraction inside "re-run
     metadata" would defeat the whole point of splitting the parts up.
     """
@@ -282,6 +293,21 @@ def _rerun_metadata(doc: _DocRow) -> tuple[str, str]:
     with session_scope() as session:
         session.execute(update(Document).where(Document.id == doc.id).values(**changes))
     return "ok", f"filled {', '.join(sorted(changes))}"
+
+
+def _rerun_checks(doc: _DocRow) -> tuple[str, str]:
+    """Check the cached text for text addressed to an AI (A2b) and keep what was found.
+
+    `text` re-checks on its own (the index run it calls ends with the check), so ticking both
+    leaves the check on the new text."""
+    from doc_assistant.document_checks import check_documents
+
+    run = check_documents([doc.id])
+    if run.checked == 0:
+        return "skipped", "no extracted text to check — run Text & chunks first"
+    if run.marked:
+        return "ok", "found text addressed to an AI; see the document page"
+    return "ok", "found no text addressed to an AI"
 
 
 def _row_bbox(row: Any) -> tuple[float, float, float, float] | None:
@@ -635,6 +661,7 @@ def _purge_superseded_chunks(doc_hash: str) -> int:
 
 
 _RUNNERS: dict[str, Callable[[_DocRow], tuple[str, str]]] = {
+    "checks": _rerun_checks,
     "metadata": _rerun_metadata,
     "figures": _rerun_figures,
     "crops": _rerun_crops,

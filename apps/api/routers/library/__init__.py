@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from apps.api.routers.library import documents, folders, keywords, spacing, summary
+from apps.api.routers.library import documents, folders, keywords, spacing, summary, text_checks
 
 router = APIRouter()
 router.include_router(documents.router)
@@ -27,5 +27,7 @@ router.include_router(keywords.router)
 router.include_router(spacing.router)
 # ROADMAP 112: the Summary layout's counts, at /summary, which no other module's routes reach.
 router.include_router(summary.router)
+# A2b: the document page's text-check block, under /documents/{id}/text-check.
+router.include_router(text_checks.router)
 
-__all__ = ["documents", "folders", "keywords", "router", "spacing", "summary"]
+__all__ = ["documents", "folders", "keywords", "router", "spacing", "summary", "text_checks"]

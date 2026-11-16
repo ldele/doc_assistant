@@ -13,6 +13,8 @@ export type SummaryIssue =
   | 'no_figures'
   | 'no_keywords'
   | 'letter_spaced'
+  | 'addressed_to_ai'
+  | 'text_not_checked'
 
 export interface SummaryIndexing {
   no_text: number
@@ -72,6 +74,9 @@ export interface CollectionSummary {
     figures: SummaryFigures
     letter_spacing: { recorded: number; pdfs: number }
     keywords: SummaryOnRecord
+    /** A2b: documents a current check marked, documents checked, and documents with text and no
+     *  current check (never checked, or their text or the patterns changed since). */
+    text_checks: { marked: number; checked: number; not_checked: number }
   }
   types: { format: string; documents: number }[]
   years: {

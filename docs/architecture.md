@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -151,6 +151,7 @@ the screens (next section, ADR-064), and the last column says where a domain is 
 | folders | `models/folders.py` | `routers/library/folders.py` | `screens/library/ManageFolders.svelte` |
 | keywords | `models/keywords.py` | `routers/library/keywords.py` | `screens/manage-keywords/ManageKeywords.svelte` |
 | spacing | `models/spacing.py` | `routers/library/spacing.py` | `screens/document-page/LetterSpacing.svelte`, `screens/settings/SpacingIgnoreList.svelte` |
+| text checks | `models/text_checks.py` | `routers/library/text_checks.py` | `screens/document-page/TextCheck.svelte` |
 | concepts / graph | `models/concepts.py` | `routers/concepts.py` | `screens/graph/` (Graph, ConceptIndex, GapList) |
 | taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `screens/taxonomy/Taxonomy.svelte` |
 | definitions | `models/definitions.py` | `routers/definitions.py` | `screens/graph/Definition.svelte` (in the concept panel) |
@@ -217,6 +218,7 @@ screen takes only `Icon`, `Dialog` and `ConfirmDialog` from `shell/`.
 | Connections · Figures · References | the page's index | `Connections.svelte` · `Figures.svelte` · `References.svelte` |
 | the figure viewer · the source viewer | a figure · *Source* | `FigureViewer.svelte` · `SourceViewer.svelte` |
 | *Letter-spacing on this document* · *Edit spacing* | the page · a run's *Edit spacing* | `LetterSpacing.svelte` · `EditSpacing.svelte` |
+| *Text addressed to an AI* (A2b) | the page, for a marked document or one not checked | `TextCheck.svelte` |
 | *Re-run ingestion* | *Re-run…*, *Re-run text now…* (page and Settings), the Library's select bar | `RerunIngestion.svelte` |
 | **Graph tab** | top bar | `screens/graph/` |
 | the tab, its empty states, the graph bar · the concept panel | *Graph* · a concept | `Graph.svelte` · `ConceptPanel.svelte` |

@@ -9,6 +9,7 @@ import {
   indexingRows,
   meterShare,
   metadataRows,
+  textCheckRows,
   plural,
   tiles,
   typeBars,
@@ -53,6 +54,7 @@ function summary(over: Partial<CollectionSummary> = {}): CollectionSummary {
       figures: { on_record: 0, none_on_record: 0, rows: 0, described: 0, pdfs: 0 },
       letter_spacing: { recorded: 0, pdfs: 0 },
       keywords: { on_record: 0, none_on_record: 0, rows: 0 },
+      text_checks: { marked: 0, checked: 0, not_checked: 0 },
     },
     types: [],
     years: { by_decade: [], no_year: 0, oldest: null, newest: null },
@@ -208,6 +210,7 @@ test('references and figures not looked for are said once; otherwise meters', ()
         figures: { on_record: 2, none_on_record: 1, rows: 9, described: 1, pdfs: 3 },
         letter_spacing: { recorded: 1, pdfs: 3 },
         keywords: { on_record: 5, none_on_record: 0, rows: 0 },
+        text_checks: { marked: 0, checked: 0, not_checked: 0 },
       },
     }),
   ) as MeterRow[]
@@ -272,4 +275,25 @@ test('what line', () => {
     whatLine(summary({ scope: 'folder', folders: { in_a_folder: null, in_none: null, also_elsewhere: 1 } })),
     '1 of these is also in another folder.',
   )
+})
+
+test('a marked document opens the grid; nothing is said before anything was checked', () => {
+  const checks = (marked: number, checked: number, notChecked: number) =>
+    textCheckRows(
+      summary({ documents: 5, found: { ...summary().found, text_checks: { marked, checked, not_checked: notChecked } } }),
+    )
+  assert.deepEqual(checks(0, 0, 0), [])
+  const [marked] = checks(2, 5, 0)
+  assert.equal(marked.title, '2 documents contain text addressed to an AI')
+  assert.deepEqual(marked.target, { kind: 'issue', issue: 'addressed_to_ai' })
+  assert.equal(marked.tone, 'warn')
+  const [none] = checks(0, 5, 0)
+  assert.equal(none.title, 'No text addressed to an AI in the 5 documents checked')
+  assert.equal(none.target, null)
+  const older = checks(0, 0, 5)
+  assert.deepEqual(
+    older.map((r) => [r.key, r.fix]),
+    [['text_not_checked', 'Fix: Re-run… > Text checks']],
+  )
+  assert.deepEqual(older[0].target, { kind: 'issue', issue: 'text_not_checked' })
 })

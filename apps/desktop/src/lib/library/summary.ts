@@ -173,6 +173,8 @@ export function indexingRows(s: CollectionSummary): IndexingRow[] {
       tone: fl > 0 ? 'warn' : 'none',
       target: fl > 0 ? { kind: 'issue', issue: 'flagged' } : null,
     })
+
+    rows.push(...textCheckRows(s))
   }
 
   if (s.scope === 'folder') {
@@ -183,6 +185,44 @@ export function indexingRows(s: CollectionSummary): IndexingRow[] {
       fix: "Open the library's summary",
       tone: 'none',
       target: { kind: 'library' },
+    })
+  }
+  return rows
+}
+
+/** A2b's rows: documents whose text addresses an AI, and documents the check has not read.
+ *  A mark informs: nothing was removed, and a paper about prompt injection is marked too. */
+export function textCheckRows(s: CollectionSummary): IndexingRow[] {
+  const t = s.found.text_checks
+  const rows: IndexingRow[] = []
+  if (t.marked > 0) {
+    rows.push({
+      key: 'addressed_to_ai',
+      title: `${plural(t.marked, 'document contains', 'documents contain')} text addressed to an AI`,
+      detail:
+        'Text written to an AI assistant rather than to a reader, such as planted instructions. A paper about AI that quotes such text is marked too. Nothing was removed.',
+      fix: 'Read it on each document’s page',
+      tone: 'warn',
+      target: { kind: 'issue', issue: 'addressed_to_ai' },
+    })
+  } else if (t.checked > 0) {
+    rows.push({
+      key: 'addressed_to_ai',
+      title: `No text addressed to an AI in the ${plural(t.checked, 'document', 'documents')} checked`,
+      detail: 'The check looks for planted instructions and the like. It can miss a new phrasing.',
+      fix: null,
+      tone: 'none',
+      target: null,
+    })
+  }
+  if (t.not_checked > 0) {
+    rows.push({
+      key: 'text_not_checked',
+      title: `${plural(t.not_checked, 'document was', 'documents were')} not checked for text addressed to an AI`,
+      detail: 'Indexed before this check existed, or the text changed since. The check takes a moment per document.',
+      fix: 'Fix: Re-run… > Text checks',
+      tone: 'none',
+      target: { kind: 'issue', issue: 'text_not_checked' },
     })
   }
   return rows

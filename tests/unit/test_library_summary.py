@@ -28,6 +28,7 @@ from doc_assistant.db.models import (
     Citation,
     Document,
     DocumentMeta,
+    DocumentTextCheck,
     ExternalMetadata,
     Figure,
     Folder,
@@ -44,6 +45,7 @@ from doc_assistant.library.summary import (
     issue_document_ids,
     summarise_collection,
 )
+from doc_assistant.source_checks import CHECKS_VERSION
 
 
 @pytest.fixture
@@ -115,6 +117,21 @@ def _keyword(doc_id: str, name: str = "retrieval") -> None:
         assert doc is not None
         kw = session.query(Keyword).filter_by(name=name).one_or_none() or Keyword(name=name)
         doc.keywords.append(kw)
+
+
+def _text_check(doc_id: str, marked: int, *, version: str | None = None) -> None:
+    """A2b: the row the text check keeps, current unless ``version`` names older patterns."""
+    with session_scope() as session:
+        doc = session.get(Document, doc_id)
+        assert doc is not None
+        session.add(
+            DocumentTextCheck(
+                document_id=doc_id,
+                doc_hash=doc.doc_hash,
+                checks_version=version or CHECKS_VERSION,
+                n_marked=marked,
+            )
+        )
 
 
 def _folder(name: str, doc_ids: list[str]) -> str:
@@ -196,6 +213,7 @@ def mixed(lib: Path) -> Path:
     _references(clean, 3)
     _figures(clean, 2, described=1)
     _keyword(clean)
+    _text_check(clean, marked=1)
     _doc(lib, "scan.pdf", chunk_count=0, extraction_health="broken", page_count=12)
     _doc(lib, "thin.pdf", extraction_health="marginal")
     _doc(lib, "wreck.pdf", extraction_health="broken")
@@ -222,6 +240,8 @@ def test_each_count_matches_its_filter(mixed: Path) -> None:
         "no_figures": s.found.figures.none_on_record,
         "no_keywords": s.found.keywords.none_on_record,
         "letter_spaced": s.found.letter_spacing.recorded,
+        "addressed_to_ai": s.found.text_checks.marked,
+        "text_not_checked": s.found.text_checks.not_checked,
     }
     assert set(expected) == set(ISSUE_IDS)
     for issue, count in expected.items():

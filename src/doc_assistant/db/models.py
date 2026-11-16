@@ -1097,6 +1097,33 @@ class DocumentMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class DocumentTextCheck(Base):
+    """What the text check found in one document (A2b) — a regenerable sidecar.
+
+    Written by `document_checks.check_documents` after extraction (the index run, and
+    *Re-run… > Text checks*): the paragraphs of the cached text that `source_checks` reads as
+    addressed to an AI. One row per checked document, **including** a document where nothing was
+    found, so "checked, none" and "never checked" stay apart. ``doc_hash`` and ``checks_version``
+    say what the row describes: a row whose text or patterns have since changed is stale, and the
+    reads say so instead of showing it as current. Never mutates the chunk store or the
+    document's text (ADR-043); additive — ``create_all`` makes the table.
+
+    ``findings_json`` is a JSON list of ``{"page", "labels", "excerpt"}``, at most
+    ``document_checks.KEPT_FINDINGS`` of them; ``n_marked`` counts every marked paragraph.
+    """
+
+    __tablename__ = "document_text_checks"
+
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    doc_hash: Mapped[str] = mapped_column(String, nullable=False)
+    checks_version: Mapped[str] = mapped_column(String, nullable=False)
+    n_marked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    findings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class ExternalMetadata(Base):
     """What an outside catalogue said about a file, recorded when it was imported (ADR-049).
 

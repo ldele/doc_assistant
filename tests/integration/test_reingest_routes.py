@@ -65,6 +65,7 @@ def test_options_serve_the_registry_including_what_is_declined(client: TestClien
     """The client must not hardcode a cost — that is the whole honesty of the control."""
     body = client.get("/api/library/reingest/options").json()
     assert [p["id"] for p in body["parts"]] == [
+        "checks",
         "metadata",
         "crops",
         "figures",

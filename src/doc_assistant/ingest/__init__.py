@@ -785,6 +785,7 @@ def main(
     # After the catalogue's pass, never before it: a catalogue's answer outranks the extractor's
     # (ADR-049 D3), and this step writes only what is still blank.
     _fill_missing_metadata(indexed - indexed_before)
+    _check_document_text(indexed - indexed_before)
 
     if force_rebuild:
         _sweep_rebuild_rows(rebuild_known_hashes, indexed - indexed_before)
@@ -857,6 +858,34 @@ def _fill_missing_metadata(produced: set[str]) -> None:
         return
     if filled.filled:
         log.info("extracted_metadata_filled", documents=filled.filled, fields=filled.fields)
+
+
+def _check_document_text(produced: set[str]) -> None:
+    """Look for text addressed to an AI in the documents this run indexed (A2b).
+
+    The same check A2 runs on each retrieved passage, run here once per document over its whole
+    extracted text, so the Library can show the mark before any question is asked
+    (`document_checks`). ``produced`` is the hashes this run indexed, as for
+    `_fill_missing_metadata`; documents indexed before the check existed get it from
+    *Re-run… > Text checks*. A mark informs and changes nothing in the document. Same rule as the
+    steps before it: **it must never fail an ingest.**
+    """
+    if not produced:
+        return
+    try:
+        from doc_assistant.document_checks import check_documents
+
+        with session_scope() as session:
+            ids = [
+                str(doc_id)
+                for doc_id, doc_hash in session.execute(
+                    select(DBDocument.id, DBDocument.doc_hash)
+                ).all()
+                if doc_hash in produced
+            ]
+        check_documents(ids)
+    except Exception as e:  # a check must not lose a completed ingest
+        log.warning("document_text_check_failed", error=str(e))
 
 
 def _sweep_rebuild_rows(known_before: set[str], reproduced: set[str]) -> None:

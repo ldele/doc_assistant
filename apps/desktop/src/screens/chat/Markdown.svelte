@@ -6,6 +6,7 @@
   // allowImportingTsExtensions, while `node:test` (citations.test.ts) requires one. Vite
   // resolves this to citations.ts; the two consumers just spell it differently.
   import { CITE_ANYWHERE, CITE_EXACT, CITE_SPLIT } from '../../lib/chat/citations'
+  import { linkAllowed } from '../../lib/chat/links'
 
   // The answer is model output over your documents, so it can carry whatever markup a document
   // did: a quoted `<img onerror>` or a `[link](javascript:…)` (marked >= 14 no longer filters
@@ -18,10 +19,14 @@
     source = '',
     onCitationClick,
     activeCitationN = null,
+    allowedLinks = null,
   }: {
     source?: string
     onCitationClick?: (n: number) => void
     activeCitationN?: number | null
+    /** A model's answer passes the web links its passages carry (A2); any other web link is
+     *  shown as text. `null` (the default) is text the app wrote, whose links all stay. */
+    allowedLinks?: readonly string[] | null
   } = $props()
   const html = $derived(DOMPurify.sanitize(marked.parse(source, { async: false }), SANITIZE))
 
@@ -33,6 +38,7 @@
   $effect(() => {
     void html
     if (!el) return
+    defuseLinks(el, allowedLinks)
     linkifyCitations(el)
     syncActiveCitation(el, activeCitationN)
   })
@@ -95,6 +101,24 @@
     }
   }
 
+  // A2: a web link whose address no passage carries becomes plain text showing that address,
+  // so a link a document told the model to write cannot be clicked (lib/chat/links.ts).
+  function defuseLinks(root: HTMLElement, allowed: readonly string[] | null): void {
+    for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))) {
+      const href = a.getAttribute('href') ?? ''
+      if (linkAllowed(href, allowed)) continue
+      const span = document.createElement('span')
+      span.className = 'unsourced-link'
+      const label = a.textContent ?? ''
+      span.textContent = label && label !== href ? `${label} (${href})` : href
+      const note = document.createElement('span')
+      note.className = 'unsourced-note'
+      note.textContent = ' · link not in your sources'
+      span.appendChild(note)
+      a.replaceWith(span)
+    }
+  }
+
   function syncActiveCitation(root: HTMLElement, n: number | null): void {
     for (const btn of root.querySelectorAll<HTMLButtonElement>('.citation')) {
       btn.classList.toggle('active', n !== null && Number(btn.dataset.n) === n)
@@ -144,6 +168,13 @@
     background: none;
     padding: 0;
     color: var(--accent);
+  }
+  .md :global(.unsourced-link) {
+    overflow-wrap: anywhere;
+  }
+  .md :global(.unsourced-note) {
+    color: var(--fg-2);
+    font-size: 0.85em;
   }
   .md :global(.citation.active) {
     background: var(--accent);

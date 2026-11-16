@@ -45,7 +45,7 @@
         {/if}
       </div>
     {/if}
-    <Markdown source={answer} {onCitationClick} {activeCitationN} />
+    <Markdown source={answer} {onCitationClick} {activeCitationN} allowedLinks={[]} />
   </div>
 </div>
 

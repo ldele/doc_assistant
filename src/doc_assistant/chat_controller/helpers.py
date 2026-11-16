@@ -31,6 +31,7 @@ from doc_assistant.provenance import (
     record_claims,
 )
 from doc_assistant.reviewer import ReviewResult
+from doc_assistant.source_checks import addressed_to_ai
 from doc_assistant.synthesis import MARKER_OK, MARKER_WEAK, Claim, segment_claims
 
 log = structlog.get_logger(__name__)
@@ -507,6 +508,7 @@ def _build_source_views(
                 figure_id=figure_id,
                 reranker_score=round(float(score), 4),  # D3 strip signal (ADR-027)
                 filename=meta.get("filename") or None,
+                addressed_to_ai=addressed_to_ai(doc.page_content),
             )
         )
     return views

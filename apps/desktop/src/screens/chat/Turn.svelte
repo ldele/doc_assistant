@@ -61,7 +61,7 @@
           {/if}
         </div>
       {/if}
-      <Markdown source={result.answer} {onCitationClick} {activeCitationN} />
+      <Markdown source={result.answer} {onCitationClick} {activeCitationN} allowedLinks={result.source_links ?? []} />
       {#if result.sources.length}
         <details class="sources">
           <summary
@@ -79,8 +79,8 @@
                 >
                   {s.citation}
                 </button>
-                {#if s.markers.length}
-                  <span class="cite-marker" title={s.markers.join(', ')}>
+                {#if s.markers.length || s.addressed_to_ai?.length}
+                  <span class="cite-marker" title={[...s.markers, ...(s.addressed_to_ai?.length ? ['contains text addressed to an AI'] : [])].join(', ')}>
                     <Icon name="triangle-alert" size={11} />
                   </span>
                 {/if}
@@ -105,7 +105,7 @@
         </div>
       {/if}
     {:else}
-      <Markdown source={answer} />
+      <Markdown source={answer} allowedLinks={[]} />
       {#if streaming}<span class="cursor">▍</span>{/if}
     {/if}
   </div>

@@ -28,6 +28,9 @@ export interface SourceView {
   // ADR-027 D3 — always-on per-source evaluation + the rerank score (strip signals).
   reranker_score: number
   evaluation: SourceEpistemics | null
+  // A2 — the kinds of text addressed to an AI the passage carries; [] when none matched.
+  // Mirrors apps/api/models/chat.py::SourceViewPayload.addressed_to_ai.
+  addressed_to_ai: string[]
 }
 export interface ClaimView {
   claim_id: string
@@ -66,6 +69,8 @@ export interface TurnResult {
   // ADR-027 D3 — strip-level freshness for the always-on source-evaluation strip (per-source
   // evaluation rides on each source). null = no epistemics sidecar / 0-doc → no strip.
   source_eval: SourceEvalSummary | null
+  // A2 — the web addresses in this turn's passages: an answer link outside them shows as text.
+  source_links: string[]
 }
 // The retrieval scope a turn ran under. `folder_name` is null when the folder was deleted
 // before the turn ran — the turn then searched nothing rather than everything.

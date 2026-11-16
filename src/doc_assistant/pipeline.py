@@ -1,6 +1,7 @@
 """RAG pipeline: retrieval, reranking, and answer generation."""
 
 import hashlib
+import re
 import sqlite3
 from collections import OrderedDict
 from collections.abc import Generator, Iterator
@@ -807,18 +808,41 @@ def format_docs_for_prompt(docs: list[Document]) -> str:
     NOT widened to swallow the malformed form — a tolerant reader would have hidden the drift
     instead of ending it.
 
-    Any change here moves ``prompt_version`` in the provenance record, which is what that hash is
-    for.
+    **Each passage is fenced (S-9, 2026-11-16):** ``<source n="3" file="paper.pdf" page="4">``
+    before it and ``</source>`` after, so text inside a document that addresses the model ("ignore
+    prior instructions") stays inside a block the prompt declares to be document text. The fence
+    uses angle brackets and attributes, never square brackets, for the reason above. A passage that
+    itself contains the fence's tags would close its fence early, so ``<source`` and ``</source``
+    inside the text are written as ``&lt;source`` and ``&lt;/source``. That changes only the copy
+    that goes into the prompt, never the stored chunk (ADR-043).
+
+    ``prompt_version`` hashes the answer template, which describes this format, so a change here
+    goes with a change there.
     """
     parts: list[str] = []
     for i, doc in enumerate(docs):
-        filename = doc.metadata.get("filename", "unknown")
+        filename = _fence_attr(str(doc.metadata.get("filename", "unknown")))
         page = doc.metadata.get("page")
-        header = f"Source {i + 1} — {filename}"
+        attrs = f'n="{i + 1}" file="{filename}"'
         if page:
-            header += f", page {page}"
-        parts.append(f"{header}\n{doc.page_content}")
-    return "\n\n---\n\n".join(parts)
+            attrs += f' page="{_fence_attr(str(page))}"'
+        parts.append(f"<source {attrs}>\n{_defuse_fence(doc.page_content)}\n</source>")
+    return "\n\n".join(parts)
+
+
+_FENCE_TAG_RE = re.compile(r"<(/?)(source\b)", re.IGNORECASE)
+
+
+def _defuse_fence(text: str) -> str:
+    """The passage with the fence's own tags written as text, so it cannot close its fence."""
+    return _FENCE_TAG_RE.sub(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
+
+
+def _fence_attr(value: str) -> str:
+    """An attribute value with no character that could end the attribute or the tag."""
+    for raw, safe in (("&", "&amp;"), ('"', "&quot;"), ("<", "&lt;"), (">", "&gt;")):
+        value = value.replace(raw, safe)
+    return value
 
 
 def format_history(messages: list[dict[str, str]]) -> str:

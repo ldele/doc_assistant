@@ -328,7 +328,7 @@
       // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
       // as a SourceView so SourcePanel/SourceCard render it unchanged.
       if (s) {
-        return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null }
+        return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null, addressed_to_ai: [] }
       }
     }
     const t = chat.turns.find((t) => String(t.id) === chat.activeCitation!.turnKey)

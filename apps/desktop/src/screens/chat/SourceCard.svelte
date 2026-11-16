@@ -33,6 +33,15 @@
     'Experimental. A hint from your corpus’s concept graph that this topic may be disputed — ' +
     'it is not a measurement, and it can be wrong. Treat it as a prompt to check the sources ' +
     'yourself, never as a verdict on them.'
+
+  // A2 (docs/security.md S5). A pattern check, the same on every model: the passage has text
+  // written to an AI assistant (a "system notice", a request to ignore instructions, a chat
+  // turn's markup). The answer may have followed it. Nothing was removed from the document.
+  const AI_TOOLTIP =
+    'This passage contains text written to an AI assistant rather than to a reader, such as ' +
+    'an instruction to ignore earlier instructions. The answer may have followed it: read the ' +
+    'passage before trusting what the answer says it says. A paper that quotes such text is ' +
+    'marked too.'
 </script>
 
 <article class="source">
@@ -44,6 +53,11 @@
         <span class="chip-exp">experimental</span>
       </span>
     {/each}
+    {#if source.addressed_to_ai?.length}
+      <span class="chip" title={AI_TOOLTIP}>
+        <Icon name="triangle-alert" size={12} /> contains text addressed to an AI
+      </span>
+    {/if}
   </header>
   {#if source.figure_id}
     <img class="figure" src={figureUrl(source.figure_id)} alt={`figure for source ${source.n}`} />

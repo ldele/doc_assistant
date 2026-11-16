@@ -109,6 +109,8 @@ class SourceViewPayload(BaseModel):
     # ADR-027 D3 — always-on per-source evaluation + the rerank score (strip signals).
     reranker_score: float = 0.0
     evaluation: SourceEpistemicsPayload | None = None
+    # A2: the kinds of text addressed to an AI the passage carries; empty when none matched.
+    addressed_to_ai: list[str] = []
 
     @classmethod
     def from_view(cls, sv: SourceView) -> SourceViewPayload:
@@ -120,6 +122,7 @@ class SourceViewPayload(BaseModel):
             chunk_key=sv.chunk_key,
             markers=list(sv.markers),
             reranker_score=sv.reranker_score,
+            addressed_to_ai=list(sv.addressed_to_ai),
             evaluation=(
                 SourceEpistemicsPayload.from_view(sv.evaluation)
                 if sv.evaluation is not None
@@ -197,6 +200,8 @@ class TurnResultPayload(BaseModel):
     # ADR-027 D3 — strip-level freshness for the always-on source-evaluation strip (per-source
     # evaluation rides on each source). null = no epistemics sidecar / 0-doc → no strip.
     source_eval: SourceEvalSummaryPayload | None = None
+    # A2: the web addresses in the passages; an answer's link outside this list renders as text.
+    source_links: list[str] = []
 
     @classmethod
     def from_turn_result(cls, r: TurnResult) -> TurnResultPayload:
@@ -213,6 +218,7 @@ class TurnResultPayload(BaseModel):
             sources_md=r.sources_md,
             usage_md=r.usage_md,
             citation_note_md=r.citation_note_md,
+            source_links=list(r.source_links),
             download_path=str(r.download_path) if r.download_path is not None else None,
             scope=(
                 ScopePayload(

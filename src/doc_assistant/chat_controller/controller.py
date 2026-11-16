@@ -85,6 +85,7 @@ from doc_assistant.provenance import (
 )
 from doc_assistant.query_router import answer_library_query, is_library_query
 from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
+from doc_assistant.source_checks import addressed_to_ai, sourced_links
 from doc_assistant.synthesis import audit_citations, render_evidence_markdown
 from doc_assistant.tracking import TokenCounter
 
@@ -779,6 +780,10 @@ class ChatController:
                 citation_note_md=citation_block,
                 scope=scope_view,
                 source_eval=source_eval,
+                # A link planted by a passage that addresses an AI is not a source's link.
+                source_links=sourced_links(
+                    doc.page_content for doc in docs if not addressed_to_ai(doc.page_content)
+                ),
             )
         )
 

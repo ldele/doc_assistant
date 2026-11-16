@@ -70,6 +70,9 @@ class SourceView:
     reranker_score: float = 0.0  # per-source rerank score (D3 strip signal, ADR-027)
     evaluation: SourceEpistemics | None = None  # always-on per-source assessment (D3)
     filename: str | None = None  # the source's file name, as retrieval recorded it (the eval)
+    # A2 (security.md S5): the kinds of text addressed to an AI that the passage carries
+    # (``source_checks.addressed_to_ai``). Empty = no pattern matched, not "safe".
+    addressed_to_ai: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -130,3 +133,7 @@ class TurnResult:
     # (the rule-based records router), ``command`` (a slash command) or ``claim_edit``. Read by
     # the eval harness's ``route`` scorer; not sent to the window today.
     route: str = "rag"
+    # A2: every web address in the passages this answer was given, leaving out passages that
+    # address an AI (a planted link is not a source's link). The renderer shows an answer's
+    # link as a link only when its address is here; any other link is plain text.
+    source_links: list[str] = field(default_factory=list)

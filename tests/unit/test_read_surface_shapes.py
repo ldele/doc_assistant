@@ -13,6 +13,8 @@ SNAPSHOT_VERSION = 1
 
 SNAPSHOT: dict[str, tuple[str, ...]] = {
     "CitedPassage": ("n", "document_id", "title", "page", "section", "excerpt"),
+    "ConceptItem": ("concept_id", "name", "forms", "has_definition"),
+    "ConceptList": ("concepts", "total", "version"),
     "ConceptRecord": (
         "concept_id",
         "name",
@@ -62,9 +64,21 @@ SNAPSHOT: dict[str, tuple[str, ...]] = {
         "page",
         "section",
         "score",
-        "text",
         "fenced",
         "addressed_to_ai",
+    ),
+    "PassageContext": (
+        "passage_id",
+        "document_id",
+        "title",
+        "page",
+        "before",
+        "fenced",
+        "after",
+        "at_document_start",
+        "at_document_end",
+        "addressed_to_ai",
+        "version",
     ),
     "ReferenceItem": ("text", "title", "authors", "year", "doi", "in_library_document_id"),
     "SearchResult": ("question", "passages", "count", "note", "folder_id", "version"),
@@ -104,6 +118,8 @@ def test_every_top_level_result_carries_the_version() -> None:
         "ConversationList",
         "ConversationRecord",
         "ConceptRecord",
+        "PassageContext",
+        "ConceptList",
     )
     for name in results:
         assert "version" in SNAPSHOT[name], name

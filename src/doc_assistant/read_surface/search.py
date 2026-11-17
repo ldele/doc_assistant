@@ -1,4 +1,4 @@
-"""`search_library`: ranked passages for a question (ADR-066 choices 1, 3, 9).
+"""`search_library` and `get_passage`: ranked passages for a question (ADR-066 choices 1, 3, 9).
 
 Passages, not an answer: the caller's own model writes the answer, so nothing here calls a model
 or bills one. Retrieval is the chat's own (hybrid, reranked, at the locked settings), handed in by
@@ -20,7 +20,7 @@ from doc_assistant.config import TOP_K
 from doc_assistant.db.models import Document, DocumentMeta
 from doc_assistant.db.session import session_scope
 from doc_assistant.library.documents import count_documents, effective_metadata
-from doc_assistant.read_surface.shapes import Passage, SearchResult
+from doc_assistant.read_surface.shapes import Passage, PassageContext, SearchResult
 from doc_assistant.source_checks import addressed_to_ai
 
 #: The engine's retrieval: ``(question, top_k, scope=…)`` to ``(chunk, score)`` pairs, best first.
@@ -95,7 +95,9 @@ def _passage(n: int, chunk: Chunk, score: float, records: dict[str, Any]) -> Pas
     title, authors, year = records.get(
         str(doc_id), (str(meta.get("filename") or "unknown"), None, None)
     )
-    page = meta.get("page")
+    from doc_assistant.library.source_view import page_from_meta
+
+    page = page_from_meta(meta)
     return Passage(
         passage_id=_chunk_key(meta),
         document_id=str(doc_id) if doc_id is not None else None,
@@ -105,7 +107,6 @@ def _passage(n: int, chunk: Chunk, score: float, records: dict[str, Any]) -> Pas
         page=page if isinstance(page, int) else None,
         section=meta.get("section"),
         score=float(score),
-        text=chunk.page_content,
         fenced=fence_passage(chunk, n),
         addressed_to_ai=addressed_to_ai(chunk.page_content),
     )
@@ -150,4 +151,47 @@ def search_library(
         count=len(passages),
         note=None if passages else NOTHING_FOUND,
         folder_id=folder_id,
+    )
+
+
+#: The most characters `get_passage` reads on each side of a passage. A wire-size bound.
+MAX_AROUND = 6000
+#: The default: about a paragraph or two on each side.
+DEFAULT_AROUND = 1500
+
+
+def get_passage(
+    store: Any, passage_id: str, *, around: int = DEFAULT_AROUND
+) -> PassageContext | None:
+    """A passage and the text around it, read from the document's extracted text.
+
+    ``store`` is the engine's chunk store (`RAGPipeline.db`), which knows where each passage sits;
+    the text itself is read from the cached document. ``None`` when the passage cannot be placed
+    (an unknown id, or a passage whose position was never recorded): the caller says so rather
+    than guessing at a position (`library.chunks.get_chunk_context`)."""
+    from doc_assistant.library.chunks import get_chunk_context
+    from doc_assistant.pipeline import fence_passage
+
+    ctx = get_chunk_context(passage_id, store, window=max(0, min(around, MAX_AROUND)))
+    if ctx is None:
+        return None
+    title = _records({ctx.document_id}).get(ctx.document_id, (ctx.filename, None, None))[0]
+
+    def fenced(text: str) -> str:
+        if not text.strip():
+            return ""
+        meta = {"filename": ctx.filename, "page": ctx.page}
+        return fence_passage(Chunk(page_content=text, metadata=meta), 1)
+
+    return PassageContext(
+        passage_id=passage_id,
+        document_id=ctx.document_id,
+        title=title,
+        page=ctx.page,
+        before=fenced(ctx.before),
+        fenced=fenced(ctx.text),
+        after=fenced(ctx.after),
+        at_document_start=ctx.at_document_start,
+        at_document_end=ctx.at_document_end,
+        addressed_to_ai=addressed_to_ai(ctx.text),
     )

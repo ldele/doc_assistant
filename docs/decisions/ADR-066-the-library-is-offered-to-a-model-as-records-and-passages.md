@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 (As built — A3: the read surface, appended); 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
+<!-- status: active · updated: 2026-11-17 (Amendment: nine tools after a stand-in client trial, appended); 2026-11-16 (As built — A3: the read surface, appended); 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
 
 # ADR-066 — The library is offered to a model as records and passages: an MCP endpoint in the engine, lookups by rule in the chat, and modes that only change the framing
 
@@ -253,3 +253,22 @@ Appended, not edited in: the choices above stand. Session A3 built the seven too
   empty library (`tests/integration/test_empty_home_get_routes.py`): 42 routes, no 500.
 - **Still to come:** the switches, the token, the call log and the "five tools without the
   conversations switch" test are the endpoint's (A4). The rule-answered turn's provenance is A6's.
+
+## Amendment — nine tools, after a stand-in client trial (the user, 2026-11-17)
+
+Appended, not edited in: choice 3 is widened, the other choices stand. A stand-in AI client (a
+Sonnet subagent) tried the seven tools on the public papers and was blocked where the tests could
+not see (`tests/eval/baselines/a3_surface_trial_2026-11-17.md`).
+
+- **Two tools added:** `get_passage` (a passage with the fenced text around it) and
+  `list_concepts` (the concepts the person took on, never terms). **One filter added:**
+  `list_conversations(text=…)`. The user asked first whether any had been left out for a
+  security reason. None had: `get_passage` returns document text search already returns, fenced
+  the same way; `list_concepts` lists only the person's own concepts; the text filter reads only
+  what the conversations switch already guards.
+- **Fixed before any client depends on it:** a passage is sent once, fenced, without a duplicate
+  plain copy; search derives a passage's page from the document's page markers; a conversation's
+  cited excerpt is placed on its page by finding it in the document's text.
+- **The trial, before and after:** 4 then 6 of 9 tasks done, 30 then 24 tool calls, 3,200 then
+  2,081 bytes per search passage. Still open: author metadata (extraction, KI-54, KI-89), an author
+  filter, and a "nothing relevant" signal, each additive.

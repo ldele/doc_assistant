@@ -150,6 +150,14 @@ def page_for_chunk(chunk_key: str, chroma: Any) -> int | None:
     return found.page if found is not None else None
 
 
+def page_from_meta(meta: dict[str, Any]) -> int | None:
+    """The page a chunk's metadata implies — stored if it has one, else derived from the cache.
+
+    Public for the read surface (A3), whose search results carry a page for a parent-child
+    passage, which never stored one."""
+    return _page_from_meta(meta)
+
+
 def _page_from_meta(meta: dict[str, Any]) -> int | None:
     """The page a chunk's metadata implies — stored if it has one, else derived from the cache."""
     stored = meta.get("page")

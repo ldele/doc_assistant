@@ -92,6 +92,37 @@ def _turn(sid: str, q: str, when: datetime, cited: list[dict[str, Any]]) -> None
         )
 
 
+class _Store:
+    """A chunk store that knows each passage's position, as `get_chunk_context` reads it."""
+
+    def __init__(self, metas: list[dict[str, Any]]) -> None:
+        self.metas = metas
+
+    def get(self, *, where: dict[str, Any], include: list[str], limit: int) -> dict[str, Any]:
+        doc, field = where["$and"][0]["document_id"], where["$and"][1]
+        ((key, value),) = field.items()
+        hits = [m for m in self.metas if m.get("document_id") == doc and m.get(key) == value]
+        return {"metadatas": hits[:limit]}
+
+
+@pytest.fixture
+def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The library's cache folder, where each document's extracted text lives."""
+    from doc_assistant import config
+
+    folder = tmp_path / "cache"
+    folder.mkdir()
+    monkeypatch.setattr(config, "CACHE_PATH", folder)
+    return folder
+
+
+_PAGED = (
+    "<!-- page:1 -->\n\nIntro words on the first page.\n\n<!-- page:2 -->\n\n"
+    "Residual learning lets stacked layers fit a residual mapping instead of the original one, "
+    "which is easier to optimise.\n\nAfter that, the experiments follow on page two."
+)
+
+
 class _FakeRetrieve:
     def __init__(self, found: list[tuple[Chunk, float]]) -> None:
         self.found = found
@@ -122,9 +153,11 @@ def test_every_tool_is_honest_on_an_empty_library(temp_db: Path) -> None:
     assert rs.get_document("nope") is None
     assert rs.get_conversation("nope") is None
     assert rs.get_concept("retrieval") is None
+    assert rs.list_concepts().concepts == [] and rs.list_concepts().total == 0
+    assert rs.get_passage(_Store([]), "nope:p1") is None
 
 
-def test_the_seven_tools_are_the_adrs(temp_db: Path) -> None:
+def test_the_tools_are_the_adrs_seven_and_the_two_added(temp_db: Path) -> None:
     assert rs.TOOLS == (
         "search_library",
         "list_folders",
@@ -133,6 +166,8 @@ def test_the_seven_tools_are_the_adrs(temp_db: Path) -> None:
         "list_conversations",
         "get_conversation",
         "get_concept",
+        "get_passage",
+        "list_concepts",
     )
     assert all(callable(getattr(rs, name)) for name in rs.TOOLS)
 
@@ -206,6 +241,10 @@ def test_a_concept_is_found_by_name_or_form_and_a_term_is_not(temp_db: Path) -> 
     assert by_form.definition_source.kind == "passage"
     assert by_form.definition_source.document_id == doc_id
     assert by_form.definition_source.passage_id == f"{doc_id}:4"
+    listed = rs.list_concepts()
+    assert [(c.name, c.forms, c.has_definition) for c in listed.concepts] == [
+        ("Retrieval-augmented generation", 2, True)
+    ], "the term is not listed"
     assert rs.get_concept(concept_id) is not None
     assert rs.get_concept("pipeline") is None, "a term is not offered as a concept"
 
@@ -267,6 +306,53 @@ def test_search_never_widens_an_empty_scope(temp_db: Path) -> None:
     assert retrieve.calls == [("q", 20, frozenset({"h-a.pdf"}))]
 
 
+def test_a_parent_passage_gets_its_page_from_the_documents_text(
+    temp_db: Path, cache: Path
+) -> None:
+    doc_id = _doc("r.pdf")
+    (cache / "r.md").write_text(_PAGED, encoding="utf-8")
+    start = _PAGED.index("Residual learning")
+    parent = Chunk(
+        page_content="Residual learning lets stacked layers fit a residual mapping",
+        metadata={
+            "document_id": doc_id,
+            "filename": "r.pdf",
+            "parent_index": 1,
+            "parent_char_start": start,
+            "source_cache": str(cache / "r.md"),
+        },
+    )
+    (found,) = rs.search_library(_FakeRetrieve([(parent, 0.8)]), "residual").passages
+    assert found.page == 2
+    assert found.passage_id == f"{doc_id}:p1"
+
+
+def test_a_passage_comes_with_the_text_around_it(temp_db: Path, cache: Path) -> None:
+    doc_id = _doc("r.pdf")
+    (cache / "r.md").write_text(_PAGED, encoding="utf-8")
+    start = _PAGED.index("Residual learning")
+    end = _PAGED.index("optimise.") + len("optimise.")
+    store = _Store(
+        [
+            {
+                "document_id": doc_id,
+                "filename": "r.pdf",
+                "parent_index": 1,
+                "parent_char_start": start,
+                "parent_char_end": end,
+                "source_cache": str(cache / "r.md"),
+            }
+        ]
+    )
+    got = rs.get_passage(store, f"{doc_id}:p1", around=60)
+    assert got is not None
+    assert (got.document_id, got.title, got.page) == (doc_id, "Title of r.pdf", 2)
+    assert "Residual learning" in got.fenced and got.fenced.startswith("<source ")
+    assert "first page" in got.before and got.before.startswith("<source ")
+    assert "experiments" in got.after
+    assert rs.get_passage(store, f"{doc_id}:p9") is None, "a passage it cannot place: None"
+
+
 # --- conversations ------------------------------------------------------------------------- #
 
 
@@ -302,3 +388,19 @@ def test_conversations_carry_derived_labels_and_filter_by_them(temp_db: Path) ->
     (cited,) = record.turns[0].cited
     assert (cited.n, cited.document_id, cited.title, cited.page) == (1, a, "Title of a.pdf", 3)
     assert rs.get_conversation("s3") is None, "a deleted conversation is not returned"
+
+    assert [c.conversation_id for c in rs.list_conversations(text="OTHER").conversations] == ["s2"]
+    assert rs.list_conversations(text="second").conversations[0].conversation_id == "s1"
+    assert rs.list_conversations(text="nothing like it").total == 0
+
+
+def test_a_cited_excerpt_is_placed_on_its_page(temp_db: Path, cache: Path) -> None:
+    doc_id = _doc("r.pdf", source_cache=str(cache / "r.md"))
+    (cache / "r.md").write_text(_PAGED, encoding="utf-8")
+    excerpt = "Residual learning lets stacked layers fit a residual mapping instead of the"
+    _turn("s1", "q", datetime(2026, 11, 1), [{"doc_id": doc_id, "chunk_excerpt": excerpt}])
+    _turn("s1", "q2", datetime(2026, 11, 2), [{"doc_id": doc_id, "chunk_excerpt": "too short"}])
+    record = rs.get_conversation("s1")
+    assert record is not None
+    assert record.turns[0].cited[0].page == 2
+    assert record.turns[1].cited[0].page is None, "an excerpt too short to trust stays unplaced"

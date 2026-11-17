@@ -44,6 +44,28 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-17 — The read surface after a stand-in client trial: nine tools (A3)
+
+**What changed.** A Sonnet subagent played an outside AI program on the public papers, with nine
+tasks, before and after the changes (`tests/eval/baselines/a3_surface_trial_2026-11-17.md`). New
+tools: `get_passage` and `list_concepts`; `list_conversations` gains a `text` filter. A passage is
+sent once (`Passage.text` removed: `fenced` holds the same text), with its page derived from the
+document's page markers (`library.source_view.page_from_meta`, now public). A conversation's cited
+excerpt is placed on its page by finding it in the document's text. `SURFACE_VERSION` stays 1: no
+client has seen the shapes. ADR-066 gains an amendment; T6 counts nine tools.
+
+**Why.** The first run found what the tests could not: no page anywhere, no reading around a
+passage, no way to list concepts, no way to find a conversation by its question. The user chose
+all four changes after confirming none had been left out for security. Run 2: 6 of 9 tasks done
+(4 before), 24 calls (30 before).
+
+**Rejected.** A score floor for "nothing relevant": a number tuned to this corpus until measured.
+Storing a page in answer records now: a provenance change of its own; the excerpt places 471 of
+480 GPipe citations on the trial copy.
+
+**What it opens.** A4 serves these shapes and freezes them. Author metadata stays extraction's
+(KI-54, KI-89); an author filter is additive.
+
 ## 2026-11-16 (4) — The read surface: ADR-066's seven tools as functions (A3)
 
 **What changed.** New package `src/doc_assistant/read_surface/`: `search_library`, `list_folders`,

@@ -103,10 +103,12 @@ class DocumentRecord:
 
 @dataclass(frozen=True)
 class Passage:
-    """A passage a search returned. ``text`` is the passage as stored; ``fenced`` is the same
-    text inside the fence the chat's prompt uses (S-9), for a caller to hand to its model.
+    """A passage a search returned. ``fenced`` is the passage's text inside the fence the chat's
+    prompt uses (S-9), sent once: the text between the tags is the passage as stored.
     ``addressed_to_ai`` names what the text check found in it (A2): a passage written to an AI,
-    not to a reader. ``score`` is the reranker's, comparable only within one result."""
+    not to a reader. ``page`` is the page it starts on, derived from the document's page markers
+    when the passage did not store one; ``None`` for a format without pages. ``score`` is the
+    reranker's, comparable only within one result."""
 
     passage_id: str | None
     document_id: str | None
@@ -116,9 +118,46 @@ class Passage:
     page: int | None
     section: str | None
     score: float
-    text: str
     fenced: str
     addressed_to_ai: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PassageContext:
+    """A passage with the text around it, read from the document (``get_passage``).
+
+    ``before``, ``fenced`` and ``after`` are each fenced document text; ``fenced`` is the passage
+    itself. ``at_document_start`` / ``at_document_end`` say the window reached an end of the
+    document rather than its size."""
+
+    passage_id: str
+    document_id: str
+    title: str
+    page: int | None
+    before: str
+    fenced: str
+    after: str
+    at_document_start: bool
+    at_document_end: bool
+    addressed_to_ai: list[str] = field(default_factory=list)
+    version: int = SURFACE_VERSION
+
+
+@dataclass(frozen=True)
+class ConceptItem:
+    """A concept as `list_concepts` shows it: its id, its name and how many forms it has."""
+
+    concept_id: str
+    name: str
+    forms: int
+    has_definition: bool
+
+
+@dataclass(frozen=True)
+class ConceptList:
+    concepts: list[ConceptItem]
+    total: int
+    version: int = SURFACE_VERSION
 
 
 @dataclass(frozen=True)

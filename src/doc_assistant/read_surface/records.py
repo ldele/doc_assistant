@@ -1,4 +1,5 @@
-"""The record tools: folders, documents, one document, one concept (ADR-066 choice 3).
+"""The record tools: folders, documents, one document, concepts (ADR-066 choice 3; list_concepts
+added by the user's decision of 2026-11-17).
 
 Reads of the library's records only: no model, no write, no chunk store. Each is honest on an
 empty library (an empty list and a total of zero) and bounded by its page, not by the library:
@@ -27,6 +28,8 @@ from doc_assistant.db.models import (
 from doc_assistant.db.session import session_scope
 from doc_assistant.library.documents import effective_metadata
 from doc_assistant.read_surface.shapes import (
+    ConceptItem,
+    ConceptList,
     ConceptRecord,
     DefinitionSource,
     DocumentItem,
@@ -235,3 +238,40 @@ def get_concept(concept: str) -> ConceptRecord | None:
             definition=definition,
             definition_source=source,
         )
+
+
+def list_concepts() -> ConceptList:
+    """The concepts the person has taken on, by name: what `get_concept` can return.
+
+    Terms are not listed (ADR-054): a row the person has not taken on is not offered as a
+    concept. Bounded by the person's own vocabulary, not by the library."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(Concept.id, Concept.label, Concept.definition)
+            .where(Concept.kind == "concept", Concept.graph_include.is_(True))
+            .order_by(func.lower(Concept.label))
+        ).all()
+        chosen = {
+            str(cid)
+            for cid in session.execute(
+                select(ConceptDefinition.concept_id).where(ConceptDefinition.status == "chosen")
+            ).scalars()
+        }
+        forms: dict[str, int] = {
+            str(cid): int(n)
+            for cid, n in session.execute(
+                select(ConceptAlias.concept_id, func.count(ConceptAlias.id)).group_by(
+                    ConceptAlias.concept_id
+                )
+            ).all()
+        }
+    items = [
+        ConceptItem(
+            concept_id=str(cid),
+            name=str(label),
+            forms=forms.get(str(cid), 0),
+            has_definition=str(cid) in chosen or bool((definition or "").strip()),
+        )
+        for cid, label, definition in rows
+    ]
+    return ConceptList(concepts=items, total=len(items))

@@ -1,10 +1,12 @@
-"""The read surface: seven read-only tools over the library (ADR-066, session A3).
+"""The read surface: nine read-only tools over the library (ADR-066, session A3).
 
 What an outside AI program will call through the engine's MCP endpoint (A4), and what the chat's
 record lookups will call (A6). All logic lives here; the endpoint and the chat are thin callers.
 
-- `search_library` — ranked passages for a question, fenced and checked (`search`).
-- `list_folders`, `list_documents`, `get_document`, `get_concept` — records (`records`).
+- `search_library`, `get_passage` — ranked passages for a question, and one passage with the
+  text around it, fenced and checked (`search`).
+- `list_folders`, `list_documents`, `get_document`, `list_concepts`, `get_concept` — records
+  (`records`).
 - `list_conversations`, `get_conversation` — past conversations with derived labels
   (`conversations`).
 
@@ -16,13 +18,15 @@ from doc_assistant.read_surface.conversations import get_conversation, list_conv
 from doc_assistant.read_surface.records import (
     get_concept,
     get_document,
+    list_concepts,
     list_documents,
     list_folders,
 )
-from doc_assistant.read_surface.search import Retrieve, search_library
+from doc_assistant.read_surface.search import Retrieve, get_passage, search_library
 from doc_assistant.read_surface.shapes import SURFACE_VERSION
 
-#: The seven tools, by the names ADR-066 gives them, in its order.
+#: The tools: ADR-066's seven in its order, then the two the user added on 2026-11-17 after the
+#: stand-in client trial (`get_passage`, `list_concepts`).
 TOOLS: tuple[str, ...] = (
     "search_library",
     "list_folders",
@@ -31,6 +35,8 @@ TOOLS: tuple[str, ...] = (
     "list_conversations",
     "get_conversation",
     "get_concept",
+    "get_passage",
+    "list_concepts",
 )
 
 __all__ = [
@@ -40,6 +46,8 @@ __all__ = [
     "get_concept",
     "get_conversation",
     "get_document",
+    "get_passage",
+    "list_concepts",
     "list_conversations",
     "list_documents",
     "list_folders",

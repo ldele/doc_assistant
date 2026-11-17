@@ -158,6 +158,7 @@ def record_answer(
     retrieval_scope: dict[str, Any] | None = None,
     epistemics_markers_enabled: bool | None = None,
     answer_route: dict[str, str] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``.
 
@@ -192,6 +193,7 @@ def record_answer(
             ),
             epistemics_markers_enabled=epistemics_markers_enabled,
             answer_route_json=json.dumps(answer_route) if answer_route is not None else None,
+            context_json=json.dumps(context) if context is not None else None,
         )
         session.add(record)
         session.flush()

@@ -632,6 +632,8 @@ class _ProvenanceInputs:
     # copy of them when they are; see ``_provenance_card``. False when no concept graph exists, in
     # which case the card is the only per-source surface and keeps the list.
     source_strip_rendered: bool = False
+    # A5: the window this turn's calls were fitted to and what gave way (`context.ContextRecord`).
+    context: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping
@@ -45,6 +44,7 @@ from doc_assistant.config import (
     WIKI_MIN_SIMILARITY,
     WIKI_USE_CONCEPT_COMMUNITIES,
 )
+from doc_assistant.context import BYTES_PER_TOKEN, estimate_tokens
 
 log = structlog.get_logger(__name__)
 
@@ -484,15 +484,8 @@ Return JSON only, no prose, no markdown fence:
 # material is bounded: the answer and the prompt's fixed text are reserved, and the rest
 # is filled from a fixed sample of the topic's papers.
 
-BYTES_PER_TOKEN = 3
-"""Floor on UTF-8 bytes per token, to estimate a prompt's size with no tokenizer.
-
-Structural, not tuned: byte-level BPE tokenizers spend more than 3 bytes per token on
-English text and about 3 on CJK text, where a character is 3 bytes, so counting bytes
-rather than characters keeps the estimate above the true count for every script. Measured
-2026-10-18 on the 87-paper prompt of the working library: 3.50 bytes per token (qwen2.5,
-qwen3.5), 3.63 (llama3.1), so the estimate runs 14-17% high; that is the margin the budget
-keeps."""
+# `BYTES_PER_TOKEN` and `estimate_tokens` moved to `doc_assistant.context` (A5) so the wiki and
+# the chat measure text the same way; imported below under their old names.
 
 CHAT_FRAME_TOKENS = 32
 """Tokens a chat template wraps around one user message (role markers, BOS): about ten
@@ -501,11 +494,6 @@ on the models in use. Headroom, not a measurement."""
 _FETCH_BATCH = 16
 """Documents whose excerpts are read per round while a sample fills. Sets how many store
 reads a topic costs, never which papers are chosen."""
-
-
-def estimate_tokens(text: str) -> int:
-    """An upper estimate of ``text``'s token count, with no tokenizer (``BYTES_PER_TOKEN``)."""
-    return math.ceil(len(text.encode("utf-8")) / BYTES_PER_TOKEN)
 
 
 def material_budget(n_docs: int, *, context_tokens: int, max_tokens: int) -> int:

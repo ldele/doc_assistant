@@ -379,6 +379,11 @@ def main() -> int:
         if err:
             print(err)
             return 1
+        # The controller writes an answer record per turn; bring this home's schema up to date
+        # first, as the app does at startup, or a new column fails every record silently.
+        from doc_assistant.db.migrations import init_db
+
+        init_db()
 
     print(f"Loaded {len(cases)} cases from {args.cases}")
     print(f"Data home: {DATA_PATH}")

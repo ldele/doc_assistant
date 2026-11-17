@@ -100,6 +100,7 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # (pre-existing) answer_records table. NULL on every existing row and not backfilled: those
     # turns never recorded it, and NULL reads as "not recorded". Unindexed: read per record.
     ("answer_records", "answer_route_json", "TEXT", None),
+    ("answer_records", "context_json", "TEXT", None),
 ]
 
 

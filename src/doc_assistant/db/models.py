@@ -918,6 +918,10 @@ class AnswerRecord(Base):
     # "this computer". Not folded into `prompt_version`: it names the instrument, not the prompt.
     answer_route_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # A5 (docs/specs/context-handling.md): the window this turn's calls were fitted to and what
+    # gave way, as JSON (`context.ContextRecord`). NULL on rows from before it: "not recorded".
+    context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)

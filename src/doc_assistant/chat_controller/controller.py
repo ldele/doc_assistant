@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 from doc_assistant import (
     app_settings,
     compare,
+    context,
     conversations,
     corpus_stats,
     export,
@@ -72,8 +73,13 @@ from doc_assistant.knowledge.epistemics import (
     load_source_evaluations,
 )
 from doc_assistant.library import document_years
-from doc_assistant.pipeline import RAGPipeline, format_citation, format_docs_for_prompt
-from doc_assistant.prompts import ANSWER_PROMPT
+from doc_assistant.pipeline import (
+    RAGPipeline,
+    fence_passage,
+    format_citation,
+    format_docs_for_prompt,
+)
+from doc_assistant.prompts import ANSWER_PROMPT, REWRITE_PROMPT
 from doc_assistant.provenance import (
     AnswerProvenance,
     RetrievedChunk,
@@ -95,6 +101,16 @@ log = structlog.get_logger(__name__)
 # ============================================================
 # Controller
 # ============================================================
+
+
+def _reply_reserve(provider: str | None, model: str | None) -> int:
+    """Tokens kept free for the reply when a turn is fitted (A5): the ``max_tokens`` the app
+    sets on a Claude call, else the structural reserve (`context.REPLY_RESERVE_TOKENS`)."""
+    if provider == "anthropic" and model:
+        from doc_assistant.llm import max_tokens_for
+
+        return max_tokens_for(model, context.REPLY_RESERVE_TOKENS)
+    return context.REPLY_RESERVE_TOKENS
 
 
 class ChatController:
@@ -123,8 +139,9 @@ class ChatController:
                     # settings.json) must not stop the app from starting: the default answers,
                     # and Getting started names the selection as unknown.
                     log.warning("persisted_selection_unusable", provider=provider, error=str(e))
-        # Cached once — the prompt template doesn't change between turns.
-        self._answer_template_hash = template_hash(str(ANSWER_PROMPT))
+        # Cached once — the prompt templates don't change between turns. Both are hashed (A5):
+        # the rewrite prompt shapes what is searched, so a change to it is a change of prompt.
+        self._answer_template_hash = template_hash(str(ANSWER_PROMPT) + "\n" + str(REWRITE_PROMPT))
 
     # -- public API -------------------------------------------------------
 
@@ -473,6 +490,7 @@ class ChatController:
                 answer_route=providers.describe(pin.turn_provider, pin.turn_model).as_record(
                     pin.turn_provider
                 ),
+                context=pin.context,
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -537,7 +555,8 @@ class ChatController:
                 source_strip_rendered=pin.source_strip_rendered,
             )
         except Exception as e:
-            # Never let provenance failure break the answer.
+            # Never let provenance failure break the answer, but never let it pass unlogged.
+            log.warning("provenance_capture_failed", error=str(e))
             provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
         return _ProvenanceOutcome(
             record_id=record_id, provenance_block=provenance_block, review=review
@@ -577,8 +596,21 @@ class ChatController:
         pre_in, pre_out = counter.input_tokens, counter.output_tokens
         turn_start = time.monotonic()
 
+        # --- A5 (docs/specs/context-handling.md): every call is fitted to the turn's window. ---
+        window = context.window_for(turn_provider)
+        reserve = _reply_reserve(turn_provider, turn_model)
+        rewrite_fit: context.RewriteFit | None = None
         if history:
-            standalone = rag.rewrite(user_question, history, counter=counter)
+            rewrite_fit = context.fit_history(
+                history,
+                fixed_tokens=context.estimate_tokens(
+                    REWRITE_PROMPT.format(history="", question=user_question)
+                ),
+                window=window,
+                reserve=reserve,
+            )
+        if rewrite_fit is not None and not rewrite_fit.skipped and rewrite_fit.messages:
+            standalone = rag.rewrite(user_question, rewrite_fit.messages, counter=counter)
             yield Step("Understanding context", f"Searching for: {standalone}")
         else:
             standalone = user_question
@@ -592,6 +624,29 @@ class ChatController:
         yield Step("Searching documents", f"Found {len(scored)} relevant passages")
 
         docs = [doc for doc, _ in scored]
+
+        # A5: the answer call carries the best-ranked passages that fit; a passage it cannot carry
+        # leaves the sources too, so the answer never cites what its model did not see.
+        answer_fit: context.AnswerFit | None = None
+        if scored and knobs.synthesis_mode != "human":
+            answer_fit = context.fit_passages(
+                docs,
+                fixed_tokens=context.estimate_tokens(
+                    ANSWER_PROMPT.format(context="", question=standalone)
+                ),
+                window=window,
+                reserve=reserve,
+                fenced_tokens=lambda d, n: context.estimate_tokens(fence_passage(d, n)),
+            )
+            if answer_fit.passages_dropped or answer_fit.top_passage_clipped:
+                scored = [(d, scored[i][1]) for i, d in enumerate(answer_fit.docs)]
+                docs = list(answer_fit.docs)
+        context_record = (
+            context.ContextRecord.of(window, rewrite_fit, answer_fit)
+            if rewrite_fit is not None or answer_fit is not None
+            else None
+        )
+        context_note = context.note(context_record) if context_record is not None else None
 
         # Feature 4c: a retrieved figure chunk (chunk_type='figure') carries the Figure
         # sidecar id — resolve its cropped PNG so a renderer can show it inline. Batch the
@@ -696,6 +751,7 @@ class ChatController:
                 # own condition). When it does, it already shows the per-source relevance scores,
                 # so the card drops its duplicate copy of them.
                 source_strip_rendered=source_eval is not None and bool(sources),
+                context=context_record.as_dict() if context_record is not None else None,
             )
         )
         record_id = prov_out.record_id
@@ -725,6 +781,8 @@ class ChatController:
         )
         if prompt_cut is not None:  # ADR-060 choice 7: a server that read under half the prompt
             citation_block += f"\n\n---\n⚠ **Prompt cut?** {prompt_cut}"
+        if context_note is not None:  # A5: what gave way to fit the window, from the record
+            citation_block += f"\n\n---\n**Fitted to the window:** {context_note}"
 
         # --- Export: stash this turn + append the per-turn debug log event ---
         reviewer_summary = None

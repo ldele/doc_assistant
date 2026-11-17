@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 · class: append-only -->
+<!-- status: active · updated: 2026-11-17 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,51 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-17 (4) — Each turn fitted to the model's window, and said (A5)
+
+**What changed.** `context.py`: one estimate (moved from the wiki), the window each call is fitted
+to (`set` for Ollama, a server's own, Anthropic's documented 200,000, else the floor and said), the
+fit in the spec's order (oldest history, then the newest earlier answer shortened, then the
+lowest-ranked passages; the best passage clipped inside its fence, never dropped), a record in the
+new `AnswerRecord.context_json`, and a **Fitted to the window** line on the answer when anything
+gave way. A dropped passage leaves the sources too. `prompt_version` hashes `REWRITE_PROMPT` with
+`ANSWER_PROMPT`. `run_eval` migrates the data home before the controller adapter, and a failed
+provenance capture is now logged. 14 guard tests.
+
+**Why.** ROADMAP row 101, spec `docs/specs/context-handling.md` (accepted 2026-11-17): a prompt past
+the window was cut by the server, silently.
+
+**Measured.** Against H4, conversation on llama read as a citation-coverage drop; a same-day control
+on the commit before A5 showed no difference on either model (coverage −0.030 llama, −0.108 qwen,
+both intervals across zero), and the run's records show nothing gave way in any of 204 turns: on
+the public cases A5 sends what was sent before. The 13-turn case keeps its thread on llama in 3 of
+3 on A5 and on the control; where a thread is lost the rewrite drops the subject's name.
+Figures in the spec's As built.
+
+**Rejected.** Gating on H4 alone: it predates A2's fence, which was never gated on conversations,
+so a drop there could not be told from A2's.
+
+**What it opens.** The rewrite losing the subject on long threads (decision 1's seam: earlier turns
+in the answer prompt). The fit is 127 tokens from acting on the public set. KI-94's `/v1` cut stays:
+the floor does not reach a server that ignores it.
+
+## 2026-11-17 (3) — The context-handling spec, drafted (A5)
+
+**What changed.** `docs/specs/context-handling.md`, a draft: every model call of a turn is measured
+by one shared estimate, fitted to the model's window in a fixed order (oldest history first, then
+the newest earlier answer shortened, then the lowest-ranked passages; never the instructions, the
+question or the best passage), recorded in a new `AnswerRecord.context_json`, and said on the
+answer when anything gave way. A server with no stated window is fitted to the Ollama floor and
+says so. `prompt_version` will hash `REWRITE_PROMPT` too. ROADMAP row 101 points at it.
+
+**Why.** Row 101 was gated on a spec. The user answered its four questions on 2026-11-17 (all four
+as recommended). Today a prompt longer than the window is cut by the server, silently.
+
+**Rejected.** Earlier turns in the answer prompt and a running summary: seams for later, once the
+conversation family says whether the rewrite carries the thread.
+
+**What it opens.** The user's acceptance, then the build and the A5 gate run.
 
 ## 2026-11-17 (2) — The MCP endpoint and its bridge (A4)
 

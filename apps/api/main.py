@@ -44,6 +44,7 @@ from apps.api.routers import (
     health,
     libraries,
     library,
+    mcp,
     settings,
     setup,
     sources,
@@ -206,6 +207,8 @@ def create_app(
     app.include_router(setup.router)
     app.include_router(sources.router)
     app.include_router(updates.router)
+    # ADR-066 / A4: the MCP endpoint (its own token) and the window's routes that switch it.
+    app.include_router(mcp.router)
 
     return app
 

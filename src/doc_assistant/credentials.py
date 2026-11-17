@@ -241,3 +241,36 @@ def clear_bound_key(provider: str) -> bool:
     _save(data)
     log.info("api_key_cleared", provider=provider)
     return True
+
+
+# --- the MCP endpoint's access token (ADR-066 choice 9, A4) -------------------------------------
+#
+# Kept here, beside the API keys, because it grants access: `settings.json` stays shareable. It is
+# not a provider key, so it has its own field and its own two functions; it is never logged.
+
+# The name of a field, not a secret.
+_MCP_TOKEN_FIELD = "mcp_access_token"  # nosec B105
+
+
+def get_mcp_token() -> str | None:
+    """The token an MCP client must send, or ``None`` before the endpoint was first turned on."""
+    value = _load().get(_MCP_TOKEN_FIELD)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def replace_mcp_token() -> str:
+    """Mint a new token and store it, cutting off every client that holds the old one."""
+    import secrets
+
+    token = secrets.token_urlsafe(32)
+    data = _load()
+    data[_MCP_TOKEN_FIELD] = token
+    _save(data)
+    log.info("mcp_token_replaced", hint=_mask(token))
+    return token
+
+
+def mcp_token_hint() -> str | None:
+    """The token's last characters, for display; ``None`` when there is none."""
+    token = get_mcp_token()
+    return _mask(token) if token else None

@@ -10,7 +10,7 @@
 // runnable under `node:test` (apps/desktop/CLAUDE.md — `.ts` is tested, `.svelte.ts` is not). The
 // component owns which sections render; this owns what the categories *are*.
 
-export type SettingsSectionId = 'setup' | 'documents' | 'models' | 'answers' | 'general'
+export type SettingsSectionId = 'setup' | 'documents' | 'models' | 'answers' | 'programs' | 'general'
 
 export interface SettingsSection {
   readonly id: SettingsSectionId
@@ -48,6 +48,12 @@ export const SETTINGS_SECTIONS = [
     label: 'Retrieval',
     icon: 'search',
     blurb: 'How an answer is assembled from your library. Session-only experiments, plus the locked defaults they start from.',
+  },
+  {
+    id: 'programs',
+    label: 'AI programs',
+    icon: 'waypoints',
+    blurb: 'Let an AI program on this computer read your library over MCP. Off until you turn it on.',
   },
   {
     id: 'general',

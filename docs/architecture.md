@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -156,6 +156,7 @@ the screens (next section, ADR-064), and the last column says where a domain is 
 | taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `screens/taxonomy/Taxonomy.svelte` |
 | definitions | `models/definitions.py` | `routers/definitions.py` | `screens/graph/Definition.svelte` (in the concept panel) |
 | settings | `models/settings.py` | `routers/settings.py` | `screens/settings/Settings.svelte` |
+| mcp | `models/mcp.py` | `routers/mcp.py` (`POST /mcp` and `/api/mcp*`; the bridge is `mcp_bridge.py`) | `screens/settings/AiPrograms.svelte` |
 | setup (first run) | `models/setup.py` | `routers/setup.py` | `screens/settings/GettingStarted.svelte` · `ProviderSetup.svelte` |
 | sources (ingestion) | `models/sources.py` | `routers/sources.py` | `screens/settings/ManageFiles.svelte` (*Manage files*) |
 | health | — | `routers/health.py` | `shell/StatusBar.svelte` |

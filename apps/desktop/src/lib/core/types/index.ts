@@ -36,4 +36,5 @@ export type { ConceptCommunity, ConceptGraph, ConceptGraphEdge, ConceptGraphNode
 export type { CitedAuthor, ConceptDefinitions, ConceptSignals, ConceptUsage, DefinitionCandidate, FormOffer, SignalExample, SignalPlace, SignalPlaceKind, UsageLine, VocabularyMatch } from './definitions'
 export type { FieldDetail, FieldMember, HierarchyEdgeRequest, LabelledOption, Proposals, ProposedEdge, TaxonomyField, TaxonomyView } from './taxonomy'
 export type { UpdateState, UpdateStatus } from './updates'
+export type { McpCall, McpCommandSetup, McpSetup, McpStatus } from './mcp'
 export type { LibraryInspection } from './libraries'

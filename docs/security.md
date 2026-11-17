@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 (T6: an MCP client, A3) · class: living -->
+<!-- status: active · updated: 2026-11-17 (A4: the MCP endpoint served; floor check 11) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -33,7 +33,7 @@ what is deliberately not done (§7), and the shape cpc could standardise (§8).
 | T3 | **Another process as the same user** | the data home: `credentials.json`, `library.db`, the extraction cache | any program the user runs |
 | T4 | **A stolen laptop without full-disk encryption** | everything on disk | the research history and the API key, in plaintext |
 | T5 | **The supply chain** | whatever a dependency does | a compromised `marked`, a floating CI action tag |
-| T6 | **An AI program the user connects through MCP** (ADR-066; from A4) | the read surface's nine tools (`src/doc_assistant/read_surface/`): passages, records, and conversations if their switch is on; never a write in this release | its model may hold tools this app never gives (the web, files, sending messages), so text planted in a document can make *it* act. The surface fences each passage and names what the text check found in it (A2, A2b), but this app cannot make another program respect either |
+| T6 | **An AI program the user connects through MCP** (ADR-066; served since A4, off until turned on) | the read surface's nine tools (`src/doc_assistant/read_surface/`): passages, records, and conversations if their switch is on; never a write in this release | its model may hold tools this app never gives (the web, files, sending messages), so text planted in a document can make *it* act. The surface fences each passage and names what the text check found in it (A2, A2b), but this app cannot make another program respect either |
 
 Out of scope on purpose: a hostile LLM provider (the key is theirs to bill; document text already
 goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; `truststore` on
@@ -187,6 +187,7 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 | 7 | Path-confinement tests on every route that opens a file | `pytest tests/integration/test_stored_paths_confined.py tests/unit/test_stored_paths.py` | S-2, S-7 — done 2026-11-04 |
 | 8 | Prompt fence present; planted text marked; unsourced links listed | `pytest tests/unit/test_pipeline_helpers.py tests/unit/test_source_checks.py` · `npm test` (`links.test.ts`) | done 2026-11-16 (S-9) |
 | 9 | Security events exist and fire | a unit test per control | S-11 |
+| 11 | The MCP endpoint is off until turned on, needs its own token, refuses a web page, and hides the conversation tools while their switch is off | `pytest tests/integration/test_api_mcp.py` | done 2026-11-17 (A4) |
 | 10 | Release: this file and the walkthrough were touched since the last tag | `release_preflight` (`checklists`) | done 2026-09-10 |
 
 The `sprint-close` keypoint (`scripts/conventions.toml`) names rows 1–5 as its checklist; when the

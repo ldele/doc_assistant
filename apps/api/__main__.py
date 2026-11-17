@@ -51,6 +51,13 @@ def _configure_frozen_runtime() -> None:
         sys.stderr.flush()
 
 
+# The MCP stdio bridge (A4): a client started this program to talk to the running engine. It needs
+# none of the app stack, so it runs before any of it is imported and exits when the client does.
+if "--mcp-bridge" in sys.argv[1:]:
+    from apps.api.mcp_bridge import run_bridge
+
+    sys.exit(run_bridge())
+
 _configure_frozen_runtime()
 
 import threading  # noqa: E402

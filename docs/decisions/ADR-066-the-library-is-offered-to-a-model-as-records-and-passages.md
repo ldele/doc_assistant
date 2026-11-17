@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-17 (Amendment: nine tools after a stand-in client trial, appended); 2026-11-16 (As built — A3: the read surface, appended); 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
+<!-- status: active · updated: 2026-11-17 (As built — A4: the endpoint and its bridge, appended); 2026-11-17 (Amendment: nine tools after a stand-in client trial, appended); 2026-11-16 (As built — A3: the read surface, appended); 2026-11-13 (accepted as proposed: all nine choices, the seven tools as written); 2026-11-12 (proposed; every choice decided by the user in a grill the same day; not built) · class: append-only -->
 
 # ADR-066 — The library is offered to a model as records and passages: an MCP endpoint in the engine, lookups by rule in the chat, and modes that only change the framing
 
@@ -272,3 +272,33 @@ not see (`tests/eval/baselines/a3_surface_trial_2026-11-17.md`).
 - **The trial, before and after:** 4 then 6 of 9 tasks done, 30 then 24 tool calls, 3,200 then
   2,081 bytes per search passage. Still open: author metadata (extraction, KI-54, KI-89), an author
   filter, and a "nothing relevant" signal, each additive.
+
+## As built — A4, the endpoint and its bridge (2026-11-17)
+
+Appended, not edited in. Session A4 serves the read surface from the running engine.
+
+- **The protocol is hand-written** (the user, 2026-11-17, over the SDK): `doc_assistant.mcp_server`
+  answers `initialize`, `tools/list`, `tools/call` and `ping` as pure functions of a message, in
+  plain JSON (no stream). It agrees the client's protocol version when it knows it, else offers
+  its newest. No dependency was added.
+- **Where it runs (choice 2):** `POST /mcp` on the engine's fixed address
+  (`http://127.0.0.1:8001/mcp`, `apps/api/routers/mcp.py`). The bridge is the same program
+  started with `--mcp-bridge` (`apps/api/mcp_bridge.py`): it forwards each line of a client's input
+  to `/mcp` and holds no library. With the app closed it answers that Provenote is not running.
+  The user chose to build it in this session.
+- **Switches and safety (choice 9):**
+  - The endpoint is off until turned on in *Settings › AI programs*, and answers 404 while off.
+  - Turning it on mints a token, kept in `credentials.json` beside the API keys. *Show setup*
+    shows the token with both setups, and only by POST, which needs the window's launch token.
+    *Replace token…* cuts off every client holding the old one.
+  - The window's launch token neither guards nor opens `/mcp`; a request with a web page's
+    `Origin` is refused.
+  - With the conversations switch off a client sees seven tools, and a hidden one is refused.
+  - Every call is kept in memory (tool, items, time; never its arguments) and shown under *Recent
+    calls*, because the installed engine keeps no log file (KI-90). It is logged as `mcp_call` too.
+- **Driven by a real client:** Claude Code, run headless with a temporary MCP config on a copy of
+  the public papers, listed the seven tools, searched and cited pages over HTTP, and listed a
+  folder and its documents through the bridge. `tests/integration/test_api_mcp.py` holds the
+  endpoint's "Enforced by" tests.
+- **Not verified:** the bridge started from an installed Windows build (it was driven from a
+  checkout), and any client but that one.

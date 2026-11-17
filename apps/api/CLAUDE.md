@@ -10,7 +10,7 @@ else. Endpoints own no retrieval/provenance/claim logic (non-negotiable #3).
 - `routers/*` — one `APIRouter` per domain: `health` · `chat` (SSE `token`/`step`/`result`/`done`,
   compare, claims, export, source/figure) · `conversations` · `library/` · `concepts` ·
   `definitions` (the graph panel's one write, ADR-053) · `taxonomy` · `settings` · `setup` (the
-  **only** route that accepts a secret — never echo one back) · `sources`.
+  **only** route that accepts a secret — never echo one back) · `sources` · `mcp` (own token, A4).
   Handlers read state via `request.app.state`; none import from `main`.
   `library/` is a package — `documents` · `folders` · `keywords` · `spacing` — composed in its `__init__`.
 - `services.py` — cross-router glue: `app.state` status dataclasses + their `202+poll` serializers,

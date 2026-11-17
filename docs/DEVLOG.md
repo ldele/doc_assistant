@@ -44,6 +44,28 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-17 (2) — The MCP endpoint and its bridge (A4)
+
+**What changed.** `src/doc_assistant/mcp_server.py`: a hand-written MCP handler (`initialize`,
+`tools/list`, `tools/call`, `ping`) over the nine read tools, with each tool's description, and a
+bounded in-memory call log. `apps/api/routers/mcp.py`: `POST /mcp` with its own bearer token, off
+until switched on, refusing a web page's `Origin`; `/api/mcp*` for the window (status, switches,
+setup, token replacement). `apps/api/mcp_bridge.py`: `--mcp-bridge` forwards a client's stdio to
+`/mcp`. The token lives in `credentials.json`; the switches in `settings.json`. *Settings › AI
+programs* (`AiPrograms.svelte`) turns it on, shows the setup for both kinds of client, replaces the
+token, offers past conversations, and lists recent calls. `/mcp` is exempt from the launch token.
+Tests: `tests/integration/test_api_mcp.py` (9), `lib/settings/mcp.test.ts`.
+
+**Why.** ADR-066's build order: the endpoint after the read surface. The user chose a hand-written
+protocol and the bridge in this session (2026-11-17). Claude Code, run headless with a temporary
+MCP config on a copy of the public papers, drove both transports.
+
+**Rejected.** The MCP SDK: a dependency tree for three requests. Returning the token on a GET: a
+POST needs the window's launch token. A stream on `GET /mcp`: nothing is ever pushed.
+
+**What it opens.** The bridge from an installed build is unverified (driven from a checkout). The
+release's walkthrough should connect one client to the installed app.
+
 ## 2026-11-17 — The read surface after a stand-in client trial: nine tools (A3)
 
 **What changed.** A Sonnet subagent played an outside AI program on the public papers, with nine

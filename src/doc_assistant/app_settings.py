@@ -360,3 +360,33 @@ def set_ingest_budget(budget: str) -> str:
     save_user_settings(settings)
     log.info("ingest_budget_set", budget=name)
     return name
+
+
+# --- the MCP endpoint's switches (ADR-066 choice 9, A4) -----------------------------------------
+#
+# Both off until the person turns them on. The access token is a secret and lives in
+# `credentials`, not here, so this file stays safe to paste into a bug report.
+
+
+def get_mcp_enabled() -> bool:
+    """Whether an outside AI program may call the read tools at all. Off by default."""
+    return load_user_settings().get("mcp_enabled") is True
+
+
+def set_mcp_enabled(enabled: bool) -> None:
+    settings = load_user_settings()
+    settings["mcp_enabled"] = bool(enabled)
+    save_user_settings(settings)
+    log.info("mcp_enabled_set", enabled=bool(enabled))
+
+
+def get_mcp_conversations() -> bool:
+    """Whether the two conversation tools are offered too. Off by default (choice 9)."""
+    return load_user_settings().get("mcp_conversations") is True
+
+
+def set_mcp_conversations(enabled: bool) -> None:
+    settings = load_user_settings()
+    settings["mcp_conversations"] = bool(enabled)
+    save_user_settings(settings)
+    log.info("mcp_conversations_set", enabled=bool(enabled))

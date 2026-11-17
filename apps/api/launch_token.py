@@ -25,6 +25,9 @@ log = structlog.get_logger(__name__)
 TOKEN_ENV = "DOC_API_TOKEN"  # nosec B105
 TOKEN_HEADER = "X-Doc-Api-Token"  # nosec B105
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+#: Paths with an access token of their own, which a window's launch token must not stand in for:
+#: the MCP endpoint (ADR-066 choice 9) is called by another program, which never has this token.
+_OWN_TOKEN_PATHS = frozenset({"/mcp"})
 _REFUSAL = "This request needs the token the app was started with."
 
 
@@ -46,7 +49,11 @@ class LaunchTokenMiddleware:
         self._expected = token.encode("utf-8")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] in _SAFE_METHODS:
+        if (
+            scope["type"] != "http"
+            or scope["method"] in _SAFE_METHODS
+            or scope["path"] in _OWN_TOKEN_PATHS
+        ):
             await self.app(scope, receive, send)
             return
         sent = b""

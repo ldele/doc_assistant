@@ -22,6 +22,7 @@
     type LibraryState,
   } from '../../lib/core/tauri'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
+  import AiPrograms from './AiPrograms.svelte'
   import Dialog from '../../shell/Dialog.svelte'
   import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../../lib/core/ingest.svelte'
   import GettingStarted from './GettingStarted.svelte'
@@ -331,6 +332,9 @@
           <!-- First (ADR-034): on a fresh install this is the only section that matters, and it says
                so — a model and documents, each one link from the tab that sets it up. -->
           <GettingStarted onOpen={openSection} />
+        {:else if activeSection === 'programs'}
+          <!-- A4: the MCP endpoint. Reads its own status, so it needs nothing from /api/settings. -->
+          <AiPrograms />
         {:else if activeSection === 'general'}
           <General bind:update bind:updateBusy bind:updateError bind:exporting bind:exportError />
         {:else if !settings}

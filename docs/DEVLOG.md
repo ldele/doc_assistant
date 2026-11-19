@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-17 · class: append-only -->
+<!-- status: active · updated: 2026-11-19 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,45 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-19 (2) — The chat-eval baseline re-recorded on 391ea0e
+
+**What changed.** `tests/eval/baselines/chat_baseline_2026-11-19.md`: the five chat families on
+llama3.1:8b and qwen2.5:7b (controller adapter, `--repeat 3`, the 28 public papers and the hostile
+home, reviewer forced local, $0, 3,213 s), with the paired comparison against H4.
+
+**Why.** H4 predates A2's fence, and A2 was gated on hostile and single only, so A6 and A7 gated
+against H4 would confound A2 with their own change.
+
+**Measured.** Against H4: citation coverage on single higher at this n on both models (+0.068,
++0.086); conversation on llama a measured drop (−0.160, interval [−0.343, −0.002]), as A5's run
+saw and its control showed is not A5's; every other continuous score no difference at this n.
+Records still routes 3 of 8. The language-switch attack now breaks in every trial on both models.
+
+**Rejected.** Repeating H4's `/v1` column: it measured KI-94, not a model.
+
+**What it opens.** A6's gate (`docs/specs/chat-record-lookups.md` § Done when) reads these runs.
+The conversation drop has no isolated cause.
+
+## 2026-11-19 (1) — The record-lookups spec, accepted (A6)
+
+**What changed.** `docs/specs/chat-record-lookups.md`, accepted by the user as written: record questions (counts, health,
+folders, one document's metadata, missing fields, a curated concept) answered by rule or by
+`/folder`, `/concept` and `/document` by title, through the read surface's own lookups and with no
+model call. A named document is found by its recorded title, else its filename, with no score:
+one match answers, several are listed, none goes to retrieval. A rule-answered turn writes an
+answer record with a new nullable `records_json` and says it came from the library's records.
+ROADMAP row 102 points at it.
+
+**Why.** Row 102 and ADR-066 choice 5. The user answered the scoped grill's five questions on
+2026-11-19, all as recommended.
+
+**Rejected.** Gaps as a lookup (signals of uneven trust); finding a document by search (a passage
+citing a paper would report the wrong document's year); the scoped question command, parked to
+A7. The plan's "a local model that cannot do it says so" is set aside: no model takes part.
+
+**What it opens.** The build and the gate run. Open question 1 is resolved as recommended: the
+lookup commands write the same answer record as a rule.
 
 ## 2026-11-17 (4) — Each turn fitted to the model's window, and said (A5)
 

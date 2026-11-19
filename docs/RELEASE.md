@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-04 (§5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
+<!-- status: active · updated: 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -50,7 +50,7 @@ uv sync --extra cu130 --extra dev                    # restore the dev venv
 # 5. preflight again — it now ties the RG-012 PASS to THIS artifact
 uv run --no-sync python -m scripts.release_preflight
 
-# 6. tag, then push
+# 6. tag, then push (the maintainer runs these two, §6-§7)
 git tag -a vX.Y.Z -m "..."
 git push origin main && git push origin vX.Y.Z
 
@@ -236,6 +236,9 @@ under "Known limits" (§2). Log the pass in `.claude/REVIEWS.md` row 6.
 
 ## 6 · Tag
 
+**The maintainer runs `git tag`** (the agent's `git tag` is denied, cpc ADR-080); the agent
+prepares the annotation text and hands back the exact command.
+
 Tag **after** the gate is green, and verify the tag's source is the source that was tested:
 
 ```bash
@@ -253,7 +256,8 @@ and tag again: v0.7.0 stayed as a tag with no release, and v0.7.1 shipped.
 
 ## 7 · Push
 
-`git push origin main && git push origin vX.Y.Z`. Publishing is deliberate and separate: everything
+The maintainer runs `git push origin main && git push origin vX.Y.Z`; the agent hands the command
+back and does not run it. Publishing is deliberate and separate: everything
 above is reversible, this is not.
 
 **Both halves.** `git push origin main` does **not** push tags. v0.4.1's tag sat only on the build
@@ -265,6 +269,9 @@ they were tagged as was not.
 **Since ADR-044 the app checks `releases/latest` and shows the user what it finds.** A pushed tag
 with no *release object* behind it is invisible to that check: every install reports "no published
 release to compare against" forever, which is honest and useless. Pushing the tag is not publishing.
+
+The maintainer runs this command (the agent's `gh release create` is denied, cpc ADR-080); the
+agent prepares the notes file and hands back the exact command below.
 
 ```bash
 gh release create vX.Y.Z apps/desktop/src-tauri/target/release/bundle/nsis/Provenote_X.Y.Z_x64-setup.exe \

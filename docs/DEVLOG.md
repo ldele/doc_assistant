@@ -44,6 +44,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-19 (3) — cpc's deny rules laid for the agent's git commands
+
+**What changed.** `cpc-init --root . --add deny-rules` created `.claude/settings.json` with cpc's 22
+deny entries (cpc ADR-080): Claude Code now refuses the agent's `git commit`, `push`, `merge` and
+`tag` (and the `git -C` forms), `gh pr merge`, `gh release create`, and any command carrying the
+push marker, in Bash and PowerShell. The file is local-only like the rest of `.claude/` (ADR-029),
+so it is not in the commit.
+
+**Why.** The owner runs every commit, push, merge and tag in this repo already; the rule is now
+enforced by the tool instead of by memory.
+
+**Rejected.** Force-adding `.claude/settings.json` past the `.claude/` ignore: it would reverse
+ADR-029 for one file, which is the owner's call.
+
+**What it opens.** Three lines contradicted the rules; the owner chose to reword them and keep the
+entries, and they now say the maintainer runs the command: `AGENTS.md` (Non-negotiables, first
+bullet), `docs/RELEASE.md` §6, §7 and §7b (the runbook's `git tag`, `git push` and
+`gh release create`), and the project memory `release-publish-needs-user-go`. The rules apply on
+this machine only, since `settings.json` stays local.
+
 ## 2026-11-19 (2) — The chat-eval baseline re-recorded on 391ea0e
 
 **What changed.** `tests/eval/baselines/chat_baseline_2026-11-19.md`: the five chat families on

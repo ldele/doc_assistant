@@ -72,7 +72,7 @@ module, read that module's file and stay inside its boundary:
 
 ## Non-negotiables (digest — full text in `.claude/CONTEXT.md`)
 
-- **Never `git commit`/`push`, nor open/merge a PR, without explicit user review.** Stage, summarize, stop.
+- **The agent never runs `git commit`/`push`/`merge`/`tag`, nor opens or merges a PR** (denied in `.claude/settings.json`, cpc ADR-080). Stage, show the diff, hand back one command; the maintainer runs it.
 - `apps/` are thin shells; all logic in `src/doc_assistant/`. **Enrichment-Layer Pattern** — derived
   data is an idempotent sidecar module + CLI runner, never mutates the chunk store.
 - **Locked settings** (TOP_K, CANDIDATE_K, chunk sizes, retrieval weights, …) change only via an

@@ -34,7 +34,7 @@ from __future__ import annotations
 
 # Re-exported so `chat_controller.app_settings.X` resolves for callers/tests. Patching an
 # ATTRIBUTE on this shared module object is fine through any binding; REPLACING a name
-# (e.g. is_library_query) must target `chat_controller.controller` instead.
+# (e.g. answer_record_question) must target `chat_controller.controller` instead.
 from doc_assistant import app_settings
 from doc_assistant.chat_controller.controller import (
     ChatController,

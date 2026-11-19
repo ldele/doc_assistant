@@ -32,9 +32,9 @@
 - **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is a
   *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the
   `chat_controller` split): use `library.documents._reveal_in_file_manager`,
-  `chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE`. Setting an
-  *attribute on a shared module object* (`app_settings.SETTINGS_PATH`) is fine through any binding;
-  `sparse_index.fingerprint` imports the tokeniser per call for the same reason.
+  `chat_controller.controller.answer_record_question`, `chat_controller.helpers.SYNTHESIS_MODE`.
+  Setting an *attribute on a shared module object* (`app_settings.SETTINGS_PATH`) is fine through
+  any binding; `sparse_index.fingerprint` imports the tokeniser per call for the same reason.
 
 **Tests:** `tests/unit/` + `tests/integration/` (mirror module names).
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

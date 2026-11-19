@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
+<!-- status: active · updated: 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
 
 # How answers work — evidence vs. interpretation
 
@@ -51,6 +51,24 @@ Set `SYNTHESIS_MODE` in `.env` (or check the current one with `/synthesis`):
   per-claim markers and the accept/reject/edit loop.
 - **`human`** — **evidence only**. The AI returns the passages and does *not* write
   an interpretation — the synthesis is yours. (It's also faster: no generation call.)
+
+## Questions about the library itself
+
+Some questions are about your library rather than about what its documents say: how many
+documents it holds, what a folder holds, a document's recorded title, authors, year or type,
+which documents have no title, year or authors recorded, or a concept you have taken on. These
+are answered from the library's records by fixed rules, with no passage read and no model asked,
+so the answer is the same whichever model you use. The answer ends with a line saying so, and
+it is kept in the conversation's history like any other answer.
+
+- A document is found by its recorded title (or its file name where it has no title): every word
+  you give must be in it. If several match, they are listed and you are asked which. If none
+  does, the question is answered from passages as usual.
+- `/folder <name>`, `/concept <name>` and `/document <title>` do the same lookups when a rule
+  misses your phrasing.
+- A question about content stays a content question: *which documents in the Demo corpus folder
+  are about attention?* is answered from passages.
+- Gaps are not answered this way: their signals are not yet reliable enough to state as records.
 
 ## The flow
 

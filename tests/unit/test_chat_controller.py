@@ -328,10 +328,13 @@ def test_dispatch_pending_edit_routes_to_adjudication(monkeypatch):
     assert session.awaiting_edit is None  # reset
 
 
-def test_dispatch_library_query(monkeypatch):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: True)
+def test_dispatch_library_query(monkeypatch, temp_db):
+    from doc_assistant.record_lookups import RecordAnswer
+
     monkeypatch.setattr(
-        chat_controller.controller, "answer_library_query", lambda t: "LIBRARY ANSWER"
+        chat_controller.controller,
+        "answer_record_question",
+        lambda t: RecordAnswer(text="LIBRARY ANSWER", lookup="library_summary"),
     )
     controller = ChatController(rag=FakeRAG([], []))
     result = _final(_results(controller, Session(), "how many pdfs?"))
@@ -354,19 +357,17 @@ def test_failing_command_is_surfaced_not_raised(monkeypatch):
 
 
 def test_failing_library_query_is_surfaced(monkeypatch):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: True)
-
     def _boom(text):
         raise RuntimeError("db gone")
 
-    monkeypatch.setattr(chat_controller.controller, "answer_library_query", _boom)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", _boom)
     controller = ChatController(rag=FakeRAG([], []))
     result = _final(_results(controller, Session(), "how many pdfs?"))
     assert "Library query failed" in result.answer and "db gone" in result.answer
 
 
 def test_dispatch_rag_path_taken(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Cells ", "meet [1]."]))
     events = _results(controller, Session(), "How do neurons connect?")
     # Streamed tokens then exactly one Result (the RAG branch).
@@ -390,7 +391,7 @@ class _UnreachableRAG(FakeRAG):
 def test_an_unreachable_engine_ends_the_turn_with_a_sentence(monkeypatch, temp_db):
     """Release walkthrough §6 (the user, 2026-10-26): Ollama down, the window showed nothing
     under the question, because the exception killed the stream."""
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(chat_controller.controller, "OLLAMA_HOST", "http://localhost:11434")
     rag = _UnreachableRAG(_three_clean_sources(), [])
     rag.provider, rag.model = "ollama", "llama3.1:8b"
@@ -432,7 +433,7 @@ def test_the_failure_sentence_names_the_engine_never_the_error_text():
 
 
 def test_ai_turn_result_shape(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(
         rag=FakeRAG(_three_clean_sources(), ["Neurons meet at synapses [1]."])
     )
@@ -455,7 +456,7 @@ def test_ai_turn_result_shape(monkeypatch, temp_db):
 
 
 def test_uncited_claim_is_flagged(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     # An uncited sentence → marker "unsupported" → surfaced for adjudication.
     controller = ChatController(
         rag=FakeRAG(_three_clean_sources(), ["Neurons are discrete cells."])
@@ -475,7 +476,7 @@ def test_claim_citing_only_a_nonexistent_source_reads_unresolved_not_uncited(mon
 
     Both share ``MARKER_UNSUPPORTED``, so only the badge can tell them apart — and they need
     different fixes (a hallucinated source number vs. an answer that never cited)."""
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(
         rag=FakeRAG(_three_clean_sources(), ["Neurons are discrete cells [9]."])
     )
@@ -536,7 +537,7 @@ def test_provenance_card_never_calls_a_relevance_score_a_quality_judgement():
 
 
 def test_human_mode_returns_evidence_only(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(chat_controller.helpers, "SYNTHESIS_MODE", "human")
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["SHOULD NOT STREAM"]))
     events = _results(controller, Session(), "summarise the evidence")
@@ -567,7 +568,7 @@ def test_adjudicate_passes_decision_and_edit(monkeypatch):
 
 
 def test_provenance_failure_is_caught(monkeypatch):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     # No temp_db here → stub the D3 strip reads so nothing touches the real DB (current=None → no
     # concept graph → the strip no-ops).
     monkeypatch.setattr(chat_controller.controller, "current_graph_version", lambda: None)
@@ -654,7 +655,7 @@ def _stub_source_eval(monkeypatch, *, evals=None, current="gv1", sidecar="gv1", 
 
 def test_markers_flat_join(monkeypatch, temp_db):
     # D2 answer-surface markers: a flat chunk's contested evaluation → a chip when markers are on.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -667,7 +668,7 @@ def test_markers_flat_join(monkeypatch, temp_db):
 def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
     # E1.1 (KI-8): a PC parent joins DIRECTLY on its {doc}:p{parent_index} key. d1's parent_index
     # 0 → key "d1:p0" (the re-projection retired the coarse text-containment).
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, evals={"d1:p0": _eval(superseded=True)})
     controller = ChatController(rag=FakeRAG(_pc_sources(), ["Answer [1]."]))
@@ -679,7 +680,7 @@ def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
 
 def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
     # No concept graph → the strip no-ops: every markers empty, no chip, source_eval None.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, current=None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -708,7 +709,7 @@ def test_source_evaluation_load_failure_does_not_break_turn_but_warns(monkeypatc
     # The D3 strip is advisory — a read failure (e.g. the chunk_epistemics table absent on an older
     # DB) must leave the turn intact, unmarked, no strip — but never silently: under an always-on
     # strip a swallowed failure is a silently-lying UI, so it WARNs.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     fake_log = _FakeLog()
     monkeypatch.setattr(chat_controller.controller, "log", fake_log)
@@ -732,7 +733,7 @@ def test_markers_disabled_by_default(monkeypatch, temp_db):
     # pair's index in a generated list, so the chips encode list position rather than the corpus.
     # NOT setting the flag — this exercises the shipped default. A contested assessment must stay
     # silent. (Was `test_markers_enabled_by_default`; G1 turned it on, KI-33 turns it back off.)
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -743,7 +744,7 @@ def test_markers_disabled_by_default(monkeypatch, temp_db):
 def test_markers_still_available_when_explicitly_enabled(monkeypatch, temp_db):
     # The containment is a default, not a removal — nothing was deleted, so opting back in must
     # still work. This is what makes the KI-33 flip reversible in one env var once ADR-041 lands.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -760,7 +761,7 @@ def test_markers_still_available_when_explicitly_enabled(monkeypatch, temp_db):
 def test_d3_strip_always_on_even_when_markers_disabled(monkeypatch, temp_db):
     # THE D3 boundary: the D2 influence toggle (markers) is OFF, but the assessment strip STILL
     # attaches per-source evaluation (coverage + year) + the freshness summary. D3 is not gated.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)  # D2 influence off
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")}, years={"d1": 2021})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -772,7 +773,7 @@ def test_d3_strip_always_on_even_when_markers_disabled(monkeypatch, temp_db):
 
 
 def test_d3_coverage_and_not_assessed(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="unique")})  # only d1 assessed
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -784,7 +785,7 @@ def test_d3_coverage_and_not_assessed(monkeypatch, temp_db):
 
 
 def test_d3_freshness_stale_when_versions_differ(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     _stub_source_eval(
         monkeypatch,
         evals={"d1:0": _eval(coverage="corroborated")},
@@ -801,7 +802,7 @@ def test_d3_freshness_stale_when_versions_differ(monkeypatch, temp_db):
 def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
     # The D2 opt-out leaves the answer-surface markers empty even with a contested assessment —
     # but (D3) the evaluation is still attached. The toggle governs influence, not assessment.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -821,7 +822,7 @@ def test_persisted_default_gates_markers_and_is_recorded_in_provenance(monkeypat
     from doc_assistant.db.models import AnswerRecord
     from doc_assistant.db.session import session_scope
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)  # config layer: on
     chat_controller.app_settings.set_markers_enabled(False)  # persisted layer: off — wins
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
@@ -844,7 +845,7 @@ def test_effective_markers_value_is_recorded_true_on_a_default_turn(monkeypatch,
     from doc_assistant.db.models import AnswerRecord
     from doc_assistant.db.session import session_scope
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, evals={})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -860,7 +861,7 @@ def test_effective_markers_value_is_recorded_true_on_a_default_turn(monkeypatch,
 
 
 def test_top_k_override_changes_retrieve_arg(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
     controller = ChatController(rag=rag)
     _results(controller, Session(), "q", RagOverrides(top_k=3))
@@ -868,7 +869,7 @@ def test_top_k_override_changes_retrieve_arg(monkeypatch, temp_db):
 
 
 def test_synthesis_mode_override_routes_to_human_even_when_default_is_ai(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(
         chat_controller.helpers, "SYNTHESIS_MODE", "ai"
     )  # locked default stays "ai"
@@ -880,7 +881,7 @@ def test_synthesis_mode_override_routes_to_human_even_when_default_is_ai(monkeyp
 
 
 def test_overrides_none_reproduces_default_effective_values(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
     controller = ChatController(rag=rag)
     # overrides=None (the default) — same as never passing overrides at all.
@@ -896,7 +897,7 @@ def test_overrides_none_reproduces_default_effective_values(monkeypatch, temp_db
 def test_all_none_fields_reproduce_default_effective_values(monkeypatch, temp_db):
     # An explicit RagOverrides() with every field None must be indistinguishable from
     # overrides=None — the "all fields None" case the spec calls out separately.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
     controller = ChatController(rag=rag)
     result = _final(_results(controller, Session(), "q", RagOverrides()))
@@ -910,7 +911,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
     # the second turn — proving no module-global was mutated. EPISTEMICS_MARKERS_ENABLED is
     # monkeypatched to False only to give the override something to differ from; nothing here
     # touches the module during the turns themselves (no monkeypatch in that path).
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     captured_full_text: list[str] = []
@@ -952,7 +953,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
 
 
 def test_epistemics_markers_override_per_turn(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)  # locked: off
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -964,7 +965,7 @@ def test_epistemics_markers_override_per_turn(monkeypatch, temp_db):
 
 
 def test_reviewer_evidence_chars_override_per_turn(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     captured: dict[str, str] = {}
     real_record_answer = chat_controller.controller.record_answer
 
@@ -983,7 +984,7 @@ def test_reviewer_evidence_chars_override_per_turn(monkeypatch, temp_db):
 
 
 def test_overrides_note_flags_only_the_differing_fields(monkeypatch, temp_db):
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q", RagOverrides(top_k=5)))
     assert "top_k=5 (default 10)" in result.provenance_card_md
@@ -1074,7 +1075,7 @@ def test_reconfigure_rejects_keyless_provider_and_does_not_swap(settings_file, m
 def test_is_local_reflects_the_effective_provider_not_the_boot_constant(monkeypatch, temp_db):
     # Even if the boot-default LLM_PROVIDER is anthropic, a rag whose EFFECTIVE provider is
     # ollama (post-switch) must report is_local=True / no metered cost.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "LLM_PROVIDER", "anthropic")
     rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
     rag.provider = "ollama"
@@ -1088,7 +1089,7 @@ def test_reviewer_follows_the_effective_provider_when_unpinned(monkeypatch, temp
     # A flagged (low-confidence) answer triggers the reviewer call; it must resolve against
     # the rag's effective provider/model, not the config default, when REVIEWER_PROVIDER was
     # never explicitly pinned.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     monkeypatch.setattr(config, "REVIEWER_PROVIDER_PINNED", False)
     captured: dict[str, object] = {}
 
@@ -1144,7 +1145,7 @@ def test_mid_turn_switch_does_not_relabel_the_in_flight_turn(monkeypatch, temp_d
     # 2026-07-11 review follow-up: every turn label used to be read off self.rag AFTER
     # streaming, so a switch landing mid-turn stamped the new provider/model on an answer
     # the pre-switch model generated. The turn now snapshots the instrument up front.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=_SwitchMidStreamRAG(_three_clean_sources(), []))
     result = _final(_results(controller, Session(), "How do neurons connect?"))
 
@@ -1194,7 +1195,7 @@ def test_a_turn_with_no_sources_answers_without_the_model(
     # The walkthrough of 2026-10-30: at 0 chunks llama3.1:8b wrote "it does describe a technique
     # where ... [4]", a quotation and a source that do not exist. An empty Sources block is not
     # an instruction a model reliably obeys, so the honest sentence cannot be left to one.
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=_NoSourcesRAG(chunks=chunks))
 
     result = _final(_results(controller, Session(), "What about dropout?"))
@@ -1213,7 +1214,7 @@ def test_a_turn_with_no_sources_answers_without_the_model(
 def test_a_turn_with_no_sources_runs_no_reviewer(
     monkeypatch: pytest.MonkeyPatch, temp_db: Path
 ) -> None:
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
 
     def no_review(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("a zero-source turn reached the reviewer")
@@ -1230,7 +1231,7 @@ def test_a_turn_with_no_sources_still_reaches_the_history_sidebar(
     # The sidebar is a read over AnswerRecord: a turn with no record would vanish on reopen.
     from doc_assistant import conversations
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     session = Session()
 
     _final(_results(ChatController(rag=_NoSourcesRAG(chunks=0)), session, "What about dropout?"))
@@ -1245,7 +1246,7 @@ def test_a_turn_with_no_sources_stays_out_of_the_model_context(
 ) -> None:
     # Nothing was answered, so nothing is left to rewrite a follow-up against: a second question
     # at 0 documents must not need a model either (no key, or Ollama down, on a first run).
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     rag = _NoSourcesRAG(chunks=0)
     controller = ChatController(rag=rag)
     session = Session()
@@ -1261,7 +1262,7 @@ def test_a_turn_with_no_sources_stays_out_of_the_model_context(
 def test_a_turn_with_no_sources_keeps_a_session_override_visible(
     monkeypatch: pytest.MonkeyPatch, temp_db: Path
 ) -> None:
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=_NoSourcesRAG(chunks=42))
 
     result = _final(_results(controller, Session(), "What about dropout?", RagOverrides(top_k=3)))
@@ -1272,7 +1273,7 @@ def test_a_turn_with_no_sources_keeps_a_session_override_visible(
 def test_human_mode_with_no_sources_keeps_its_own_answer(
     monkeypatch: pytest.MonkeyPatch, temp_db: Path
 ) -> None:
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=_NoSourcesRAG(chunks=0))
 
     result = _final(
@@ -1295,7 +1296,7 @@ def test_controller_adapter_records_route_audit_and_cited_files(monkeypatch, tem
     from doc_assistant.eval.adapters import controller_adapter
     from doc_assistant.eval.cases import EvalCase
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Cells ", "meet [1]."]))
     out = controller_adapter(controller)(EvalCase(id="c", query="How do neurons connect?"))
     assert out.answer == "Cells meet [1]."
@@ -1312,7 +1313,7 @@ def test_controller_adapter_replays_earlier_turns_in_one_fresh_session(monkeypat
     from doc_assistant.eval.adapters import controller_adapter
     from doc_assistant.eval.cases import EvalCase
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     seen: list[str] = []
     real = ChatController.handle_message
 
@@ -1331,12 +1332,16 @@ def test_controller_adapter_replays_earlier_turns_in_one_fresh_session(monkeypat
     assert seen == ["0:alone"]  # no history leaks from the previous case
 
 
-def test_controller_adapter_library_route(monkeypatch):
+def test_controller_adapter_library_route(monkeypatch, temp_db):
     from doc_assistant.eval.adapters import controller_adapter
     from doc_assistant.eval.cases import EvalCase
+    from doc_assistant.record_lookups import RecordAnswer
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: True)
-    monkeypatch.setattr(chat_controller.controller, "answer_library_query", lambda t: "3 PDFs.")
+    monkeypatch.setattr(
+        chat_controller.controller,
+        "answer_record_question",
+        lambda t: RecordAnswer(text="3 PDFs.", lookup="library_summary"),
+    )
     controller = ChatController(rag=FakeRAG([], []))
     out = controller_adapter(controller)(EvalCase(id="r", query="how many pdfs?"))
     assert out.raw["route"] == "library" and out.answer == "3 PDFs."
@@ -1347,7 +1352,7 @@ def test_controller_adapter_raises_on_a_failed_turn(monkeypatch):
     from doc_assistant.eval.adapters import controller_adapter
     from doc_assistant.eval.cases import EvalCase
 
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
 
     def _boom(*a, **kw):
         raise RuntimeError("engine down")
@@ -1362,7 +1367,7 @@ def test_controller_adapter_raises_on_a_failed_turn(monkeypatch):
 def test_a_source_addressed_to_an_ai_is_marked_and_its_links_are_listed(monkeypatch, temp_db):
     """A2 (security.md S5): the source view names text written to an AI, and the turn lists the
     web addresses its passages carry, so the renderer can keep other links from being clickable."""
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     scored = [
         (
             _doc(

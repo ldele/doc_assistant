@@ -115,7 +115,7 @@ def _sources() -> list[tuple[Document, float]]:
 
 
 def _events(tokens: list[str], temp_db, monkeypatch) -> tuple[list[object], TurnResult]:
-    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     controller = ChatController(rag=FakeRAG(_sources(), tokens))
     events = list(controller.handle_message(Session(), "How do neurons connect?"))
     result = next(e.result for e in events if isinstance(e, Result))

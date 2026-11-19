@@ -101,6 +101,9 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # turns never recorded it, and NULL reads as "not recorded". Unindexed: read per record.
     ("answer_records", "answer_route_json", "TEXT", None),
     ("answer_records", "context_json", "TEXT", None),
+    # A6 — what a rule-answered turn read (`record_lookups.RecordAnswer.as_record`). NULL on every
+    # existing row and not backfilled: no earlier turn was answered by a lookup that recorded it.
+    ("answer_records", "records_json", "TEXT", None),
 ]
 
 

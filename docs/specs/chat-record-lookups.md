@@ -1,4 +1,4 @@
-<!-- status: accepted · updated: 2026-11-19 (accepted by the user as written, open question 1 as recommended; written after the user's five answers in A6's scoped grill) · class: living -->
+<!-- status: active · updated: 2026-11-19 (built; the gate recorded under As built); 2026-11-19 (accepted by the user as written, open question 1 as recommended; written after the user's five answers in A6's scoped grill) · class: living -->
 
 # Spec — The chat answers record questions from the records, by rule and command (ROADMAP 102, session A6)
 
@@ -139,3 +139,48 @@ not a concept, ADR-054). A field that is not recorded is said to be not recorded
 | 1 | Do the lookup commands write an answer record, as a rule-answered turn does? | resolved, 2026-11-19: yes, the same record, since they call the same lookup; other commands unchanged (the user accepted the spec as written) |
 | 2 | The wording of the closing line | settled in the build, pinned by a test |
 | G1–G5 | The grill's five branches | resolved, 2026-11-19 (Decisions above) |
+
+## As built (2026-11-19)
+
+**Code.** `src/doc_assistant/record_lookups.py` holds the rules, the lookups, their formatting
+and the note. `answer_record_question(text)` returns a `RecordAnswer` (the text, the lookup's
+name, its arguments, the ids the answer names, the row count) or `None`, which sends the question
+to retrieval. The rules run in a fixed order: a folder's count, a folder's list, the folders,
+documents missing a field, the concepts, one concept, one document's field, then today's seven
+patterns (`query_router.is_library_query`). Folders come first, so a folder count is never the
+library's (KI-95). `query_router.library_lookup` still answers count, health, latest and the
+overview, and now also says what it read. The controller (`_records_result`) writes the answer
+record with `records_json` = `{lookup, args, ids, rows, via}` (`via`: `rule` or `command`;
+`asked: true` when several documents matched). It has no passages, no model and no tokens, the
+route is `library`, and the turn joins the session's history.
+
+**Settled in the build:**
+
+- **The note** (open question 2): *From the library's records: no passage was read and no model
+  was asked.*, in italics, as the answer's last line (`RECORDS_NOTE`, pinned by
+  `test_the_records_note_wording_is_pinned`).
+- **A named span** is what the question gives after the field: the tail ("in my library",
+  "according to my library", "as my library records it") and words that do not name a document
+  ("the", "paper", "document", …) are dropped. A topical word after a document noun ("the paper
+  about X") declines, as `query_router`'s rule does. Matching compares words, not substrings.
+- **A document with no title** is one whose read-surface title is its file name (`DocumentItem`
+  falls back to it). The missing-title lookup and the stem match both read it so.
+- **`/document` by id prefix keeps today's details view** (health, chunks, ingestion history),
+  which writes no record. Only an argument that is not a matching id prefix goes through the
+  title lookup and is recorded. No rule takes an id, so "the same lookup as its rule" applies to
+  the title.
+- **A concept rule needs the word "concept"** (or "my/the chosen definition of"), so *what is the
+  definition of attention?* stays a content question. An unknown concept is then said to be
+  unknown; it does not fall through.
+- **`ids`** are the records the answer names, capped at the 50 a list answer shows; `rows` counts
+  every row.
+- **Cost at scale.** A document-field rule, a missing-field rule and `/document` by title read
+  every document a page (100) at a time through `list_documents`: about 100 small reads at 10,000
+  documents. Bounded by the page and not by memory.
+
+**The gate (2026-11-19, `tests/eval/baselines/a6_record_lookups_2026-11-19.md`).** Records: 8 of
+8 routed to `library` with `contains_all` 1.000 on both columns, every trial (391ea0e: 3 of 8;
+0.500 and 0.625). Absent, single and conversation: no drop beyond the interval on either column;
+absent's citation coverage on qwen-7b reads higher at this n. Two cases flipped once in three
+trials, each matched by another flipping back; none of those turns reached a rule. $0, 2,521 s,
+local Ollama, reviewer pinned to `llama3.1:8b`. Guard tests: `tests/unit/test_record_lookups.py`.

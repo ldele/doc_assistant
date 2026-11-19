@@ -1,6 +1,7 @@
 """Slash-command parsing and response formatting.
 
-Handles /library, /document, /help, /cites, /cited-by, /graph commands.
+Handles /library, /document, /help, /cites, /cited-by, /graph commands. The lookup commands
+(/folder, /concept, /document by title) are answered by `record_lookups` (A6).
 Returns markdown strings — the UI layer decides how to display them.
 
 No UI framework imports in this module.
@@ -149,7 +150,9 @@ def help_message() -> str:
 - `/library marginal` — show only marginal documents
 - `/library healthy` — show only healthy documents
 - `/library pdf` (or epub, etc.) — show documents of a specific format
-- `/document <id>` — full details for one document (use first 8 chars of ID)
+- `/document <id or title>` — one document: details by ID (first 8 chars), or its record by title
+- `/folder <name>` — the documents in a folder; `/folder` alone lists the folders
+- `/concept <name>` — a concept you have taken on, with its forms and chosen definition
 - `/cites <id>` — citations this document makes
 - `/cited-by <id>` — documents in the library that cite this one
 - `/graph <id>` — small citation subgraph around this document

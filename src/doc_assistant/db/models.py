@@ -922,6 +922,12 @@ class AnswerRecord(Base):
     # gave way, as JSON (`context.ContextRecord`). NULL on rows from before it: "not recorded".
     context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # A6 (docs/specs/chat-record-lookups.md): a turn answered from the library's records by a
+    # rule or a lookup command, as JSON {lookup, args, ids, rows, via[, asked]}: the lookup's name,
+    # its arguments, the ids it read and how many rows it returned. NULL on every other turn and on
+    # rows from before it.
+    records_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)

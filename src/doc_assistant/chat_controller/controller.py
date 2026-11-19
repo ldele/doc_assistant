@@ -89,7 +89,7 @@ from doc_assistant.provenance import (
     record_answer,
     template_hash,
 )
-from doc_assistant.query_router import answer_library_query, is_library_query
+from doc_assistant.record_lookups import RecordAnswer, answer_command, answer_record_question
 from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
 from doc_assistant.source_checks import addressed_to_ai, sourced_links
 from doc_assistant.synthesis import audit_citations, render_evidence_markdown
@@ -314,6 +314,7 @@ class ChatController:
         backend remembered would be a scope the user could forget (spec S9). Same RAG-path-only
         carve."""
         # --- Slash commands ---
+        started = time.monotonic()
         parsed = parse_command(text)
         if parsed is not None:
             cmd, arg = parsed
@@ -326,6 +327,14 @@ class ChatController:
                 elif cmd in ("export-debug", "export_debug"):
                     msg, path = self.export_conversation(session, dev=True)
                     yield Result(self._command_result(msg, download_path=path, route="command"))
+                elif (looked_up := answer_command(cmd, arg)) is not None:
+                    # A6: `/folder`, `/concept`, `/document <title>` call the rules' lookups and
+                    # are recorded as a rule-answered turn is.
+                    yield Result(
+                        self._records_result(
+                            session, text, looked_up, via="command", started=started
+                        )
+                    )
                 else:
                     yield Result(self._command_result(execute_command(cmd, arg), route="command"))
             except Exception as e:
@@ -349,12 +358,16 @@ class ChatController:
                 yield Result(self._command_result(f"⚠ Edit failed: {e}", route="claim_edit"))
             return
 
-        # --- Library metadata questions (answered from SQLite) ---
-        if is_library_query(text):
-            try:
-                yield Result(self._command_result(answer_library_query(text), route="library"))
-            except Exception as e:
-                yield Result(self._command_result(f"⚠ Library query failed: {e}", route="library"))
+        # --- Record questions (A6): answered from the library's records, no model called ---
+        try:
+            answered = answer_record_question(text)
+        except Exception as e:
+            yield Result(self._command_result(f"⚠ Library query failed: {e}", route="library"))
+            return
+        if answered is not None:
+            yield Result(
+                self._records_result(session, text, answered, via="rule", started=started)
+            )
             return
 
         # --- RAG pipeline ---
@@ -398,6 +411,38 @@ class ChatController:
             download_path=download_path,
             route=route,
         )
+
+    def _records_result(
+        self, session: Session, text: str, answered: RecordAnswer, *, via: str, started: float
+    ) -> TurnResult:
+        """A turn answered from the library's records (A6, `docs/specs/chat-record-lookups.md`).
+
+        Recorded with no passages, no model and no tokens; ``records_json`` names the lookup, its
+        arguments and the ids it read. It cites nothing, so it adds no label to the conversation.
+        It joins the history, so a follow-up can refer to it."""
+        record_id: str | None = None
+        try:
+            record_id = record_answer(
+                query=text,
+                answer=answered.text,
+                retrieved_chunks=[],
+                latency_ms=(time.monotonic() - started) * 1000.0,
+                session_id=session.session_id,
+                records=answered.as_record(via),
+            )
+        except Exception as e:  # provenance is a sidecar, never blocks — but never silently
+            log.warning("records_answer_record_failed", error=str(e))
+        self._append_export_turn(
+            session,
+            export.ExportTurn(
+                question=text, answer=answered.text, sources=[], record_id=record_id
+            ),
+        )
+        session.history.append({"role": "user", "content": text})
+        session.history.append({"role": "assistant", "content": answered.text})
+        result = self._command_result(answered.text, route="library")
+        result.record_id = record_id
+        return result
 
     def _attach_source_evaluation(
         self,

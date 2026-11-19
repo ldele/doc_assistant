@@ -44,6 +44,38 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-19 (4) — Record questions answered from the records, by rule and command (A6)
+
+**What changed.** `src/doc_assistant/record_lookups.py`: fixed rules map a question about the
+library itself to one read-surface lookup, or to `library_summary` (`query_router`): counts and
+health, folders, one document's metadata, missing fields, a curated concept. A named document is found by its recorded title, else its
+filename stem, every content word matching. One match answers, several are listed, none goes to
+retrieval. The controller now writes an answer record with no passages and no model, the new nullable
+`AnswerRecord.records_json` (migrated additively: lookup, args, ids, rows, via), route `library`.
+The answer ends with *From the library's records: no passage was read and no model was asked.*
+New commands `/folder`, `/concept`, and `/document` by title call the same lookups and write the
+same record. 85 guard tests in `tests/unit/test_record_lookups.py`; the controller tests' seam is
+now `answer_record_question`. Detail: the spec's As built.
+
+**Why.** ROADMAP 102, ADR-066 choice 5, `docs/specs/chat-record-lookups.md` (accepted
+2026-11-19). On 391ea0e the records family routed 3 of 8 cases to the library, and KI-95 answered
+a folder count with the library's count.
+
+**Measured.** `tests/eval/baselines/a6_record_lookups_2026-11-19.md`: records 8 of 8 routed with
+`contains_all` 1.000 on llama3.1:8b and qwen2.5:7b, every trial (391ea0e: 3 of 8; 0.500, 0.625).
+Absent, single and conversation: no drop beyond the interval on either column. Two binary cases
+flipped once in three trials, each matched by one flipping back; 0 of 264 content case-runs
+reached a rule. $0, 2,521 s. KI-95 closed. Full suite: 3,517 passed, 3 skipped.
+
+**Rejected.** Sending `/document <id prefix>` through the new lookup: it would drop today's
+details view (health, chunks, ingestion history), and no rule takes an id. A concept rule on
+"what is the definition of X" without the word "concept": it would turn content questions into
+lookups.
+
+**What it opens.** The scoped question command (A7). A concept fixture for the eval data home, so
+the concept lookups are measured and not only unit-tested. A title match reads every document a
+page at a time: about 100 small reads at 10,000 documents, not yet timed.
+
 ## 2026-11-19 (3) — cpc's deny rules laid for the agent's git commands
 
 **What changed.** `cpc-init --root . --add deny-rules` created `.claude/settings.json` with cpc's 22

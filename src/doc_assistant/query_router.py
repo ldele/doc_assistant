@@ -9,6 +9,7 @@ that the UI layer can display however it wants.
 """
 
 import re
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from doc_assistant.library import library_summary, list_documents
@@ -66,11 +67,27 @@ def health_badge(health: str | None) -> str:
 # ============================================================
 
 
+@dataclass(frozen=True)
+class LibraryLookup:
+    """Today's library answer, with what it read: the lookup's name, the document ids it named
+    and how many rows it returned (A6's `AnswerRecord.records_json`)."""
+
+    answer: str
+    lookup: str
+    ids: list[str] = field(default_factory=list)
+    rows: int = 0
+
+
 def answer_library_query(text: str) -> str:
     """Answer a library metadata question from SQLite.
 
     Returns a markdown string. The UI layer sends it as-is.
     """
+    return library_lookup(text).answer
+
+
+def library_lookup(text: str) -> LibraryLookup:
+    """Answer a library metadata question from SQLite, saying what was read."""
     lower = text.lower()
     summary = library_summary()
 
@@ -78,7 +95,10 @@ def answer_library_query(text: str) -> str:
     if re.search(r"(latest|newest|recent|last)", lower):
         docs = list_documents()
         if not docs:
-            return "Your library is empty. Add documents to `data/sources/` and run ingestion."
+            return LibraryLookup(
+                "Your library is empty. Add documents to `data/sources/` and run ingestion.",
+                "list_documents",
+            )
         with_dates = [d for d in docs if d.added_at is not None]
         if with_dates:
             latest = max(
@@ -86,43 +106,61 @@ def answer_library_query(text: str) -> str:
                 key=lambda d: d.added_at or datetime.min,
             )
             date_str = latest.added_at.strftime("%Y-%m-%d %H:%M") if latest.added_at else "unknown"
-            return (
+            return LibraryLookup(
                 f"**Most recently added:** `{latest.filename}` "
                 f"({latest.format.upper()}, "
                 f"{latest.chunk_count or 0} chunks, "
                 f"{health_badge(latest.health)})\n\n"
                 f"Added: {date_str}\n\n"
-                f"Use `/document {latest.id[:8]}` for full details."
+                f"Use `/document {latest.id[:8]}` for full details.",
+                "list_documents",
+                [latest.id],
+                1,
             )
-        return "Documents exist but have no recorded add dates. Try `/library` to browse."
+        return LibraryLookup(
+            "Documents exist but have no recorded add dates. Try `/library` to browse.",
+            "list_documents",
+        )
 
     # Broken/marginal documents
     if re.search(r"(broken|marginal|unhealthy)", lower):
         health = "broken" if "broken" in lower else "marginal"
         docs = list_documents(health=health)
         if not docs:
-            return f"No {health} documents in your library."
+            return LibraryLookup(f"No {health} documents in your library.", "list_documents")
         names = ", ".join(f"`{d.filename}`" for d in docs[:10])
         more = f" (and {len(docs) - 10} more)" if len(docs) > 10 else ""
-        return (
+        return LibraryLookup(
             f"**{len(docs)} {health} document(s):** {names}{more}\n\n"
-            f"Use `/library {health}` for details."
+            f"Use `/library {health}` for details.",
+            "list_documents",
+            [d.id for d in docs[:10]],
+            len(docs),
         )
 
     # Count / how many
     if re.search(r"(how many|count|total|number)", lower):
+        if summary.total_documents == 0:
+            return LibraryLookup(
+                "**0 documents**, 0 chunks: the library holds no documents yet.",
+                "library_summary",
+            )
         health_str = " · ".join(f"{h}: {n}" for h, n in sorted(summary.by_health.items()))
-        return (
+        return LibraryLookup(
             f"**{summary.total_documents} documents**, "
             f"{summary.total_chunks:,} chunks.\n\n"
             f"Health: {health_str}\n\n"
-            f"Use `/library` for the full list."
+            f"Use `/library` for the full list.",
+            "library_summary",
+            rows=1,
         )
 
     # Generic library overview
-    return (
+    return LibraryLookup(
         f"**Library:** {summary.total_documents} documents, "
         f"{summary.total_chunks:,} chunks.\n\n"
         f"Use `/library` to browse, `/document <id>` for details, "
-        f"or `/help` for all commands."
+        f"or `/help` for all commands.",
+        "library_summary",
+        rows=1,
     )

@@ -109,7 +109,12 @@ class FakeRAG:
         return self._scored
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         yield from self._tokens
 
@@ -382,7 +387,12 @@ class _UnreachableRAG(FakeRAG):
     """The answer engine refuses the connection, as Ollama does when it is not running."""
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         raise httpx.ConnectError("[WinError 10061] No connection could be made")
         yield ""  # unreachable: makes this a generator, like the real stream
@@ -1132,7 +1142,12 @@ class _SwitchMidStreamRAG(FakeRAG):
     """FakeRAG whose stream simulates a live provider switch landing mid-turn."""
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         yield "Neurons "
         # A concurrent POST /api/settings lands while tokens are still streaming.
@@ -1177,7 +1192,12 @@ class _NoSourcesRAG(FakeRAG):
         return question
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         raise AssertionError("a zero-source turn reached the model")
 

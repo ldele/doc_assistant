@@ -44,6 +44,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-19 (5) — The chat-modes spec, accepted (A7)
+
+**What changed.** `docs/specs/chat-modes.md`, accepted by the user as written: a chat mode is a name and a persona-and-task
+text that replaces the answer prompt's first line; the grounding rule, the citing block and the
+fence stay frozen. Two built in (*Research assistant*, today's prompt byte for byte, and *Critical
+reading*); a person's own are kept in a new `library.db` table, flagged when their text fights the
+frozen rules and recorded *not evaluated*. A mode is chosen per conversation (`/mode`), and the
+template is hashed per turn. Row 40 rides here: evidence only runs no rewrite and no multi-query.
+ROADMAP rows 37 and 40 point at it; the plan gains A7b.
+
+**Why.** Rows 37 and 40 and ADR-066 choice 6. The user answered the scoped grill's seven questions
+on 2026-11-19, all as recommended.
+
+**Rejected.** A mode that may loosen "only the sources" (`no_invention` would stop meaning one
+thing); a global or per-turn mode; a modes file; refusing to save a flagged mode; bundling the
+scoped question and labels (moved to A7b, one PR per session).
+
+**What it opens.** The build and the gate: critical reading on single,
+conversation, absent and hostile against the 391ea0e baseline, per column.
+
 ## 2026-11-19 (4) — Record questions answered from the records, by rule and command (A6)
 
 **What changed.** `src/doc_assistant/record_lookups.py`: fixed rules map a question about the

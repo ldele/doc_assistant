@@ -106,8 +106,13 @@ def rag_pipeline_adapter(pipeline: RAGPipeline) -> Callable[[str], EvalOutput]:
     return _call
 
 
-def controller_adapter(controller: ChatController) -> Callable[[EvalCase], EvalOutput]:
+def controller_adapter(
+    controller: ChatController, *, mode_id: str | None = None
+) -> Callable[[EvalCase], EvalOutput]:
     """Return a callable ``(case) -> EvalOutput`` that plays the case through ``controller``.
+
+    ``mode_id`` (A7) is the chat mode every case's conversation uses, set on it before its first
+    turn as `/mode` would set it; ``None`` leaves the default mode.
 
     Per case: a fresh ``Session`` (no history leaks between cases), the earlier turns replayed
     in order and their results discarded, then the scored turn. A turn that ends in a
@@ -132,6 +137,10 @@ def controller_adapter(controller: ChatController) -> Callable[[EvalCase], EvalO
 
     def _call(case: EvalCase) -> EvalOutput:
         session = Session()
+        if mode_id is not None:
+            from doc_assistant.chat_modes import set_conversation_mode
+
+            set_conversation_mode(session.session_id, mode_id)
         for earlier in case.prior_turns:
             _turn(session, earlier)
         result = _turn(session, case.query)

@@ -136,3 +136,4 @@ Marker_Testings.ipynb
 *.ipynb
 docs/DEVLOG.md.bak
 .chainlit_run.log
+data/rejoin_ignore.json

@@ -45,6 +45,7 @@ from apps.api.routers import (
     libraries,
     library,
     mcp,
+    modes,
     settings,
     setup,
     sources,
@@ -198,6 +199,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(conversations.router)
+    app.include_router(modes.router)
     app.include_router(library.router)
     app.include_router(libraries.router)
     app.include_router(concepts.router)

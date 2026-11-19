@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from doc_assistant.chat_modes import DEFAULT_MODE, ChatMode, conversation_mode
 from doc_assistant.db.models import AnswerRecord, ConversationMeta
 from doc_assistant.db.session import session_scope
 from doc_assistant.export import ExportSource, ExportTurn, render_conversation_markdown
@@ -64,15 +65,20 @@ class ConversationTurn:
     # Replayed from the record so a reopened conversation cannot present a scoped answer as a
     # whole-library one; that would be the same silent lie, just deferred.
     retrieval_scope: dict[str, Any] | None = None
+    # A7 — the chat mode this turn's answer prompt used and whether it is evaluated, replayed from
+    # the record; None on a turn no answer prompt took part in and on records from before A7.
+    chat_mode: str | None = None
+    chat_mode_evaluated: bool | None = None
 
 
 @dataclass(frozen=True)
 class ConversationDetail:
-    """A reopened conversation: its title + ordered turns."""
+    """A reopened conversation: its title + ordered turns, and the chat mode its next turn uses."""
 
     session_id: str
     title: str
     turns: list[ConversationTurn]
+    mode: ChatMode = DEFAULT_MODE
 
 
 def _truncate(text: str, limit: int = _TITLE_MAX) -> str:
@@ -397,6 +403,8 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
                 retrieval_scope=(
                     json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
                 ),
+                chat_mode=row.chat_mode,
+                chat_mode_evaluated=row.chat_mode_evaluated,
             )
             for row in rows
         ]
@@ -404,4 +412,6 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
         title = (meta.title_override if meta and meta.title_override else None) or _truncate(
             rows[0].original_query or rows[0].query
         )
-        return ConversationDetail(session_id=session_id, title=title, turns=turns)
+    return ConversationDetail(
+        session_id=session_id, title=title, turns=turns, mode=conversation_mode(session_id)
+    )

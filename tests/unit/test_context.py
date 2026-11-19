@@ -179,7 +179,12 @@ class _Rag:
         return list(self.scored)
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         self.answer_docs.append(list(docs))
         yield "An answer [1]."
@@ -286,9 +291,10 @@ def test_the_prompt_version_covers_the_rewrite_prompt(monkeypatch: pytest.Monkey
     from langchain_core.prompts import ChatPromptTemplate
 
     from doc_assistant.chat_controller import controller as controller_mod
+    from doc_assistant.prompts import ANSWER_PROMPT
 
-    before = ChatController(rag=_Rag([]))._answer_template_hash  # type: ignore[arg-type]
+    before = controller_mod.turn_template_hash(ANSWER_PROMPT)
     changed = ChatPromptTemplate.from_template("Rewrite it differently. {history} {question}")
     monkeypatch.setattr(controller_mod, "REWRITE_PROMPT", changed)
-    after = ChatController(rag=_Rag([]))._answer_template_hash  # type: ignore[arg-type]
+    after = controller_mod.turn_template_hash(ANSWER_PROMPT)
     assert before != after

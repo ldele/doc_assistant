@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from apps.api.models._common import _as_utc
 from apps.api.models.chat import ScopePayload
+from apps.api.models.modes import ChatModePayload
 
 if TYPE_CHECKING:
     from doc_assistant.conversations import (
@@ -57,6 +58,8 @@ class ConversationMetaUpdate(BaseModel):
     archived: bool | None = None
     deleted: bool | None = None
     title: str | None = None
+    # A7: the conversation's chat mode from its next turn — a mode's id; "" sets the default.
+    mode_id: str | None = None
 
 
 class ConversationBulkUpdate(BaseModel):
@@ -87,6 +90,10 @@ class ConversationTurnPayload(BaseModel):
     sources: list[ConversationSourcePayload]
     # ADR-025 F2 — replayed from the record, so a reopened scoped answer still says it was scoped.
     scope: ScopePayload | None = None
+    # A7 — the chat mode the turn's answer prompt used, and whether it is evaluated; null on a turn
+    # no answer prompt took part in (evidence only, a records answer) and on older records.
+    chat_mode: str | None = None
+    chat_mode_evaluated: bool | None = None
 
     @classmethod
     def from_turn(cls, t: ConversationTurn) -> ConversationTurnPayload:
@@ -99,15 +106,19 @@ class ConversationTurnPayload(BaseModel):
                 for s in t.sources
             ],
             scope=(ScopePayload(**t.retrieval_scope) if t.retrieval_scope is not None else None),
+            chat_mode=t.chat_mode,
+            chat_mode_evaluated=t.chat_mode_evaluated,
         )
 
 
 class ConversationDetailPayload(BaseModel):
-    """A reopened conversation — its title + ordered turns (read-only transcript)."""
+    """A reopened conversation — its title + ordered turns (read-only transcript), and the chat
+    mode its next turn uses (A7)."""
 
     session_id: str
     title: str
     turns: list[ConversationTurnPayload]
+    mode: ChatModePayload
 
     @classmethod
     def from_detail(cls, d: ConversationDetail) -> ConversationDetailPayload:
@@ -115,4 +126,5 @@ class ConversationDetailPayload(BaseModel):
             session_id=d.session_id,
             title=d.title,
             turns=[ConversationTurnPayload.from_turn(t) for t in d.turns],
+            mode=ChatModePayload.from_mode(d.mode),
         )

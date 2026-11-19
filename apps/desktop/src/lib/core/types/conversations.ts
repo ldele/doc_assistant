@@ -6,6 +6,7 @@
 // Mirrors apps/api/models/conversations.py.
 
 import type { SourceView, TurnScope } from './chat'
+import type { ChatMode } from './modes'
 
 // Conversation history (feature-conversation-history.md). GET /api/conversations returns the
 // sidebar list; GET /api/conversations/{sid} rehydrates one chat as a read-only transcript.
@@ -32,9 +33,14 @@ export interface ConversationTurn {
   sources: ConversationSource[]
   // ADR-025 F2 — replayed from the record so a reopened scoped answer still says it was scoped.
   scope: TurnScope | null
+  // A7 — the chat mode the turn's answer prompt used; null when no answer prompt took part.
+  chat_mode: string | null
+  chat_mode_evaluated: boolean | null
 }
 export interface ConversationDetail {
   session_id: string
   title: string
   turns: ConversationTurn[]
+  // A7 — the chat mode the conversation's next turn uses.
+  mode: ChatMode
 }

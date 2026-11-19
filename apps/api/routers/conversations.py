@@ -82,10 +82,17 @@ def get_conversation_route(session_id: str) -> ConversationDetailPayload:
 
 @router.patch("/api/conversations/{session_id}")
 def update_conversation_route(session_id: str, body: ConversationMetaUpdate) -> dict[str, bool]:
-    """Set a conversation's management flags (pin / archive / soft-delete). Only the fields
-    present in the body change; others are left as-is. Idempotent per field."""
+    """Set a conversation's management flags (pin / archive / soft-delete) and its chat mode (A7,
+    from the next turn; ``""`` is the default). Only the fields present in the body change;
+    others are left as-is. Idempotent per field. An unknown mode id is a 404, changing nothing."""
+    from doc_assistant.chat_modes import ModeNotFound, set_conversation_mode
     from doc_assistant.conversations import set_conversation_meta
 
+    if body.mode_id is not None:
+        try:
+            set_conversation_mode(session_id, body.mode_id or None)
+        except ModeNotFound as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
     set_conversation_meta(
         session_id,
         pinned=body.pinned,

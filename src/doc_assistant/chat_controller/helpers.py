@@ -353,6 +353,15 @@ def _token_suffix(prov: AnswerProvenance, *, is_local: bool) -> str:
     return f" · {total:,} tokens"
 
 
+def _mode_suffix(prov: AnswerProvenance) -> str:
+    """The card's mode entry (A7): the mode's name and whether it is evaluated; empty when the
+    record names no mode."""
+    if not prov.chat_mode:
+        return ""
+    state = "evaluated" if prov.chat_mode_evaluated else "not evaluated"
+    return f" · **Mode** {prov.chat_mode} ({state})"
+
+
 def _format_provenance_card(
     prov: AnswerProvenance,
     signals: ConfidenceSignals,
@@ -387,6 +396,7 @@ def _format_provenance_card(
         f"**Model** `{prov.model_name or '?'}` · "
         f"**Embedding** `{prov.embedding_model or '?'}` · "
         f"**top_k** {prov.top_k} · **parent-child** {prov.use_parent_child}"
+        f"{_mode_suffix(prov)}"
     )
     hint = f"_Review:_ `/review {id8}` · _Export:_ `/export-record {id8}`"
 
@@ -634,6 +644,11 @@ class _ProvenanceInputs:
     source_strip_rendered: bool = False
     # A5: the window this turn's calls were fitted to and what gave way (`context.ContextRecord`).
     context: dict[str, Any] | None = None
+    # A7: this turn's template hash (over the answer prompt its mode built and the rewrite
+    # prompt), its mode's name, and whether that mode is evaluated.
+    template_hash: str = ""
+    chat_mode: str | None = None
+    chat_mode_evaluated: bool | None = None
 
 
 @dataclass(frozen=True)

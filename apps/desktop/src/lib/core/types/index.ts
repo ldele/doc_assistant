@@ -38,3 +38,4 @@ export type { FieldDetail, FieldMember, HierarchyEdgeRequest, LabelledOption, Pr
 export type { UpdateState, UpdateStatus } from './updates'
 export type { McpCall, McpCommandSetup, McpSetup, McpStatus } from './mcp'
 export type { LibraryInspection } from './libraries'
+export type { ChatMode, ChatModeDeleted, ChatModeSaved } from './modes'

@@ -87,6 +87,11 @@ class AnswerProvenance:
     # (the effective value after U1b override > persisted setting > config default). None = a
     # pre-E3 record: honestly "unknown", never coerced to either boolean.
     epistemics_markers_enabled: bool | None = None
+    # A7 — the chat mode whose framing the answer prompt used, and whether that mode is evaluated
+    # (built in) or a person's own (not evaluated). None = no answer prompt took part, or a record
+    # from before A7.
+    chat_mode: str | None = None
+    chat_mode_evaluated: bool | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict (datetimes → isoformat strings)."""
@@ -160,12 +165,16 @@ def record_answer(
     answer_route: dict[str, str] | None = None,
     context: dict[str, Any] | None = None,
     records: dict[str, Any] | None = None,
+    chat_mode: str | None = None,
+    chat_mode_evaluated: bool | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``.
 
     ``answer_route`` (ADR-060) is the answering provider, the host the text went to, whether that
     is this computer, and who bills (``providers.Facts.as_record``). ``records`` (A6) is what a
-    turn answered from the library's records read (`record_lookups.RecordAnswer.as_record`)."""
+    turn answered from the library's records read (`record_lookups.RecordAnswer.as_record`).
+    ``chat_mode`` / ``chat_mode_evaluated`` (A7) name the mode whose framing the answer prompt
+    used and whether it is evaluated; both ``None`` on a turn no answer prompt took part in."""
     # Exclude the transient fields — the wide reviewer-only `full_text` and the 7d join key
     # `chunk_key` (ADR-2). The persisted card keeps the compact display excerpt only.
     chunks_json = json.dumps(
@@ -197,6 +206,8 @@ def record_answer(
             answer_route_json=json.dumps(answer_route) if answer_route is not None else None,
             context_json=json.dumps(context) if context is not None else None,
             records_json=json.dumps(records) if records is not None else None,
+            chat_mode=chat_mode,
+            chat_mode_evaluated=chat_mode_evaluated,
         )
         session.add(record)
         session.flush()
@@ -310,6 +321,8 @@ def _row_to_provenance(row: AnswerRecord) -> AnswerProvenance:
             json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
         ),
         epistemics_markers_enabled=row.epistemics_markers_enabled,
+        chat_mode=row.chat_mode,
+        chat_mode_evaluated=row.chat_mode_evaluated,
     )
 
 

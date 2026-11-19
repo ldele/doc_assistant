@@ -11,6 +11,7 @@ import structlog
 from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict
 from sentence_transformers import CrossEncoder
@@ -720,14 +721,18 @@ class RAGPipeline:
         docs: list[Document],
         counter: Any = None,
         llm: Any | None = None,
+        prompt: ChatPromptTemplate | None = None,
     ) -> Generator[str, None, None]:
         """Stream the answer over ``docs``. ``llm`` (ADR-011) pins the turn to a caller's
         snapshot of the generation model: this is a generator, so the chain binds lazily at
         the first token — without the pin, a concurrent ``set_chat_model`` landing between
         the caller's snapshot and that first token would stream on a model the caller never
-        recorded. ``None`` = bind ``self.llm`` live (pre-ADR-011 behaviour)."""
+        recorded. ``None`` = bind ``self.llm`` live (pre-ADR-011 behaviour). ``prompt`` (A7) is
+        the turn's chat-mode answer prompt; ``None`` = the default mode's ``ANSWER_PROMPT``."""
         context = format_docs_for_prompt(docs)
-        chain = ANSWER_PROMPT | (llm if llm is not None else self.llm)
+        chain = (prompt if prompt is not None else ANSWER_PROMPT) | (
+            llm if llm is not None else self.llm
+        )
         callbacks = [counter] if counter else []
         for chunk in chain.stream(
             {"context": context, "question": question},

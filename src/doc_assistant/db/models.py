@@ -928,6 +928,13 @@ class AnswerRecord(Base):
     # rows from before it.
     records_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # A7 (docs/specs/chat-modes.md): the chat mode whose framing the answer prompt used, by name
+    # as it read at the turn, and whether that mode is evaluated (built in: true; a person's own:
+    # false). NULL on a turn no answer prompt took part in (evidence only, a rule-answered turn,
+    # nothing retrieved) and on rows from before it, which read as "not recorded".
+    chat_mode: Mapped[str | None] = mapped_column(String, nullable=True)
+    chat_mode_evaluated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1071,6 +1078,25 @@ class ConversationMeta(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # A user-set title; when null the list/detail fall back to the derived first-question title.
     title_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # A7: the conversation's chat mode — a built-in mode's id or a `chat_modes` row's id. NULL
+    # means the default mode; an id that no longer resolves reads as the default too.
+    mode_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class ChatModeRow(Base):
+    """A person's own chat mode (A7, `docs/specs/chat-modes.md`): a name and the framing text that
+    replaces the answer prompt's first line. The two built-in modes live in code
+    (`chat_modes.BUILT_IN`), never here. Additive — ``create_all`` makes the table."""
+
+    __tablename__ = "chat_modes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # Lower-cased name: uniqueness ignores case.
+    name_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    framing: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 

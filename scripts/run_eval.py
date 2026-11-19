@@ -327,6 +327,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help=(
+            "The chat mode every controller column answers in (A7, docs/specs/chat-modes.md): "
+            "a built-in mode's name ('Critical reading') or one saved in the data home. "
+            "Recorded in each run's note and config. Default: the default mode."
+        ),
+    )
+    parser.add_argument(
         "--repeat",
         type=int,
         default=1,
@@ -384,6 +395,21 @@ def main() -> int:
         from doc_assistant.db.migrations import init_db
 
         init_db()
+
+    chat_mode = None
+    if args.mode:
+        if any(c.adapter != "controller" for c in app_columns):
+            print("--mode needs the controller adapter: the pipeline adapter has no chat modes.")
+            return 1
+        from doc_assistant.chat_modes import find_mode
+
+        chat_mode = find_mode(args.mode)
+        if chat_mode is None:
+            print(f"--mode: no mode is named {args.mode!r} in this data home.")
+            return 1
+        state = "evaluated" if chat_mode.evaluated else "not evaluated"
+        print(f"Chat mode: {chat_mode.name} ({state})")
+    mode_tag = f"[mode: {chat_mode.name}]" if chat_mode is not None else None
 
     print(f"Loaded {len(cases)} cases from {args.cases}")
     print(f"Data home: {DATA_PATH}")
@@ -455,7 +481,9 @@ def main() -> int:
                     from doc_assistant.chat_controller import ChatController
 
                     controller = ChatController(rag=pipeline)
-                sut: Any = controller_adapter(controller)
+                sut: Any = controller_adapter(
+                    controller, mode_id=chat_mode.id if chat_mode is not None else None
+                )
             else:
                 sut = rag_pipeline_adapter(pipeline)
             print(f"\n##### Column {col.name}: {col.provider} / {col.model} via {col.adapter}")
@@ -467,9 +495,11 @@ def main() -> int:
                 results = runner.run(cases, sut, progress=_progress, takes_case=takes_case)
 
                 trial_note = args.note
+                if mode_tag is not None:  # A7: the run's note names the mode it answered in
+                    trial_note = f"{trial_note} {mode_tag}" if trial_note else mode_tag
                 if args.repeat > 1:
                     tag = f"[trial {trial + 1}/{args.repeat}]"
-                    trial_note = f"{args.note} {tag}" if args.note else tag
+                    trial_note = f"{trial_note} {tag}" if trial_note else tag
 
                 run_id = store.persist_run(
                     results,
@@ -487,6 +517,8 @@ def main() -> int:
                         "llm_model": pipeline.model,
                         "column": col.name,
                         "adapter": col.adapter,
+                        # A7: the chat mode the controller answered in (None: the default).
+                        "chat_mode": chat_mode.name if chat_mode is not None else None,
                         # The reviewer a controller turn may call is part of what it measured.
                         "reviewer": "/".join(reviewers[col.name] or ()) or None,
                         "judge": f"{judge[0]}/{judge[1]}" if judge else None,

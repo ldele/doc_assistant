@@ -103,7 +103,12 @@ class FakeRAG:
         return [(d, s) for d, s in docs if scope is None or d.metadata["doc_hash"] in scope]
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+        self,
+        question: str,
+        docs: list[Document],
+        counter: object = None,
+        llm: object = None,
+        prompt: object = None,
     ) -> Iterator[str]:
         yield from self._tokens
 

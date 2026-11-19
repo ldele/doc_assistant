@@ -15,9 +15,11 @@ from pathlib import Path
 
 import structlog
 from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
 
 from doc_assistant import (
     app_settings,
+    chat_modes,
     compare,
     context,
     conversations,
@@ -79,7 +81,7 @@ from doc_assistant.pipeline import (
     format_citation,
     format_docs_for_prompt,
 )
-from doc_assistant.prompts import ANSWER_PROMPT, REWRITE_PROMPT
+from doc_assistant.prompts import REWRITE_PROMPT
 from doc_assistant.provenance import (
     AnswerProvenance,
     RetrievedChunk,
@@ -113,6 +115,20 @@ def _reply_reserve(provider: str | None, model: str | None) -> int:
     return context.REPLY_RESERVE_TOKENS
 
 
+def turn_template_hash(answer_prompt: ChatPromptTemplate) -> str:
+    """The template hash of one turn (A7): over the answer prompt its chat mode built and the
+    rewrite prompt, both of which shape the turn (A5). Computed per turn, so a mode switched
+    between two turns gives each its own ``prompt_version``."""
+    return template_hash(str(answer_prompt) + "\n" + str(REWRITE_PROMPT))
+
+
+# A7 / row 40: evidence only searches a follow-up as typed, so the answer says so when it had one.
+EVIDENCE_AS_TYPED_NOTE = (
+    "_Evidence only searched your question as typed: the earlier turns were not used to "
+    "rewrite it, since that takes a model call._"
+)
+
+
 class ChatController:
     """Owns the turn orchestration. Stateless across turns (the injected ``Session``
     carries per-conversation state). Imports the same library functions the old
@@ -139,9 +155,6 @@ class ChatController:
                     # settings.json) must not stop the app from starting: the default answers,
                     # and Getting started names the selection as unknown.
                     log.warning("persisted_selection_unusable", provider=provider, error=str(e))
-        # Cached once — the prompt templates don't change between turns. Both are hashed (A5):
-        # the rewrite prompt shapes what is searched, so a change to it is a change of prompt.
-        self._answer_template_hash = template_hash(str(ANSWER_PROMPT) + "\n" + str(REWRITE_PROMPT))
 
     # -- public API -------------------------------------------------------
 
@@ -321,7 +334,14 @@ class ChatController:
             try:
                 # Export commands need the live session transcript, so they're handled here
                 # (stateful) rather than in the stateless commands.execute_command dispatcher.
-                if cmd in ("export", "export-conversation", "export_conversation"):
+                if cmd == "mode":
+                    # A7: the conversation's chat mode, listed or switched from the next turn.
+                    yield Result(
+                        self._command_result(
+                            chat_modes.mode_command(session.session_id, arg), route="command"
+                        )
+                    )
+                elif cmd in ("export", "export-conversation", "export_conversation"):
                     msg, path = self.export_conversation(session, dev=False)
                     yield Result(self._command_result(msg, download_path=path, route="command"))
                 elif cmd in ("export-debug", "export_debug"):
@@ -508,7 +528,7 @@ class ChatController:
         skips claim adjudication). The ``overrides_note``/``scope_note`` suffix is appended by the
         caller, which owns those turn knobs."""
         prov_version = prompt_version_hash(
-            template_hash=self._answer_template_hash,
+            template_hash=pin.template_hash,
             top_k=pin.top_k,
             use_parent_child=USE_PARENT_CHILD,
             embedding_model=pin.embedding_model,
@@ -536,6 +556,8 @@ class ChatController:
                     pin.turn_provider
                 ),
                 context=pin.context,
+                chat_mode=pin.chat_mode,
+                chat_mode_evaluated=pin.chat_mode_evaluated,
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -551,6 +573,8 @@ class ChatController:
                 token_input=pin.token_input,
                 token_output=pin.token_output,
                 latency_ms=pin.latency_ms,
+                chat_mode=pin.chat_mode,
+                chat_mode_evaluated=pin.chat_mode_evaluated,
             )
             signals = compute_confidence_signals(prov)
             # PR 5.1 — quiet UI on clean answers, loud on flagged ones. The card ALWAYS
@@ -630,6 +654,17 @@ class ChatController:
         # --- ADR-010: resolve effective per-turn knobs (None = locked default; never a
         # module-global assignment — request-scoped so concurrent turns can't leak). ---
         knobs = _resolve_turn_knobs(overrides)
+        evidence_only = knobs.synthesis_mode == "human"
+
+        # --- A7: the conversation's chat mode, read once for the turn; its framing builds the
+        # answer prompt, and the turn's template hash is taken over what it actually used. A mode
+        # that cannot be read falls back to the default rather than failing the turn. ---
+        try:
+            mode = chat_modes.conversation_mode(session.session_id)
+        except Exception as e:
+            log.warning("chat_mode_unreadable", error=str(e))
+            mode = chat_modes.DEFAULT_MODE
+        answer_prompt = mode.answer_prompt()
 
         # --- ADR-025 F2: resolve the retrieval scope ONCE for the turn. Membership lives in
         # SQLite and is editable at any moment, so the hash set is read here and then frozen —
@@ -645,7 +680,8 @@ class ChatController:
         window = context.window_for(turn_provider)
         reserve = _reply_reserve(turn_provider, turn_model)
         rewrite_fit: context.RewriteFit | None = None
-        if history:
+        # Row 40: evidence only calls no model, so a follow-up is searched as typed.
+        if history and not evidence_only:
             rewrite_fit = context.fit_history(
                 history,
                 fixed_tokens=context.estimate_tokens(
@@ -663,7 +699,10 @@ class ChatController:
         scored = rag.retrieve_with_scores(
             standalone,
             top_k=knobs.top_k,
-            use_multi_query=(overrides.use_multi_query if overrides else None),
+            # Row 40: evidence only forces multi-query off, whatever its setting.
+            use_multi_query=(
+                False if evidence_only else (overrides.use_multi_query if overrides else None)
+            ),
             scope=scope,
         )
         yield Step("Searching documents", f"Found {len(scored)} relevant passages")
@@ -673,11 +712,11 @@ class ChatController:
         # A5: the answer call carries the best-ranked passages that fit; a passage it cannot carry
         # leaves the sources too, so the answer never cites what its model did not see.
         answer_fit: context.AnswerFit | None = None
-        if scored and knobs.synthesis_mode != "human":
+        if scored and not evidence_only:
             answer_fit = context.fit_passages(
                 docs,
                 fixed_tokens=context.estimate_tokens(
-                    ANSWER_PROMPT.format(context="", question=standalone)
+                    answer_prompt.format(context="", question=standalone)
                 ),
                 window=window,
                 reserve=reserve,
@@ -716,7 +755,7 @@ class ChatController:
 
         # --- synthesis_mode=human (locked default or a per-turn override): evidence only;
         # skip the interpretation call ---
-        if knobs.synthesis_mode == "human":
+        if evidence_only:
             yield Result(
                 self._human_result(
                     session,
@@ -732,6 +771,7 @@ class ChatController:
                     scope=scope_view,
                     source_eval=source_eval,
                     markers_enabled=knobs.markers_enabled,
+                    had_history=bool(history),
                 )
             )
             return
@@ -754,14 +794,16 @@ class ChatController:
 
         full_answer = ""
         pre_answer_in = counter.input_tokens
-        for tok in rag.stream_answer(standalone, docs, counter=counter, llm=turn_llm):
+        for tok in rag.stream_answer(
+            standalone, docs, counter=counter, llm=turn_llm, prompt=answer_prompt
+        ):
             full_answer += tok
             yield Token(tok)
         prompt_cut = (
             providers.prompt_cut_note(
                 counter.input_tokens - pre_answer_in,
                 len(
-                    ANSWER_PROMPT.format(context=format_docs_for_prompt(docs), question=standalone)
+                    answer_prompt.format(context=format_docs_for_prompt(docs), question=standalone)
                 ),
             )
             if providers.is_compatible(turn_provider)
@@ -797,6 +839,9 @@ class ChatController:
                 # so the card drops its duplicate copy of them.
                 source_strip_rendered=source_eval is not None and bool(sources),
                 context=context_record.as_dict() if context_record is not None else None,
+                template_hash=turn_template_hash(answer_prompt),
+                chat_mode=mode.name,
+                chat_mode_evaluated=mode.evaluated,
             )
         )
         record_id = prov_out.record_id
@@ -906,10 +951,13 @@ class ChatController:
         scope: ScopeView | None = None,
         source_eval: SourceEvalSummary | None = None,
         markers_enabled: bool | None = None,
+        had_history: bool = False,
     ) -> TurnResult:
         """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
-        evidence only; no interpretation call. Records provenance silently (no card shown),
-        stashes the export turn, updates history."""
+        evidence only; no model call at all (row 40: no rewrite, no multi-query, no answer).
+        Records provenance silently (no card shown), stashes the export turn, updates history.
+        ``had_history``: the turn followed earlier ones, so the answer says it searched the
+        question as typed."""
         human_answer = "(human synthesis mode — evidence only; no AI interpretation)"
         with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
             record_answer(
@@ -942,6 +990,7 @@ class ChatController:
             answer=(
                 "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
                 + render_evidence_markdown(retrieved_chunks)
+                + (f"\n\n{EVIDENCE_AS_TYPED_NOTE}" if had_history else "")
                 + overrides_note
                 # Human mode renders no provenance card, so the scope note rides the answer —
                 # otherwise a scoped evidence-only turn would state its scope nowhere.

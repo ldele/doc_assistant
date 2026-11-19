@@ -39,8 +39,12 @@ Standalone question:
 """)
 
 
-ANSWER_PROMPT = ChatPromptTemplate.from_template("""
-You are a helpful research assistant. Answer the question using ONLY the sources
+# A7 (docs/specs/chat-modes.md): the answer prompt is a chat mode's framing (the persona and
+# task) followed by this frozen remainder. The grounding rule, the citing block that
+# `synthesis._CITATION_RE` parses and the fence sentence are the same in every mode.
+ANSWER_FRAMING_DEFAULT = "You are a helpful research assistant."
+
+ANSWER_PROMPT_FROZEN = """Answer the question using ONLY the sources
 below — do not add facts, names, or numbers from outside them.
 
 Citing — the format matters as much as the content:
@@ -67,4 +71,19 @@ Sources:
 Question: {question}
 
 Answer:
-""")
+"""
+
+
+def assemble_answer_template(framing: str) -> str:
+    """The answer prompt's template text for ``framing``: the framing, one space, then the frozen
+    remainder. The default framing gives today's prompt byte for byte. ``framing`` must already be
+    a valid template fragment (`chat_modes` checks a person's text before it gets here)."""
+    return "\n" + framing.strip() + " " + ANSWER_PROMPT_FROZEN
+
+
+def build_answer_prompt(framing: str) -> ChatPromptTemplate:
+    """The answer prompt for one chat mode's framing."""
+    return ChatPromptTemplate.from_template(assemble_answer_template(framing))
+
+
+ANSWER_PROMPT = build_answer_prompt(ANSWER_FRAMING_DEFAULT)

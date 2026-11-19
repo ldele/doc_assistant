@@ -104,6 +104,12 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # A6 — what a rule-answered turn read (`record_lookups.RecordAnswer.as_record`). NULL on every
     # existing row and not backfilled: no earlier turn was answered by a lookup that recorded it.
     ("answer_records", "records_json", "TEXT", None),
+    # A7 — the conversation's chat mode, and the mode a turn's answer prompt used. NULL on every
+    # existing row and not backfilled: NULL reads as the default mode on a conversation and as
+    # "not recorded" on an answer record.
+    ("conversation_meta", "mode_id", "VARCHAR", None),
+    ("answer_records", "chat_mode", "VARCHAR", None),
+    ("answer_records", "chat_mode_evaluated", "BOOLEAN", None),
 ]
 
 

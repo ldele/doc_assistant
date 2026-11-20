@@ -40,6 +40,7 @@ from doc_assistant.retrieval_scope import scope_dict, scope_label, scope_summary
 from doc_assistant.reviewer import ReviewResult
 from doc_assistant.source_checks import addressed_to_ai
 from doc_assistant.synthesis import MARKER_OK, MARKER_WEAK, Claim, segment_claims
+from doc_assistant.turn_details import TurnClaim
 
 log = structlog.get_logger(__name__)
 
@@ -631,17 +632,30 @@ def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str,
 
 def _build_claims_block(
     record_id: str, full_answer: str, retrieved_chunks: list[RetrievedChunk]
-) -> tuple[str, list[ClaimView]]:
+) -> tuple[str, list[ClaimView], list[TurnClaim]]:
     """Chunk 2a: segment the answer into claims, eager-persist them, and render the review block
     for the flagged ones (E1.2 — lifted from ``_handle_rag``). Advisory: any failure collapses to
     a "Claim adjudication unavailable" note + no flagged claims, never breaking the turn. Called
-    only with a real ``record_id`` (the caller guards on it — no record, no claims)."""
+    only with a real ``record_id`` (the caller guards on it — no record, no claims).
+
+    A8b: also every claim as the window highlights it (`turn_details.TurnClaim`), pending."""
     try:
         claims = segment_claims(full_answer, retrieved_chunks)
         claim_ids = record_claims(record_id, claims)
-        return _build_claim_review(claims, claim_ids)
+        block, flagged = _build_claim_review(claims, claim_ids)
+        every = [
+            TurnClaim(
+                claim_id=cid,
+                n=c.claim_index + 1,
+                text=c.text,
+                marker=c.marker,
+                sources=list(dict.fromkeys(c.source_numbers)),
+            )
+            for c, cid in zip(claims, claim_ids, strict=True)
+        ]
+        return block, flagged, every
     except Exception as e:
-        return f"\n\n_⚠ Claim adjudication unavailable: {e}_", []
+        return f"\n\n_⚠ Claim adjudication unavailable: {e}_", [], []
 
 
 def _export_sources(
@@ -711,3 +725,5 @@ class _ProvenanceOutcome:
     record_id: str | None
     provenance_block: str
     review: ReviewResult | None
+    # A8b: the turn's prompt version as recorded, for *How this answer was made*.
+    prompt_version: str | None = None

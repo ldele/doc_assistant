@@ -12,7 +12,7 @@ from its siblings.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         TurnResult,
         UsageView,
     )
+    from doc_assistant.turn_details import RecordsView, ReviewView, TurnClaim
 
 
 # ============================================================
@@ -232,6 +233,85 @@ class ScopePayload(BaseModel):
         )
 
 
+class TurnClaimPayload(BaseModel):
+    """One claim of an answer (A8b): its text, the passages it cites, its retrieval marker
+    (`ok` · `weak` · `unsupported`, G4) and the decision recorded on it."""
+
+    claim_id: str
+    n: int
+    text: str
+    marker: str
+    sources: list[int] = []
+    decision: str = "pending"
+    edited_text: str | None = None
+
+    @classmethod
+    def from_claim(cls, c: TurnClaim) -> TurnClaimPayload:
+        return cls(
+            claim_id=c.claim_id,
+            n=c.n,
+            text=c.text,
+            marker=c.marker,
+            sources=list(c.sources),
+            decision=c.decision,
+            edited_text=c.edited_text,
+        )
+
+
+class RecordItemPayload(BaseModel):
+    kind: Literal["document", "folder", "concept"]
+    id: str
+    label: str
+
+
+class RecordsPayload(BaseModel):
+    """A rule-answered turn's lookup (A6, A8b's *What it looked up*)."""
+
+    lookup: str
+    args: dict[str, Any] = {}
+    rows: int = 0
+    items: list[RecordItemPayload] = []
+    more: int = 0
+    via: str = "rule"
+    asked: bool = False
+
+    @classmethod
+    def from_view(cls, v: RecordsView) -> RecordsPayload:
+        return cls(
+            lookup=v.lookup,
+            args=dict(v.args),
+            rows=v.rows,
+            items=[RecordItemPayload(kind=i.kind, id=i.id, label=i.label) for i in v.items],
+            more=v.more,
+            via=v.via,
+            asked=v.asked,
+        )
+
+
+class ReviewPayload(BaseModel):
+    """The reviewer's verdict on an answer, as recorded (A8b, a reopened chat)."""
+
+    reviewer_kind: str
+    faithfulness: int | None = None
+    citation_density: int | None = None
+    hedging_adequacy: int | None = None
+    unsupported_claims: int | None = None
+    failure_tag: str | None = None
+    error: str | None = None
+
+    @classmethod
+    def from_view(cls, v: ReviewView) -> ReviewPayload:
+        return cls(
+            reviewer_kind=v.reviewer_kind,
+            faithfulness=v.faithfulness,
+            citation_density=v.citation_density,
+            hedging_adequacy=v.hedging_adequacy,
+            unsupported_claims=v.unsupported_claims,
+            failure_tag=v.failure_tag,
+            error=v.error,
+        )
+
+
 class TurnResultPayload(BaseModel):
     answer: str
     mode: Literal["ai", "human"]
@@ -254,6 +334,13 @@ class TurnResultPayload(BaseModel):
     source_links: list[str] = []
     # A8a (G2): set only on a `/mode <name>` reply.
     mode_offer: ModeOfferPayload | None = None
+    # A8b: the answer's claims (G4), a records answer's lookup, and what the answer carried
+    # (`context_json` as recorded), its mode and prompt version.
+    claims: list[TurnClaimPayload] = []
+    records: RecordsPayload | None = None
+    context: dict[str, Any] | None = None
+    chat_mode: str | None = None
+    prompt_version: str | None = None
 
     @classmethod
     def from_turn_result(cls, r: TurnResult) -> TurnResultPayload:
@@ -283,4 +370,9 @@ class TurnResultPayload(BaseModel):
                 if r.mode_offer is not None
                 else None
             ),
+            claims=[TurnClaimPayload.from_claim(c) for c in r.claims],
+            records=RecordsPayload.from_view(r.records) if r.records is not None else None,
+            context=r.context,
+            chat_mode=r.chat_mode,
+            prompt_version=r.prompt_version,
         )

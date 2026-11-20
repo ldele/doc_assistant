@@ -1,6 +1,9 @@
 <script lang="ts">
+  // *How this answer was made* (A8b; *Provenance & usage* until then, GLOSSARY U-008): the
+  // provenance card, *What the answer carried* and the usage line, folded under the answer.
   import type { TurnResult } from '../../lib/core/types'
   import Markdown from './Markdown.svelte'
+  import CarriedCard from './CarriedCard.svelte'
 
   let { result }: { result: TurnResult } = $props()
   const id8 = $derived(result.record_id ? result.record_id.slice(0, 8) : null)
@@ -11,8 +14,13 @@
 {/if}
 
 <details class="prov">
-  <summary>Provenance &amp; usage{id8 ? ` · ${id8}` : ''}</summary>
+  <summary>How this answer was made{id8 ? ` · ${id8}` : ''}</summary>
   <div class="body">
+    <CarriedCard
+      context={result.context ?? null}
+      chatMode={result.chat_mode ?? null}
+      promptVersion={result.prompt_version ?? null}
+    />
     <Markdown source={result.provenance_card_md} />
     <Markdown source={result.usage_md} />
   </div>

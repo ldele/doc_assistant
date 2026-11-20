@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -28,6 +29,15 @@ from doc_assistant.db.session import session_scope
 from doc_assistant.export import ExportSource, ExportTurn, render_conversation_markdown
 from doc_assistant.read_surface.shapes import ConversationLabels
 from doc_assistant.retrieval_scope import ScopeView, read_scope
+from doc_assistant.turn_details import (
+    RecordsView,
+    ReviewView,
+    TurnClaim,
+    claims_for,
+    describe_records,
+    read_context,
+    reviews_for,
+)
 
 _TITLE_MAX = 80
 
@@ -87,6 +97,14 @@ class ConversationTurn:
     # the record; None on a turn no answer prompt took part in and on records from before A7.
     chat_mode: str | None = None
     chat_mode_evaluated: bool | None = None
+    # A8b (`turn_details`): the turn's claims with their recorded decisions, its lookup when the
+    # records answered it, what it carried (`context_json`), its prompt version, and the
+    # reviewer's verdict when one is recorded. All read from what the turn recorded.
+    claims: list[TurnClaim] = field(default_factory=list)
+    records: RecordsView | None = None
+    context: dict[str, Any] | None = None
+    prompt_version: str | None = None
+    review: ReviewView | None = None
 
 
 @dataclass(frozen=True)
@@ -456,6 +474,9 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
         )
         if not rows:
             return None
+        record_ids = [str(row.id) for row in rows]
+        claims = claims_for(record_ids)
+        reviews = reviews_for(record_ids)
         turns = [
             ConversationTurn(
                 record_id=str(row.id),
@@ -466,6 +487,11 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
                 retrieval_scope=read_scope(row.retrieval_scope_json),
                 chat_mode=row.chat_mode,
                 chat_mode_evaluated=row.chat_mode_evaluated,
+                claims=claims.get(str(row.id), []),
+                records=describe_records(row.records_json),
+                context=read_context(row.context_json),
+                prompt_version=row.prompt_version,
+                review=reviews.get(str(row.id)),
             )
             for row in rows
         ]

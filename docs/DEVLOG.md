@@ -44,6 +44,31 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-20 (4) — Claims coloured in the answer, and what a turn looked up and carried (A8b)
+
+**What changed.** An answer's sentences are coloured by their retrieval marker (G4): lilac for a
+claim citing a well-ranked passage, amber with "Cites a passage that ranked low for this question",
+plain for an uncited one; matched to the shown text in order, a claim not found left plain;
+clicking one opens its first cited passage, drawn darker while open. A records answer shows *What
+it looked up* (lookup, arguments, rows, its first five rows opening their document, folder or
+concept). The fold under an answer is now *How this answer was made* and holds *What the answer
+carried* (earlier messages, carried exchanges, passages, the window and its source, mode and prompt
+version). A reopened chat shows its claims, the decisions recorded on them and the reviewer's
+recorded verdict. New `turn_details.py`; `TurnResult` and the replayed turn gain `claims`,
+`records`, `context`, `chat_mode`, `prompt_version` (and `review`). Nothing new is stored.
+
+**Why.** ROADMAP 103 (session A8b), rows 42 and 44; `docs/specs/chat-interface-pass.md`.
+
+**Measured.** Tests and a driven check, $0, no eval run. `test_turn_details.py` 8, the
+turn-parity, A8a setup and API chat tests unchanged and passing; desktop 455, `svelte-check` 0 errors. Driven over the scratch data home
+with a seeded chat and a mocked live turn: `[s1]`, `[s7]`, `[s8]`, `[s10]`, both themes.
+
+**Rejected.** Marking a sentence inside the cited passage (no character offsets); colouring by the
+reviewer (G4); a second store for the records card's rows.
+
+**What it opens.** Nothing left of row 103. Not foreseen, in the spec's As built: the fold renamed
+from *Provenance & usage*, and a claim's highlight split by its citation buttons.
+
 ## 2026-11-20 (3) — A chat's mode and folders set when it starts, and Continue in a new chat (A8a)
 
 **What changed.** A chat's mode and folders are chosen on the start screen *New chat* opens (mode

@@ -6,7 +6,7 @@
 // Domains mirror apps/api/models/ exactly. See docs/architecture.md,
 // section "apps/ — the domain spine".
 
-export type { ClaimView, Decision, ModeOffer, RagOverrides, SourceEpistemics, SourceEvalSummary, SourceView, TurnResult, TurnScope, UsageView } from './chat'
+export type { ClaimView, Decision, ModeOffer, RagOverrides, RecordsView, ReviewView, SourceEpistemics, SourceEvalSummary, SourceView, TurnClaim, TurnContext, TurnResult, TurnScope, UsageView } from './chat'
 export type { Health } from './health'
 export type { ChatSetup, ContinuedFrom, ContinueRequest, ContinueResult, ConversationDetail, ConversationSource, ConversationSummary, ConversationTurn, ResumeResult } from './conversations'
 export type { NewChatDefaults, ProviderOption, Settings } from './settings'

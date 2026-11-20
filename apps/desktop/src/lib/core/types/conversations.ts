@@ -5,7 +5,7 @@
 // Conversation history (read-only replay).
 // Mirrors apps/api/models/conversations.py.
 
-import type { TurnScope } from './chat'
+import type { RecordsView, ReviewView, TurnClaim, TurnContext, TurnScope } from './chat'
 import type { ChatMode } from './modes'
 
 // Conversation history (feature-conversation-history.md). GET /api/conversations returns the
@@ -47,6 +47,13 @@ export interface ConversationTurn {
   // A7 — the chat mode the turn's answer prompt used; null when no answer prompt took part.
   chat_mode: string | null
   chat_mode_evaluated: boolean | null
+  // A8b — as recorded: the claims and their decisions, a records answer's lookup, what the turn
+  // carried, its prompt version, and the reviewer's verdict when there is one.
+  claims?: TurnClaim[]
+  records?: RecordsView | null
+  context?: TurnContext | null
+  prompt_version?: string | null
+  review?: ReviewView | null
 }
 export interface ConversationDetail {
   session_id: string

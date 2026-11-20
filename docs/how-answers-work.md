@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (A8a: a chat's mode and folders are set when it starts; Continue in a new chat carries its exchanges); 2026-11-20 (A7b: asking within several folders or one concept; `/folder` and `/concept` questions); 2026-11-20 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A8b: claims coloured in the answer; What it looked up; What the answer carried); 2026-11-20 (A8a: a chat's mode and folders are set when it starts; Continue in a new chat carries its exchanges); 2026-11-20 (A7b: asking within several folders or one concept; `/folder` and `/concept` questions); 2026-11-20 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
 
 # How answers work — evidence vs. interpretation
 
@@ -36,6 +36,21 @@ them how sure they are):
 The interface stays quiet when everything is clean: review buttons appear **only**
 on the flagged claims. Markers are a heuristic signal to look closer, not a
 correctness guarantee.
+
+**In the answer text**, the same markers colour the sentences: **lilac** for a claim that cites a
+passage the reranker scored as relevant, **amber** for one that cites a passage that ranked low
+for your question (its hover text says so), and no colour for a claim that cites nothing. Click a
+coloured claim to open the passage it cites; the open one is drawn darker. The colours say only
+what the marker measures. They never mean the sentence is true, or that anything checked it
+against its passage. A claim the screen cannot find in the text (its wording differs after the
+text was laid out) is left uncoloured rather than guessed. A reopened conversation colours its
+answers the same way, lists the decisions you recorded on its claims, and shows the reviewer's
+verdict as it was recorded.
+
+**How this answer was made**, folded under each answer, holds the provenance card, the usage line
+and *What the answer carried*: how many earlier messages and carried exchanges the turn held of
+how many, how many passages it kept, shortened or left out, the model's window and where its size
+came from, and the chat mode with the prompt version. All of it is read from the answer's record.
 
 ## You stay in control
 
@@ -83,7 +98,9 @@ documents it holds, what a folder holds, a document's recorded title, authors, y
 which documents have no title, year or authors recorded, or a concept you have taken on. These
 are answered from the library's records by fixed rules, with no passage read and no model asked,
 so the answer is the same whichever model you use. The answer ends with a line saying so, and
-it is kept in the conversation's history like any other answer.
+it is kept in the conversation's history like any other answer. Under it, *What it looked up*
+names the lookup, what it was asked and how many rows it returned, with the first rows: each
+opens its document, folder or concept.
 
 - A document is found by its recorded title (or its file name where it has no title): every word
   you give must be in it. If several match, they are listed and you are asked which. If none

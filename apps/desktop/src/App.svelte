@@ -916,6 +916,23 @@
     shell.sidebarOpen = false
   }
 
+  // A8b: a records answer's row opens what it names: a document or a folder in the Library, a
+  // concept on the Graph tab (where the Graph tab is off, in Manage keywords).
+  function openRecordItem(kind: 'document' | 'folder' | 'concept', id: string): void {
+    if (kind === 'concept') {
+      if (GRAPH_TAB_ENABLED) {
+        selectMode('graph')
+        selectGraphConcept(id)
+      } else {
+        manageConcept(id, '')
+      }
+      return
+    }
+    selectMode('library')
+    if (kind === 'folder') selectCollection({ kind: 'folder', value: id })
+    else openDocument(id)
+  }
+
   // Global search (spec sub-item a). Opening refreshes both lists (inform-don't-block): documents
   // lazy-load only on entering the Library, so a chat-only user must still be able to find a paper.
   function openSearch(): void {
@@ -1277,6 +1294,7 @@
           onMakeDefault={() => void makeStartDefault()}
           onContinueNew={startContinue}
           onOpenChat={(sid) => void openConversation(sid)}
+          onOpenRecord={openRecordItem}
         />
       {/if}
     </main>

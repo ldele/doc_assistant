@@ -74,6 +74,8 @@
             scope={t.scope}
             onCitationClick={(n) => onCitationClick(t.record_id, n)}
             activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
+            turn={t}
+            onClaimClick={(_cn, n) => onCitationClick(t.record_id, n)}
           />
         {/each}
       </div>

@@ -74,6 +74,64 @@ export interface TurnResult {
   // A8a (G2) — set only on a `/mode <name>` reply: `continue` opens *Continue in a new chat*
   // prefilled with `mode_id`; `set` sets the start screen's mode chip.
   mode_offer?: ModeOffer | null
+  // A8b — every claim of the answer with its marker and cited passages (G4); a records answer's
+  // lookup; what the answer carried (the record's `context_json`), its mode and prompt version.
+  claims?: TurnClaim[]
+  records?: RecordsView | null
+  context?: TurnContext | null
+  chat_mode?: string | null
+  prompt_version?: string | null
+}
+// A8b — one claim of an answer. `marker`: `ok` cites a well-ranked passage, `weak` cites one that
+// ranked low (or has no score), `unsupported` cites nothing. Mirrors TurnClaimPayload.
+export interface TurnClaim {
+  claim_id: string
+  n: number
+  text: string
+  marker: string
+  sources: number[]
+  decision: string
+  edited_text: string | null
+}
+// A8b — a rule-answered turn's lookup (A6). Mirrors RecordsPayload.
+export interface RecordsView {
+  lookup: string
+  args: Record<string, unknown>
+  rows: number
+  items: { kind: 'document' | 'folder' | 'concept'; id: string; label: string }[]
+  more: number
+  via: string
+  asked: boolean
+}
+// A8b — the reviewer's recorded verdict (a reopened chat). Mirrors ReviewPayload.
+export interface ReviewView {
+  reviewer_kind: string
+  faithfulness: number | null
+  citation_density: number | null
+  hedging_adequacy: number | null
+  unsupported_claims: number | null
+  failure_tag: string | null
+  error: string | null
+}
+// A5's record of what a turn's calls carried (`context.ContextRecord`), plus A8a's carried
+// exchanges. Every part may be absent on an older record.
+export interface TurnContext {
+  window: number
+  window_source: 'set' | 'server' | 'documented' | 'floor'
+  rewrite?: {
+    estimated_tokens: number
+    history_used: number
+    history_dropped: number
+    answer_shortened: boolean
+    skipped: boolean
+  } | null
+  answer?: {
+    estimated_tokens: number
+    passages_used: number
+    passages_dropped: number
+    top_passage_clipped: boolean
+  } | null
+  carried?: { exchanges: number; kept: number; dropped: number } | null
 }
 export interface ModeOffer {
   action: 'continue' | 'set'

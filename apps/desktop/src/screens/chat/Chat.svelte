@@ -60,6 +60,8 @@
     onMakeDefault: () => void
     onContinueNew: (sessionId: string, setup: ChatSetup | null) => void
     onOpenChat: (sessionId: string) => void
+    /** A8b: a records answer's row: open its document, folder or concept. */
+    onOpenRecord: (kind: 'document' | 'folder' | 'concept', id: string) => void
   }
   let {
     viewing, viewedConvo, resumedHistory, folders, libraryCount, modes,
@@ -67,7 +69,7 @@
     liveSetup, carried,
     hasRetrievalOverride,
     onSend, onKey, onCompare, onUseSample, onResume, onBackToCurrent, onMakeDefault,
-    onContinueNew, onOpenChat,
+    onContinueNew, onOpenChat, onOpenRecord,
   }: Props = $props()
 
   // The live chat's line: its stored setup, else (a reopened chat continued, before its first
@@ -78,6 +80,12 @@
   )
   function citation(turnKey: string, n: number): void {
     chat.activeCitation = { turnKey, n }
+    chat.activeClaim = null
+  }
+  // A8b: a coloured claim opens its first cited passage, and is drawn darker while it is open.
+  function claimOpened(turnKey: string, claimN: number, sourceN: number): void {
+    chat.activeCitation = { turnKey, n: sourceN }
+    chat.activeClaim = { turnKey, n: claimN }
   }
 
   // The outstanding first-run steps (ADR-034), shaped by the same tested helper the Settings
@@ -107,8 +115,12 @@
         question={t.question}
         answer={t.answer}
         scope={t.scope}
-        onCitationClick={(n) => (chat.activeCitation = { turnKey: t.record_id, n })}
+        onCitationClick={(n) => citation(t.record_id, n)}
         activeCitationN={chat.activeCitation?.turnKey === t.record_id ? chat.activeCitation.n : null}
+        turn={t}
+        onClaimClick={(cn, n) => claimOpened(t.record_id, cn, n)}
+        activeClaimN={chat.activeClaim?.turnKey === t.record_id ? chat.activeClaim.n : null}
+        {onOpenRecord}
       />
     {/each}
   {:else}
@@ -134,8 +146,12 @@
           question={t.question}
           answer={t.answer}
           scope={t.scope}
-          onCitationClick={(n) => (chat.activeCitation = { turnKey: t.record_id, n })}
+          onCitationClick={(n) => citation(t.record_id, n)}
           activeCitationN={chat.activeCitation?.turnKey === t.record_id ? chat.activeCitation.n : null}
+          turn={t}
+          onClaimClick={(cn, n) => claimOpened(t.record_id, cn, n)}
+          activeClaimN={chat.activeClaim?.turnKey === t.record_id ? chat.activeClaim.n : null}
+          {onOpenRecord}
         />
       {/each}
       <div class="resume-divider"><span>continuing below</span></div>
@@ -178,8 +194,11 @@
         result={t.result}
         streaming={t.streaming}
         error={t.error}
-        onCitationClick={(n) => (chat.activeCitation = { turnKey: String(t.id), n })}
+        onCitationClick={(n) => citation(String(t.id), n)}
         activeCitationN={chat.activeCitation?.turnKey === String(t.id) ? chat.activeCitation.n : null}
+        onClaimClick={(cn, n) => claimOpened(String(t.id), cn, n)}
+        activeClaimN={chat.activeClaim?.turnKey === String(t.id) ? chat.activeClaim.n : null}
+        {onOpenRecord}
       />
     {/each}
     {#if chat.compareResult}

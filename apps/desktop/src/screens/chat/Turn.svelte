@@ -6,7 +6,9 @@
   import SourceEvaluation from './SourceEvaluation.svelte'
   import Icon from '../../shell/Icon.svelte'
   import ScopeChip from './ScopeChip.svelte'
+  import RecordsCard from './RecordsCard.svelte'
   import { usageLabel } from '../../lib/chat/usage'
+  import { CITED_TOOLTIP, WEAK_TOOLTIP, claimKind } from '../../lib/chat/claims'
   import { tooltip } from '../../lib/shell/tooltip'
 
   let {
@@ -17,6 +19,9 @@
     error = null,
     onCitationClick,
     activeCitationN = null,
+    onClaimClick,
+    activeClaimN = null,
+    onOpenRecord,
   }: {
     question: string
     answer: string
@@ -25,7 +30,23 @@
     error?: string | null
     onCitationClick?: (n: number) => void
     activeCitationN?: number | null
+    /** A8b: a coloured claim was clicked: open its first cited passage. */
+    onClaimClick?: (claimN: number, sourceN: number) => void
+    activeClaimN?: number | null
+    onOpenRecord?: (kind: 'document' | 'folder' | 'concept', id: string) => void
   } = $props()
+
+  // A8b, G4: the claims coloured by their marker only; an uncited one stays plain.
+  const claimMarks = $derived(
+    (result?.claims ?? []).flatMap((c) => {
+      const kind = claimKind(c)
+      return kind ? [{ key: String(c.n), kind, text: c.text, tip: kind === 'weak' ? WEAK_TOOLTIP : CITED_TOOLTIP }] : []
+    }),
+  )
+  function clickClaim(key: string): void {
+    const c = result?.claims?.find((x) => String(x.n) === key)
+    if (c && c.sources.length > 0) onClaimClick?.(c.n, c.sources[0])
+  }
 
   // Glanceable turn cost — the same numbers the Provenance panel spells out, surfaced up front
   // so the reader sees the spend without expanding anything (inform, don't gate).
@@ -46,7 +67,18 @@
       {#if result.scope}
         <ScopeChip scope={result.scope} />
       {/if}
-      <Markdown source={result.answer} {onCitationClick} {activeCitationN} allowedLinks={result.source_links ?? []} />
+      <Markdown
+        source={result.answer}
+        {onCitationClick}
+        {activeCitationN}
+        allowedLinks={result.source_links ?? []}
+        claims={claimMarks}
+        activeClaimKey={activeClaimN === null ? null : String(activeClaimN)}
+        onClaimClick={clickClaim}
+      />
+      {#if result.records}
+        <RecordsCard records={result.records} {onOpenRecord} />
+      {/if}
       {#if result.sources.length}
         <details class="sources">
           <summary

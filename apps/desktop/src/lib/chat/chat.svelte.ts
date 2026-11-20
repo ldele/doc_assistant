@@ -45,6 +45,8 @@ export const chat = $state({
   /** Which citation panel is open — keyed by a turn *key* (a live turn's id as a string, or a
    *  past turn's record_id) so a click resolves against the right turn in either mode. */
   activeCitation: null as { turnKey: string; n: number } | null,
+  /** The claim whose passage is open (A8b): drawn darker. Same turn keys as `activeCitation`. */
+  activeClaim: null as { turnKey: string; n: number } | null,
 
   // DOM refs, bound by Chat.
   convoEl: null as HTMLElement | null,

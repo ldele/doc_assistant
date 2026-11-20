@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (A8a built: As built added; A8b to build); 2026-11-20 (accepted by the user as written, open question 1 as recommended; written from the approved wireframe and A8's four-question grill) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A8b built: As built added; the spec's two sessions done); 2026-11-20 (A8a built: As built added; A8b to build); 2026-11-20 (accepted by the user as written, open question 1 as recommended; written from the approved wireframe and A8's four-question grill) · class: living -->
 
 # Spec — The chat interface pass: how a chat is set up, and what a turn shows (ROADMAP 103, sessions A8a and A8b)
 
@@ -301,3 +301,51 @@ addendum (the scope stays with its chat and does not leak into another), `lib/ch
 passes unchanged. The driven check ran the dev build over a scratch data home of invented
 documents, with `/api/chat` mocked in the page (no turn reached the backend); the counts are in the
 DEVLOG entry.
+
+## As built — A8b (2026-11-20)
+
+Built to the A8b contract; staged for the user's commit.
+
+**Backend.** `src/doc_assistant/turn_details.py` reads what a turn shows besides its answer, all from
+what the answer path already records: `TurnClaim` (an `answer_claims` row: its text, cited passages,
+marker, recorded decision), `claims_for` and `reviews_for` (one query each for a chat's answers),
+`describe_records` (a records answer's `records_json`, its first five rows named as documents,
+folders or concepts, three queries) and `read_context`. A live turn's `TurnResult` gains `claims`
+(every claim, from the same segmentation that writes `answer_claims`), `records`, `context` (the
+`context_json` it recorded), `chat_mode` and `prompt_version`; a reopened turn gains the same plus
+`review`. Wire: `TurnClaimPayload`, `RecordsPayload`, `ReviewPayload` on `TurnResultPayload` and
+`ConversationTurnPayload`. No new storage, no prompt or retrieval change.
+
+**Window.** `Markdown.svelte` colours the claims after it renders the answer: their text is
+matched in order against the shown text, citation buttons left out (`lib/chat/claims.ts`, tested);
+a claim not found is left plain. Lilac for `ok` with a citation, amber for `weak` with its tooltip,
+plain for `unsupported`; a claim span is a button to mouse and keyboard and opens its first cited
+passage; the open one is drawn darker (`chat.activeClaim`). `RecordsCard.svelte` is *What it looked
+up*; `CarriedCard.svelte` is *What the answer carried*, inside the fold now named *How this answer
+was made* (it read *Provenance & usage*; GLOSSARY U-008). `ReadonlyTurn.svelte` shows a reopened
+turn's claims, the decisions recorded on them, the reviewer's recorded verdict, its lookup and its
+fold. The words are `lib/chat/turnDetails.ts` (tested).
+
+**Not foreseen by the spec.**
+
+- **"Where that passage is marked."** The source panel opens the cited passage, which is the unit
+  a claim cites; nothing narrower is marked inside it. A passage carries no character offsets, so
+  the sentence that supports a claim cannot be located in it (the memory note on the source viewer
+  and the chunk locator says the same).
+- **A claim's highlight is broken by its citation buttons**: the sentence's text and its full stop
+  are two spans either side of `[n]`, both coloured, both opening the passage. The button keeps
+  opening its own source.
+- **The fold was renamed** from *Provenance & usage* to the drawing's *How this answer was made*;
+  `docs/release-ux-checklist.md` follows, and the old label is forbidden in the glossary.
+- **The records card names five rows** (`RECORD_ROWS_SHOWN`) and says how many more are in the
+  answer above; the rows are the lookup's recorded ids, so a document deleted since is left out.
+- **The prompt version** shown beside the mode is the turn's recorded `prompt_version` (A7 folds
+  the template hash into it), its first eight characters.
+- **The citation pattern** is copied into `claims.ts` (a sibling import would need the `.ts`
+  extension the type check refuses); `claims.test.ts` pins it equal to `citations.ts`'s.
+
+**Gate.** Tests and a driven check, $0, no eval run: `tests/integration/test_turn_details.py` (8),
+`lib/chat/claims.test.ts` (7), `lib/chat/turnDetails.test.ts` (4). The turn-parity test passes
+unchanged. Driven over the scratch data home with a seeded chat (claims with decisions, a review, a
+records lookup, fitting counts) and a mocked live turn: `[s1]`, `[s7]`, `[s8]`, `[s10]`, both
+themes, the amber tooltip, a claim opening its passage, a records row opening its document.

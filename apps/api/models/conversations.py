@@ -9,12 +9,12 @@ reports the scope it actually ran under.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
 from apps.api.models._common import _as_utc
-from apps.api.models.chat import ScopePayload
+from apps.api.models.chat import RecordsPayload, ReviewPayload, ScopePayload, TurnClaimPayload
 from apps.api.models.modes import ChatModePayload
 
 if TYPE_CHECKING:
@@ -136,6 +136,13 @@ class ConversationTurnPayload(BaseModel):
     # no answer prompt took part in (evidence only, a records answer) and on older records.
     chat_mode: str | None = None
     chat_mode_evaluated: bool | None = None
+    # A8b: the turn's claims and their recorded decisions, its lookup (a records answer), what it
+    # carried, its prompt version and the reviewer's recorded verdict, all as recorded.
+    claims: list[TurnClaimPayload] = []
+    records: RecordsPayload | None = None
+    context: dict[str, Any] | None = None
+    prompt_version: str | None = None
+    review: ReviewPayload | None = None
 
     @classmethod
     def from_turn(cls, t: ConversationTurn) -> ConversationTurnPayload:
@@ -154,6 +161,11 @@ class ConversationTurnPayload(BaseModel):
             ),
             chat_mode=t.chat_mode,
             chat_mode_evaluated=t.chat_mode_evaluated,
+            claims=[TurnClaimPayload.from_claim(c) for c in t.claims],
+            records=RecordsPayload.from_view(t.records) if t.records is not None else None,
+            context=t.context,
+            prompt_version=t.prompt_version,
+            review=ReviewPayload.from_view(t.review) if t.review is not None else None,
         )
 
 

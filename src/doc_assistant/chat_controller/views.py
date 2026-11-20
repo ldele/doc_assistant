@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 # ADR-025 F2 / A7b: the scope lives with its record shape and its reader, so the stores can read it
 # without importing the controller. Re-exported here: every turn view model is in this module.
 from doc_assistant.retrieval_scope import ScopeConcept, ScopeFolder, ScopeView
+from doc_assistant.turn_details import RecordsView, TurnClaim
 
 __all__ = [
     "ClaimView",
@@ -138,3 +139,14 @@ class TurnResult:
     # A8a (G2): `/mode <name>`'s offer to the window: ``("continue", mode_id)`` opens *Continue in
     # a new chat* prefilled with that mode; ``("set", mode_id)`` sets the start screen's chip.
     mode_offer: tuple[Literal["continue", "set"], str] | None = None
+    # A8b (`turn_details`): every claim of the answer with its marker and cited passages, for the
+    # highlights in the text (G4); empty on a turn with no claims (evidence only, records, none).
+    claims: list[TurnClaim] = field(default_factory=list)
+    # A8b: a rule-answered turn's lookup, for *What it looked up*; None on every other turn.
+    records: RecordsView | None = None
+    # A8b: what the answer carried (the record's `context_json`: A5's counts, A8a's carried
+    # exchanges), the mode that wrote it and the turn's prompt version, for *How this answer was
+    # made*. None where the turn recorded none.
+    context: dict[str, Any] | None = None
+    chat_mode: str | None = None
+    prompt_version: str | None = None

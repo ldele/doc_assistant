@@ -103,6 +103,7 @@ from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
 from doc_assistant.source_checks import addressed_to_ai, sourced_links
 from doc_assistant.synthesis import audit_citations, render_evidence_markdown
 from doc_assistant.tracking import TokenCounter
+from doc_assistant.turn_details import TurnClaim, describe_records
 
 log = structlog.get_logger(__name__)
 
@@ -543,6 +544,7 @@ class ChatController:
         session.history.append({"role": "assistant", "content": answered.text})
         result = self._command_result(answered.text, route="library")
         result.record_id = record_id
+        result.records = describe_records(answered.as_record(via))
         return result
 
     def _attach_source_evaluation(
@@ -709,7 +711,10 @@ class ChatController:
             log.warning("provenance_capture_failed", error=str(e))
             provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
         return _ProvenanceOutcome(
-            record_id=record_id, provenance_block=provenance_block, review=review
+            record_id=record_id,
+            provenance_block=provenance_block,
+            review=review,
+            prompt_version=prov_version,
         )
 
     def _handle_rag(
@@ -953,8 +958,9 @@ class ChatController:
         # --- Chunk 2a: segment + eager-persist claims; surface flagged ones ---
         claim_review_block = ""
         flagged_claims: list[ClaimView] = []
+        turn_claims: list[TurnClaim] = []
         if record_id is not None:
-            claim_review_block, flagged_claims = _build_claims_block(
+            claim_review_block, flagged_claims, turn_claims = _build_claims_block(
                 record_id, full_answer, retrieved_chunks
             )
 
@@ -1027,6 +1033,10 @@ class ChatController:
                 source_links=sourced_links(
                     doc.page_content for doc in docs if not addressed_to_ai(doc.page_content)
                 ),
+                claims=turn_claims,
+                context=context_record.as_dict() if context_record is not None else None,
+                chat_mode=mode.name,
+                prompt_version=prov_out.prompt_version,
             )
         )
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (U-007: a chat's setup and its controls, A8a); 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
+<!-- status: active · updated: 2026-11-20 (U-008: claim colours, How this answer was made, A8b); 2026-11-20 (U-007: a chat's setup and its controls, A8a); 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -307,6 +307,22 @@ chat settings` (the defaults window is not Settings). In prose: an open chat nev
 (G2), so no control offers to change it in place.
 **Authoritative in:** `src/doc_assistant/chat_setup.py` + `docs/specs/chat-interface-pass.md` +
 `apps/desktop/src/screens/chat/StartScreen.svelte` + `apps/desktop/src/screens/chat/ChatLine.svelte`
+
+## U-008 — what a turn shows besides its answer
+
+**Canonical:** `cited claim` (a sentence highlighted lilac: it cites a passage that ranked well;
+click opens that passage) · `weak claim` (amber: it cites a passage that ranked low for the
+question) · `How this answer was made` (the fold under an answer) · `What the answer carried`
+(its card: earlier messages, carried exchanges, passages, the window, the mode) · `What it looked
+up` (a records answer's card: the lookup, its arguments, its rows)
+**Definition:** A claim's colour says only what its retrieval marker measures (A8b, G4): whether
+the sentence cites a passage and how that passage ranked. It never says the sentence is true or
+that a reviewer checked it, and an uncited sentence stays plain. *How this answer was made* holds
+the provenance card, the usage line and *What the answer carried*, all read from the record.
+**Forbidden:** `Provenance & usage` (the fold's label until A8b) · `verified claim`, `supported
+claim` (no check the app runs says so)
+**Authoritative in:** `apps/desktop/src/lib/chat/claims.ts` + `apps/desktop/src/lib/chat/turnDetails.ts`
++ `src/doc_assistant/turn_details.py` + `docs/specs/chat-interface-pass.md`
 
 ## D-001 — Provenote vs doc_assistant
 

@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from sqlalchemy import func, select
 
-from doc_assistant.db.models import Document, Folder
+from doc_assistant.db.models import Document, Folder, document_folders
 from doc_assistant.db.session import session_scope
 
 log = structlog.get_logger(__name__)
@@ -198,6 +198,50 @@ def folder_document_ids(folder_id: str) -> list[str]:
         if folder is None:
             return []
         return [d.id for d in folder.documents if not d.is_archived]
+
+
+@dataclass(frozen=True)
+class FolderMembers:
+    """Several folders read at once for a retrieval scope (A7b, G1).
+
+    ``names`` holds the folders that exist, by id; an id missing from it is unknown or deleted.
+    ``hashes`` holds each existing folder's non-archived members' ``doc_hash`` (an empty set for
+    an empty folder)."""
+
+    names: dict[str, str]
+    hashes: dict[str, frozenset[str]]
+
+
+def folders_doc_hashes(folder_ids: Sequence[str]) -> FolderMembers:
+    """Every given folder's name and member ``doc_hash`` set, in **two queries** whatever the
+    number of folders (``document_folders.folder_id IN …``), never one per folder.
+
+    The several-folder form of :func:`folder_doc_hashes`, with the same rules: archived members
+    and documents with no hash are left out, and an unknown id contributes nothing."""
+    ids = sorted(set(folder_ids))
+    if not ids:
+        return FolderMembers(names={}, hashes={})
+    with session_scope() as session:
+        names = {
+            str(fid): str(name)
+            for fid, name in session.execute(
+                select(Folder.id, Folder.name).where(Folder.id.in_(ids))
+            ).all()
+        }
+        members: dict[str, set[str]] = {fid: set() for fid in names}
+        rows = session.execute(
+            select(document_folders.c.folder_id, Document.doc_hash)
+            .join(Document, Document.id == document_folders.c.document_id)
+            .where(
+                document_folders.c.folder_id.in_(ids),
+                Document.is_archived.is_(False),
+                Document.doc_hash.is_not(None),
+            )
+        ).all()
+        for fid, doc_hash in rows:
+            if str(fid) in members and doc_hash:
+                members[str(fid)].add(str(doc_hash))
+    return FolderMembers(names=names, hashes={k: frozenset(v) for k, v in members.items()})
 
 
 def folder_doc_hashes(folder_id: str) -> list[str]:

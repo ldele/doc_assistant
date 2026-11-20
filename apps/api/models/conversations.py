@@ -25,6 +25,24 @@ if TYPE_CHECKING:
     )
 
 
+class LabelDocumentPayload(BaseModel):
+    document_id: str
+    title: str
+
+
+class LabelFolderPayload(BaseModel):
+    folder_id: str
+    name: str
+
+
+class ConversationLabelsPayload(BaseModel):
+    """The documents a conversation's answers cited, and the folders holding them (ADR-066
+    choice 7, A7b): derived from the records on every read, never stored."""
+
+    documents: list[LabelDocumentPayload] = []
+    folders: list[LabelFolderPayload] = []
+
+
 class ConversationSummaryPayload(BaseModel):
     """One conversation in the sidebar list."""
 
@@ -35,6 +53,7 @@ class ConversationSummaryPayload(BaseModel):
     last_at: datetime
     pinned: bool = False
     archived: bool = False
+    labels: ConversationLabelsPayload = ConversationLabelsPayload()
 
     @classmethod
     def from_summary(cls, s: ConversationSummary) -> ConversationSummaryPayload:
@@ -46,6 +65,16 @@ class ConversationSummaryPayload(BaseModel):
             last_at=_as_utc(s.last_at),
             pinned=s.pinned,
             archived=s.archived,
+            labels=ConversationLabelsPayload(
+                documents=[
+                    LabelDocumentPayload(document_id=d.document_id, title=d.title)
+                    for d in s.labels.documents
+                ],
+                folders=[
+                    LabelFolderPayload(folder_id=f.folder_id, name=f.name)
+                    for f in s.labels.folders
+                ],
+            ),
         )
 
 
@@ -105,7 +134,11 @@ class ConversationTurnPayload(BaseModel):
                 ConversationSourcePayload(n=s.n, citation=s.citation, excerpt=s.excerpt)
                 for s in t.sources
             ],
-            scope=(ScopePayload(**t.retrieval_scope) if t.retrieval_scope is not None else None),
+            scope=(
+                ScopePayload.from_view(t.retrieval_scope)
+                if t.retrieval_scope is not None
+                else None
+            ),
             chat_mode=t.chat_mode,
             chat_mode_evaluated=t.chat_mode_evaluated,
         )

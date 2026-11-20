@@ -91,7 +91,13 @@ from doc_assistant.provenance import (
     record_answer,
     template_hash,
 )
-from doc_assistant.record_lookups import RecordAnswer, answer_command, answer_record_question
+from doc_assistant.record_lookups import (
+    RecordAnswer,
+    ScopedQuestion,
+    answer_command,
+    answer_record_question,
+    scoped_question,
+)
 from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
 from doc_assistant.source_checks import addressed_to_ai, sourced_links
 from doc_assistant.synthesis import audit_citations, render_evidence_markdown
@@ -113,6 +119,17 @@ def _reply_reserve(provider: str | None, model: str | None) -> int:
 
         return max_tokens_for(model, context.REPLY_RESERVE_TOKENS)
     return context.REPLY_RESERVE_TOKENS
+
+
+def _original_query(question: str, standalone: str, typed: str | None) -> str | None:
+    """The record's ``original_query``: what the person typed when the searched text differs.
+
+    A scoped command (A7b) keeps its whole text here, so the history shows the command as typed
+    while ``query`` holds the question alone. Otherwise, as before: the question when the rewrite
+    changed it, else ``None``."""
+    if typed is not None:
+        return typed
+    return question if standalone != question else None
 
 
 def turn_template_hash(answer_prompt: ChatPromptTemplate) -> str:
@@ -216,7 +233,7 @@ class ChatController:
         self,
         text: str,
         overrides: RagOverrides,
-        scope_folder_id: str | None = None,
+        scope_folder_ids: list[str] | None = None,
     ) -> compare.CompareResult:
         """Retrieval-only A/B compare (U6, ``feature-ab-compare-sandbox.md``).
 
@@ -226,11 +243,12 @@ class ChatController:
         the call, no module-global assigned (the ADR-010 isolation invariant). Only
         ``top_k``/``use_multi_query`` affect retrieval; the rest are answer-time (see the note).
 
-        ``scope_folder_id`` (ADR-025 F2) is applied to **both** sides. The comparison exists to
-        isolate a knob, so the document set is held constant — and an unscoped diff shown while a
-        folder scope is active would describe retrieval the next answer will not perform.
+        ``scope_folder_ids`` (ADR-025 F2; several since A7b) is applied to **both** sides. The
+        comparison exists to isolate a knob, so the document set is held constant — and an
+        unscoped diff shown while a folder scope is active would describe retrieval the next
+        answer will not perform.
         """
-        scope, scope_view = _resolve_scope(scope_folder_id)
+        scope, scope_view = _resolve_scope(scope_folder_ids)
         eff_a: dict[str, int | bool] = {"top_k": TOP_K, "use_multi_query": USE_MULTI_QUERY}
         eff_b: dict[str, int | bool] = {
             "top_k": overrides.top_k if overrides.top_k is not None else TOP_K,
@@ -313,7 +331,7 @@ class ChatController:
         text: str,
         *,
         overrides: RagOverrides | None = None,
-        scope_folder_id: str | None = None,
+        scope_folder_ids: list[str] | None = None,
     ) -> Iterator[TurnEvent]:
         """Drive one turn. Ports ``on_message``'s dispatch order verbatim:
         (a) slash command, (b) pending claim-edit, (c) library query, (d) RAG path.
@@ -322,15 +340,42 @@ class ChatController:
         edits have no retrieval or synthesis-mode knobs to override. Default ``None`` is
         byte-identical to before this feature existed.
 
-        ``scope_folder_id`` (ADR-025 F2) restricts retrieval to one folder's documents for this
-        turn only — request-scoped like ``overrides``, never stored on the session: a scope the
-        backend remembered would be a scope the user could forget (spec S9). Same RAG-path-only
-        carve."""
+        ``scope_folder_ids`` (ADR-025 F2; several since A7b) restricts retrieval to those folders'
+        documents, searched as one set, for this turn only — request-scoped like ``overrides``,
+        never stored on the session: a scope the backend remembered would be a scope the user
+        could forget (spec S9). ``None`` or ``[]`` is the whole library. Same RAG-path-only carve.
+
+        ``/folder <name>: <question>`` and ``/concept <name>: <question>`` (A7b, G3) run the
+        question as an ordinary turn on that folder's or concept's documents. The command's
+        scope is the turn's: it replaces the picker's for this turn, and lasts this turn only."""
         # --- Slash commands ---
         started = time.monotonic()
         parsed = parse_command(text)
         if parsed is not None:
             cmd, arg = parsed
+            try:
+                # `parse_command` lowercases its argument; a scoped question is asked as typed.
+                typed_parts = text.strip()[1:].split(maxsplit=1)
+                scoped = scoped_question(cmd, typed_parts[1] if len(typed_parts) > 1 else "")
+            except Exception as e:
+                yield Result(self._command_result(f"⚠ `/{cmd}` failed: {e}", route="command"))
+                return
+            if isinstance(scoped, ScopedQuestion):
+                yield from self._rag_or_failure(
+                    session,
+                    scoped.question,
+                    overrides,
+                    [scoped.target_id] if scoped.kind == "folder" else None,
+                    concept_id=scoped.target_id if scoped.kind == "concept" else None,
+                    typed=text,
+                )
+                return
+            if isinstance(scoped, RecordAnswer):
+                # An unknown or ambiguous name: the answer lists or asks; nothing is retrieved.
+                yield Result(
+                    self._records_result(session, text, scoped, via="command", started=started)
+                )
+                return
             try:
                 # Export commands need the live session transcript, so they're handled here
                 # (stateful) rather than in the stateless commands.execute_command dispatcher.
@@ -391,10 +436,24 @@ class ChatController:
             return
 
         # --- RAG pipeline ---
-        # A failure past this point (the answer engine unreachable, a provider error) ends the
-        # turn with a sentence: the stream used to stop with nothing under the question.
+        yield from self._rag_or_failure(session, text, overrides, scope_folder_ids)
+
+    def _rag_or_failure(
+        self,
+        session: Session,
+        text: str,
+        overrides: RagOverrides | None,
+        scope_folder_ids: list[str] | None,
+        *,
+        concept_id: str | None = None,
+        typed: str | None = None,
+    ) -> Iterator[TurnEvent]:
+        """The RAG path. A failure in it (the answer engine unreachable, a provider error) ends the
+        turn with a sentence: the stream used to stop with nothing under the question."""
         try:
-            yield from self._handle_rag(session, text, overrides, scope_folder_id)
+            yield from self._handle_rag(
+                session, text, overrides, scope_folder_ids, concept_id=concept_id, typed=typed
+            )
         except Exception as e:
             provider, model = self.rag.provider, self.rag.model
             log.warning(
@@ -636,8 +695,14 @@ class ChatController:
         session: Session,
         text: str,
         overrides: RagOverrides | None = None,
-        scope_folder_id: str | None = None,
+        scope_folder_ids: list[str] | None = None,
+        *,
+        concept_id: str | None = None,
+        typed: str | None = None,
     ) -> Iterator[TurnEvent]:
+        """One RAG turn. ``text`` is the question; ``typed`` is what the person typed when it
+        differs (a scoped command, A7b), kept as the record's ``original_query`` and shown as the
+        export's question, while ``query`` and the history hold the question alone."""
         rag = self.rag
         history = session.history
         counter = session.counter
@@ -671,7 +736,7 @@ class ChatController:
         # the answer, the chip, and the provenance record all describe the same set. An unknown
         # or empty folder yields an empty scope and an honest zero-source turn; it never falls
         # back to the whole library (spec S3). ---
-        scope, scope_view = _resolve_scope(scope_folder_id)
+        scope, scope_view = _resolve_scope(scope_folder_ids, concept_id)
 
         pre_in, pre_out = counter.input_tokens, counter.output_tokens
         turn_start = time.monotonic()
@@ -772,6 +837,7 @@ class ChatController:
                     source_eval=source_eval,
                     markers_enabled=knobs.markers_enabled,
                     had_history=bool(history),
+                    typed=typed,
                 )
             )
             return
@@ -788,6 +854,7 @@ class ChatController:
                     overrides_note=knobs.overrides_note,
                     scope=scope_view,
                     markers_enabled=knobs.markers_enabled,
+                    typed=typed,
                 )
             )
             return
@@ -820,7 +887,7 @@ class ChatController:
         prov_out = self._capture_provenance_and_review(
             _ProvenanceInputs(
                 standalone=standalone,
-                original_query=user_question if standalone != user_question else None,
+                original_query=_original_query(user_question, standalone, typed),
                 full_answer=full_answer,
                 retrieved_chunks=retrieved_chunks,
                 model_name=model_name,
@@ -884,7 +951,7 @@ class ChatController:
         self._append_export_turn(
             session,
             export.ExportTurn(
-                question=user_question,
+                question=typed or user_question,
                 answer=full_answer,
                 standalone_query=standalone,
                 sources=_export_sources(scored, fig_paths),
@@ -952,6 +1019,7 @@ class ChatController:
         source_eval: SourceEvalSummary | None = None,
         markers_enabled: bool | None = None,
         had_history: bool = False,
+        typed: str | None = None,
     ) -> TurnResult:
         """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
         evidence only; no model call at all (row 40: no rewrite, no multi-query, no answer).
@@ -962,7 +1030,7 @@ class ChatController:
         with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
             record_answer(
                 query=standalone,
-                original_query=user_question if standalone != user_question else None,
+                original_query=_original_query(user_question, standalone, typed),
                 answer=human_answer,
                 retrieved_chunks=retrieved_chunks,
                 embedding_model=get_active_model_name(),
@@ -976,7 +1044,7 @@ class ChatController:
         self._append_export_turn(
             session,
             export.ExportTurn(
-                question=user_question,
+                question=typed or user_question,
                 answer=human_answer,
                 standalone_query=standalone,
                 sources=_export_sources(scored, fig_paths),
@@ -1022,6 +1090,7 @@ class ChatController:
         overrides_note: str,
         scope: ScopeView | None,
         markers_enabled: bool | None,
+        typed: str | None = None,
     ) -> TurnResult:
         """A turn that retrieved nothing: an honest sentence, with no model asked to write it.
 
@@ -1035,7 +1104,7 @@ class ChatController:
         with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
             record_answer(
                 query=standalone,
-                original_query=user_question if standalone != user_question else None,
+                original_query=_original_query(user_question, standalone, typed),
                 answer=answer,
                 retrieved_chunks=[],
                 embedding_model=get_active_model_name(),
@@ -1049,7 +1118,7 @@ class ChatController:
         self._append_export_turn(
             session,
             export.ExportTurn(
-                question=user_question,
+                question=typed or user_question,
                 answer=answer,
                 standalone_query=standalone,
                 sources=[],

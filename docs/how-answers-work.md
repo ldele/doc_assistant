@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-19 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A7b: asking within several folders or one concept; `/folder` and `/concept` questions); 2026-11-20 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
 
 # How answers work — evidence vs. interpretation
 
@@ -91,6 +91,28 @@ it is kept in the conversation's history like any other answer.
 - A question about content stays a content question: *which documents in the Demo corpus folder
   are about attention?* is answered from passages.
 - Gaps are not answered this way: their signals are not yet reliable enough to state as records.
+
+## Asking within folders or a concept
+
+An answer can be drawn from part of your library instead of all of it. Whatever limits it, the
+answer says so above its text, and the record keeps it, so a reopened conversation says it too.
+
+- **Folders.** The folder picker above the question box limits the next questions to one folder
+  (choosing several is coming). Several folders are searched as one set of documents, each
+  document once: *Searched **A**, **B** only: 14 documents.*
+- **A folder that held nothing** (empty, or deleted since you chose it) is left out and named:
+  *“**C** held no documents and was left out.”* When no chosen folder holds a document, nothing
+  is searched and the answer says so. It never falls back to the whole library.
+- **One question within one folder:** `/folder <name>: <question>` asks the question within that
+  folder's documents, for that turn only. `/concept <name>: <question>` asks it within the
+  documents where the concept is present: the documents its **exact** forms appear in. A broad
+  form does not add documents. Everything before the first `: ` is the name; the rest, further
+  colons included, is the question. Without a question, `/folder <name>` and `/concept <name>`
+  are the record lookups above.
+- A name that matches no folder or concept lists the ones there are, and asks no question.
+- A concept whose documents the concept graph has not listed yet (no rebuild since it was taken
+  on, or the graph never built) searches nothing, and the answer asks you to rebuild the graph.
+  When the graph is out of date, the answer says the list may be too.
 
 ## The flow
 

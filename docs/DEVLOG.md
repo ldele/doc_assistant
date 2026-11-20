@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-19 · class: append-only -->
+<!-- status: active · updated: 2026-11-20 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-20 (2) — Questions within several folders or a concept, and the chat list's labels (A7b)
+
+**What changed.** A turn's scope is several folders, searched as one set: `scope_folder_ids`
+replaces `scope_folder_id` on `/api/chat` and `/api/compare`, `_resolve_scope` reads the union in
+one query (`library.folders_doc_hashes`), and a folder that held nothing is left out and named.
+`/folder <name>: <question>` and `/concept <name>: <question>` ask within one folder or the
+documents where a concept is present (`concept_presence`, exact forms); no presence searches
+nothing and asks for a rebuild, a stale graph is said. `retrieval_scope.py` holds the scope, its
+record shape and one reader for both shapes, used by the history, provenance and the read
+surface; MCP turns gain an additive `scope`. `/api/conversations` carries each conversation's
+labels and filters by document or folder through the read surface's derivation. The window's
+scope line names every folder (`ScopeChip.svelte`); the picker sends `[id]` or `null`.
+
+**Why.** ADR-066 choice 7, T-015's backend half, `docs/specs/chat-scoped-questions.md` (accepted
+2026-11-20, G1 to G6).
+
+**Measured.** Tests only, $0 (G5). On 10,000 documents in 20 folders, the 5-folder union took
+0.006 s (bound 0.5 s) and the folder-filtered list over 1,000 conversations 0.020 s (bound
+2.0 s). Full suite: 3,596 passed, 3 skipped. Desktop: 431 tests, `svelte-check` 0 errors.
+
+**Rejected.** Intersecting a command's folder with the picker's (both name one place; the
+command is the later choice); a second label derivation for the app's list; keeping the old wire
+field beside the new one.
+
+**What it opens.** A8: the picker's tickboxes and the list's label and filter controls. Not
+foreseen by the spec, settled in its As built: `parse_command` lowercases its argument, and
+`/folder Thesis:` reached A6 as "Thesis:".
 
 ## 2026-11-20 — Chat modes, and evidence only calls no model (A7)
 

@@ -13,7 +13,7 @@ import type {
 export async function compareRetrieval(
   text: string,
   overrides?: RagOverrides,
-  scopeFolderId?: string | null,
+  scopeFolderIds: string[] | null = null,
 ): Promise<CompareResult> {
   const r = await apiFetch(`${API_BASE}/api/compare`, {
     method: 'POST',
@@ -22,7 +22,7 @@ export async function compareRetrieval(
     body: JSON.stringify({
       text,
       overrides: overrides ?? null,
-      scope_folder_id: scopeFolderId ?? null,
+      scope_folder_ids: scopeFolderIds,
     }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'compare'))

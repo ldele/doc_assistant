@@ -24,7 +24,7 @@ from typing import Any
 
 from doc_assistant.query_router import _TOPIC_WORDS, is_library_query, library_lookup
 from doc_assistant.read_surface import records
-from doc_assistant.read_surface.shapes import DocumentItem
+from doc_assistant.read_surface.shapes import DocumentItem, FolderItem, FolderList
 
 #: The answer's last line (decision 3, open question 2). Pinned by a test.
 RECORDS_NOTE = "_From the library's records: no passage was read and no model was asked._"
@@ -299,25 +299,34 @@ def folders() -> RecordAnswer:
     )
 
 
+def _folder_matches(name: str, listed: FolderList) -> list[FolderItem]:
+    """The folders named ``name``, case and surrounding quotes aside: A6's folder matcher."""
+    wanted = name.strip().strip(_QUOTES).casefold()
+    return [f for f in listed.folders if f.name.casefold() == wanted]
+
+
+def _unknown_folder(name: str, listed: FolderList, args: dict[str, Any]) -> RecordAnswer:
+    if listed.folders:
+        known = ", ".join(f.name for f in listed.folders)
+        text = f"No folder is named “{name}”. The folders are: {known}."
+    else:
+        text = f"No folder is named “{name}”: the library has no folders yet."
+    return _answer(
+        text,
+        "list_folders",
+        args=args,
+        ids=[f.folder_id for f in listed.folders],
+        rows=listed.total,
+    )
+
+
 def folder(name: str, *, count_only: bool = False) -> RecordAnswer:
     """One folder's documents, or its count; an unknown folder says so and lists the folders."""
-    wanted = name.strip().strip(_QUOTES).casefold()
     listed = records.list_folders()
     args: dict[str, Any] = {"folder": name, "count_only": count_only}
-    hit = next((f for f in listed.folders if f.name.casefold() == wanted), None)
+    hit = next(iter(_folder_matches(name, listed)), None)
     if hit is None:
-        if listed.folders:
-            known = ", ".join(f.name for f in listed.folders)
-            text = f"No folder is named “{name}”. The folders are: {known}."
-        else:
-            text = f"No folder is named “{name}”: the library has no folders yet."
-        return _answer(
-            text,
-            "list_folders",
-            args=args,
-            ids=[f.folder_id for f in listed.folders],
-            rows=listed.total,
-        )
+        return _unknown_folder(name, listed, args)
     args["folder_id"] = hit.folder_id
     if count_only:
         page = records.list_documents(folder_id=hit.folder_id, limit=1)
@@ -571,8 +580,113 @@ _COMMANDS: dict[str, Callable[[str], RecordAnswer | None]] = {
 }
 
 
+# ============================================================
+# Scoped questions: `/folder <name>: <question>`, `/concept <name>: <question>` (A7b, G3)
+# ============================================================
+
+#: What separates the name from the question. The **first** one splits, so a question that
+#: itself holds a further ``": "`` stays whole.
+SCOPE_SEPARATOR = ": "
+
+
+@dataclass(frozen=True)
+class ScopedQuestion:
+    """A question to run as an ordinary turn within one folder's or one concept's documents.
+
+    ``kind`` is ``folder`` or ``concept``; ``target_id`` is that folder's or concept's id and
+    ``name`` its recorded name; ``question`` is the text after the separator."""
+
+    kind: str
+    target_id: str
+    name: str
+    question: str
+
+
+def split_scoped(cmd: str, arg: str) -> tuple[str, str] | None:
+    """``(name, question)`` when ``/folder`` or ``/concept`` carries a question, else ``None``.
+
+    The argument splits at its first :data:`SCOPE_SEPARATOR`. No separator, an empty name or an
+    empty question → ``None``: A6's lookup runs on the argument unchanged."""
+    if cmd not in ("folder", "concept") or SCOPE_SEPARATOR not in arg:
+        return None
+    name, question = arg.split(SCOPE_SEPARATOR, 1)
+    name, question = name.strip(), question.strip()
+    if not name or not question:
+        return None
+    return name, question
+
+
+def _which_folder(name: str, matches: list[FolderItem], args: dict[str, Any]) -> RecordAnswer:
+    lines = [f"**{len(matches)}** folders are named “{name}”. Which one do you mean?", ""]
+    lines += [f"- {f.name} ({f.documents} documents)" for f in matches]
+    lines += ["", "Choose it in the folder picker above the question box, then ask again."]
+    return _answer(
+        "\n".join(lines),
+        "list_folders",
+        args=args,
+        ids=[f.folder_id for f in matches],
+        rows=len(matches),
+        asked=True,
+    )
+
+
+def _unknown_concept(name: str) -> RecordAnswer:
+    """A6's unknown-concept sentence, followed by the concepts there are to choose from."""
+    listed = records.list_concepts()
+    shown = listed.concepts[:SHOWN]
+    if shown:
+        tail = f"The concepts you have taken on are: {', '.join(c.name for c in shown)}." + _more(
+            listed.total, len(shown)
+        )
+    else:
+        tail = "No concept has been taken on yet."
+    return _answer(
+        f"“{name}” is not a concept you have taken on, so no question was asked. {tail}",
+        "list_concepts",
+        args={"name": name},
+        ids=[c.concept_id for c in shown],
+        rows=listed.total,
+    )
+
+
+def scoped_question(cmd: str, arg: str) -> ScopedQuestion | RecordAnswer | None:
+    """Read a scoped question from a command (G3).
+
+    ``None``: not one (no separator, nothing after it, or another command), so A6's lookup runs.
+    A :class:`RecordAnswer`: the name matched no folder or concept, or several folders, and the
+    answer lists or asks; no question is asked and nothing is retrieved. A
+    :class:`ScopedQuestion`: exactly one match, to run as an ordinary turn on its documents.
+
+    Names resolve through A6's matchers: a folder by its name, case aside; a concept through
+    `read_surface.records.get_concept` (its id, name or a form), which returns one concept or
+    none, so a concept never asks which."""
+    split = split_scoped(cmd, arg.strip())
+    if split is None:
+        return None
+    name, question = split
+    if cmd == "folder":
+        listed = records.list_folders()
+        matches = _folder_matches(name, listed)
+        args: dict[str, Any] = {"folder": name, "question": question}
+        if not matches:
+            return _unknown_folder(name, listed, args)
+        if len(matches) > 1:
+            return _which_folder(name, matches, args)
+        return ScopedQuestion("folder", matches[0].folder_id, matches[0].name, question)
+    rec = records.get_concept(name.strip(_QUOTES))
+    if rec is None:
+        return _unknown_concept(name)
+    return ScopedQuestion("concept", rec.concept_id, rec.name, question)
+
+
 def answer_command(cmd: str, arg: str) -> RecordAnswer | None:
     """A lookup command's answer, or ``None`` when ``cmd`` is not one (or `/document` was given
     an id prefix): the caller then runs the command as before."""
     run = _COMMANDS.get(cmd)
-    return run(arg.strip()) if run is not None else None
+    if run is None:
+        return None
+    arg = arg.strip()
+    if cmd in ("folder", "concept") and arg.endswith(SCOPE_SEPARATOR.strip()):
+        # A7b (G3): `/folder Thesis:` with no question after the colon is A6's lookup on the name.
+        arg = arg[:-1].strip()
+    return run(arg)

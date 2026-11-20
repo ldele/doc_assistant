@@ -72,12 +72,23 @@ export interface TurnResult {
   // A2 — the web addresses in this turn's passages: an answer link outside them shows as text.
   source_links: string[]
 }
-// The retrieval scope a turn ran under. `folder_name` is null when the folder was deleted
-// before the turn ran — the turn then searched nothing rather than everything.
+// The retrieval scope a turn ran under: several folders searched as one set, or one concept's
+// documents (A7b). A folder's `folder_name` is null when it was unknown or deleted; its
+// `doc_count` is its own count, 0 when it added nothing. `doc_count` on the scope is the union.
 // Mirrors apps/api/models/chat.py::ScopePayload.
-export interface TurnScope {
+export interface ScopeFolder {
   folder_id: string
   folder_name: string | null
+  doc_count: number
+}
+export interface ScopeConcept {
+  concept_id: string
+  name: string
+  graph_stale: boolean
+}
+export interface TurnScope {
+  folders: ScopeFolder[]
+  concept: ScopeConcept | null
   doc_count: number
 }
 export type Decision = 'accepted' | 'rejected' | 'edited'

@@ -194,6 +194,43 @@ def load_graph_view() -> GraphView | None:
     return GraphView(skeleton=skeleton, gaps=tuple(gaps), staleness=staleness)
 
 
+def graph_staleness() -> GraphStaleness | None:
+    """The staleness verdict alone, or ``None`` when the graph has never been built.
+
+    What a concept-scoped question reports beside its documents (A7b, G2): the graph stores no
+    build date, since a rebuild is byte-identical, so "out of date" is this verdict and nothing
+    else. Reads the skeleton and the vocabulary, not the gaps."""
+    skeleton = load_skeleton()
+    if skeleton is None:
+        return None
+    return _staleness(skeleton)
+
+
+def concept_doc_hashes(concept_id: str) -> frozenset[str]:
+    """The ``doc_hash`` of every document where a concept is present, in one query (A7b, G2).
+
+    Presence counts a concept's **exact** forms only: the documents only a broad form reaches are
+    kept beside it, never in it (ADR-054), so they are not here either. Archived documents and
+    documents with no hash are left out, as a folder scope leaves them out. An unknown concept,
+    or a graph never built, gives an empty set: the caller then searches nothing."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import ConceptPresenceRow, Document
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(
+            select(Document.doc_hash)
+            .join(ConceptPresenceRow, ConceptPresenceRow.document_id == Document.id)
+            .where(
+                ConceptPresenceRow.concept_id == concept_id,
+                Document.is_archived.is_(False),
+                Document.doc_hash.is_not(None),
+            )
+        ).scalars()
+        return frozenset(str(h) for h in rows if h)
+
+
 @dataclass(frozen=True)
 class GapListItem:
     """One gap for the first-class gap-list surface (ROADMAP E5): a :class:`Gap` with its concept

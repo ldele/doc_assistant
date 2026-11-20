@@ -13,7 +13,13 @@ from langchain_core.documents import Document
 
 from doc_assistant import app_settings, export, providers
 from doc_assistant.chat_controller.session import RagOverrides, _TurnKnobs
-from doc_assistant.chat_controller.views import ClaimView, ScopeView, SourceView
+from doc_assistant.chat_controller.views import (
+    ClaimView,
+    ScopeConcept,
+    ScopeFolder,
+    ScopeView,
+    SourceView,
+)
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
     REVIEWER_EVIDENCE_CHARS,
@@ -22,7 +28,7 @@ from doc_assistant.config import (
     USE_MULTI_QUERY,
 )
 from doc_assistant.knowledge.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED
-from doc_assistant.library import folder_doc_hashes, get_folder
+from doc_assistant.library import folders_doc_hashes
 from doc_assistant.pipeline import format_citation
 from doc_assistant.provenance import (
     AnswerProvenance,
@@ -30,6 +36,7 @@ from doc_assistant.provenance import (
     RetrievedChunk,
     record_claims,
 )
+from doc_assistant.retrieval_scope import scope_dict, scope_label, scope_summary
 from doc_assistant.reviewer import ReviewResult
 from doc_assistant.source_checks import addressed_to_ai
 from doc_assistant.synthesis import MARKER_OK, MARKER_WEAK, Claim, segment_claims
@@ -232,60 +239,85 @@ def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
     )
 
 
-def _resolve_scope(
-    scope_folder_id: str | None,
-) -> tuple[frozenset[str] | None, ScopeView | None]:
-    """Resolve a folder id into ``(doc_hash scope, ScopeView)`` for one turn (ADR-025 F2).
+def _resolve_concept_scope(concept_id: str) -> tuple[frozenset[str], ScopeView]:
+    """A concept's documents (``concept_presence``, exact forms) as one turn's scope (A7b, G2).
 
-    ``None`` in, ``(None, None)`` out — the unscoped path, byte-identical to pre-F2.
+    No presence, an unknown concept or a graph never built gives an empty set, and the turn
+    retrieves nothing. ``graph_stale`` is the graph's staleness verdict at the time of the turn. A
+    failed read empties the scope, never widens it."""
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.concept_graph_view import concept_doc_hashes, graph_staleness
 
-    A folder that is unknown, deleted, or empty resolves to an **empty** frozenset, never to
-    ``None``: the caller must then retrieve nothing. Collapsing "I couldn't honour your scope"
-    into "I searched everything" is precisely the silent-lie failure this feature exists to
-    prevent, so the two cases are kept structurally distinct all the way down.
-
-    A resolution failure (a broken DB read) is treated the same way — empty, not unscoped.
-    """
-    if scope_folder_id is None:
-        return None, None
     try:
-        hashes = folder_doc_hashes(scope_folder_id)
-        folder = get_folder(scope_folder_id)
+        with session_scope() as session:
+            row = session.get(Concept, concept_id)
+            name = str(row.label) if row is not None else concept_id
+        staleness = graph_staleness()
+        hashes = concept_doc_hashes(concept_id) if staleness is not None else frozenset()
     except Exception as e:  # pragma: no cover - defensive; a scope must never widen on error
-        log.warning("scope_resolve_failed", folder_id=scope_folder_id, error=str(e))
-        return frozenset(), ScopeView(folder_id=scope_folder_id, folder_name=None, doc_count=0)
-    if folder is None:
-        log.warning("scope_folder_missing", folder_id=scope_folder_id)
-    return (
-        frozenset(hashes),
-        ScopeView(
-            folder_id=scope_folder_id,
-            folder_name=folder.name if folder is not None else None,
-            doc_count=len(hashes),
-        ),
+        log.warning("scope_concept_resolve_failed", concept_id=concept_id, error=str(e))
+        return frozenset(), ScopeView(concept=ScopeConcept(concept_id, concept_id), doc_count=0)
+    stale = staleness is not None and staleness.stale
+    return hashes, ScopeView(
+        concept=ScopeConcept(concept_id=concept_id, name=name, graph_stale=stale),
+        doc_count=len(hashes),
     )
 
 
+def _resolve_scope(
+    folder_ids: list[str] | None,
+    concept_id: str | None = None,
+) -> tuple[frozenset[str] | None, ScopeView | None]:
+    """Resolve folder ids, or a concept, into ``(doc_hash scope, ScopeView)`` for one turn.
+
+    ADR-025 F2, widened by A7b (`docs/specs/chat-scoped-questions.md`). ``None`` or ``[]`` and no
+    concept → ``(None, None)``: the unscoped path, byte-identical to pre-F2.
+
+    Several folders are searched as **one set**: the union of their members' hashes, each document
+    once, read in one query (``library.folders_doc_hashes``). Duplicate ids count once. A folder
+    that is unknown, deleted or empty contributes nothing and stays in ``ScopeView.folders`` with
+    a count of 0, so the note can name it (G1). If the union is empty the set is **empty**, never
+    ``None``: the caller then retrieves nothing. Collapsing "I couldn't honour your scope" into
+    "I searched everything" is the silent-lie failure F2 exists to prevent, so the two cases stay
+    structurally distinct all the way down. A failed read is treated the same way.
+    """
+    if concept_id is not None:
+        return _resolve_concept_scope(concept_id)
+    if not folder_ids:
+        return None, None
+    ids = list(dict.fromkeys(folder_ids))  # duplicates count once, first-asked order kept
+    try:
+        members = folders_doc_hashes(ids)
+    except Exception as e:  # pragma: no cover - defensive; a scope must never widen on error
+        log.warning("scope_resolve_failed", folder_ids=ids, error=str(e))
+        return frozenset(), ScopeView(
+            folders=[ScopeFolder(folder_id=i, folder_name=None, doc_count=0) for i in ids]
+        )
+    missing = [i for i in ids if i not in members.names]
+    if missing:
+        log.warning("scope_folder_missing", folder_ids=missing)
+    union: set[str] = set()
+    folders: list[ScopeFolder] = []
+    for i in ids:
+        hashes = members.hashes.get(i, frozenset())
+        union |= hashes
+        folders.append(
+            ScopeFolder(folder_id=i, folder_name=members.names.get(i), doc_count=len(hashes))
+        )
+    return frozenset(union), ScopeView(folders=folders, doc_count=len(union))
+
+
 def _scope_dict(scope: ScopeView | None) -> dict[str, Any] | None:
-    """``ScopeView`` → the JSON shape persisted in ``answer_records.retrieval_scope_json``.
-    ``None`` stays ``None`` so an unscoped turn writes NULL, exactly like every pre-F2 row."""
-    if scope is None:
-        return None
-    return {
-        "folder_id": scope.folder_id,
-        "folder_name": scope.folder_name,
-        "doc_count": scope.doc_count,
-    }
+    """``ScopeView`` → the JSON shape persisted in ``answer_records.retrieval_scope_json``
+    (``retrieval_scope.scope_dict``). ``None`` stays ``None``: an unscoped turn writes NULL."""
+    return scope_dict(scope)
 
 
 def _scope_label(scope: ScopeView | None) -> str | None:
     """One-line scope label for surfaces that show a constraint rather than a full note
     (the A/B compare card). ``None`` on an unscoped run."""
-    if scope is None:
-        return None
-    if scope.folder_name is None:
-        return "a folder that no longer exists (0 documents)"
-    return f"{scope.folder_name} ({scope.doc_count} document{'' if scope.doc_count == 1 else 's'})"
+    return scope_label(scope)
 
 
 def _scope_note(scope: ScopeView | None) -> str:
@@ -293,12 +325,7 @@ def _scope_note(scope: ScopeView | None) -> str:
     stays byte-identical (the turn-parity test pins this)."""
     if scope is None:
         return ""
-    where = f"**{scope.folder_name}**" if scope.folder_name else "a folder that no longer exists"
-    return (
-        f"\n\n🔎 **Retrieval scope (this answer only):** {where} — "
-        f"{scope.doc_count} document{'' if scope.doc_count == 1 else 's'} searched, "
-        "not the whole library."
-    )
+    return "\n\n🔎 **Retrieval scope (this answer only):** " + scope_summary(scope)
 
 
 def _no_sources_answer(scope: ScopeView | None, *, corpus_empty: bool) -> str:
@@ -308,17 +335,43 @@ def _no_sources_answer(scope: ScopeView | None, *, corpus_empty: bool) -> str:
     ``llama3.1:8b`` quoted a passage and cited ``[4]``. The citation check caught it, but only
     beside an answer already on screen, so this state is decided here and not left to a prompt.
     """
-    if scope is not None:
-        if scope.folder_name is None:
-            return "That folder no longer exists, so nothing was searched."
+    if scope is not None and scope.concept is not None:
+        name = scope.concept.name
         if scope.doc_count == 0:
             return (
-                f"The folder **{scope.folder_name}** has no documents, so there is nothing to "
-                "answer from. Add documents to it, or ask the whole library."
+                f"The concept **{name}** has no documents yet: the concept graph lists none "
+                "where it is present, so nothing was searched. Rebuild the concept graph, then "
+                "ask again."
             )
         return (
-            f"Nothing in the folder **{scope.folder_name}** matched this question, so there is "
-            "nothing to answer from."
+            f"Nothing in the documents where **{name}** is present matched this question, so "
+            "there is nothing to answer from."
+        )
+    if scope is not None:
+        named = [f.folder_name for f in scope.folders if f.folder_name is not None]
+        if not named:
+            if len(scope.folders) > 1:
+                return "Those folders no longer exist, so nothing was searched."
+            return "That folder no longer exists, so nothing was searched."
+        if scope.doc_count == 0:
+            if len(scope.folders) == 1:
+                return (
+                    f"The folder **{named[0]}** has no documents, so there is nothing to "
+                    "answer from. Add documents to it, or ask the whole library."
+                )
+            return (
+                "None of the chosen folders holds a document, so there is nothing to answer "
+                "from. Add documents to them, or ask the whole library."
+            )
+        searched = [f.folder_name or "" for f in scope.searched]
+        if len(scope.folders) == 1:
+            return (
+                f"Nothing in the folder **{searched[0]}** matched this question, so there is "
+                "nothing to answer from."
+            )
+        return (
+            f"Nothing in the folders {', '.join(f'**{n}**' for n in searched)} matched this "
+            "question, so there is nothing to answer from."
         )
     if corpus_empty:
         return (

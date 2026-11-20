@@ -82,7 +82,8 @@ SNAPSHOT: dict[str, tuple[str, ...]] = {
     ),
     "ReferenceItem": ("text", "title", "authors", "year", "doi", "in_library_document_id"),
     "SearchResult": ("question", "passages", "count", "note", "folder_id", "version"),
-    "Turn": ("question", "answer", "asked_at", "cited", "folder"),
+    "Turn": ("question", "answer", "asked_at", "cited", "folder", "scope"),
+    "TurnScope": ("folders", "concept", "documents"),
 }
 
 

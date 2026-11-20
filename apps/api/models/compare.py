@@ -25,7 +25,8 @@ class CompareRequest(BaseModel):
     text: str
     overrides: RagOverrides | None = None
     # ADR-025 F2 — applied to BOTH sides, so the diff isolates the knob rather than the corpus.
-    scope_folder_id: str | None = None
+    # Several folders since A7b, searched as one set; null or [] = the whole library.
+    scope_folder_ids: list[str] | None = None
 
 
 class CompareEffPayload(BaseModel):

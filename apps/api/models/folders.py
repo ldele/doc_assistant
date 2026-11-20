@@ -1,7 +1,7 @@
 """Folder wire models (docs/specs/feature-corpus-folders.md — ADR-025 F1).
 
 Manual Library organisation: a flat set of named folders with bulk membership. The chat-side
-consumer of a folder is ``ChatRequest.scope_folder_id`` (ADR-025 F2), which crosses the wire as
+consumer of a folder is ``ChatRequest.scope_folder_ids`` (ADR-025 F2), which crosses the wire as
 an id only — membership is resolved per turn, so a Library edit is never stale by answer time.
 """
 

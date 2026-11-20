@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-19 · class: living -->
+<!-- status: active · updated: 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
 
 # GLOSSARY — doc_assistant
 

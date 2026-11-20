@@ -34,6 +34,7 @@ from sqlalchemy import select
 
 from doc_assistant.db.models import AnswerClaim, AnswerRecord
 from doc_assistant.db.session import session_scope
+from doc_assistant.retrieval_scope import read_scope, scope_dict
 
 if TYPE_CHECKING:
     from doc_assistant.synthesis import Claim
@@ -79,9 +80,10 @@ class AnswerProvenance:
     session_id: str | None = None
     error: str | None = None
     created_at: datetime | None = None
-    # ADR-025 F2 — the folder scope this answer ran under, or None for the whole library.
-    # {folder_id, folder_name, doc_count}. The integrity requirement is that a scoped answer
-    # can never be mistaken for a whole-library one after the fact.
+    # ADR-025 F2 — the scope this answer ran under, or None for the whole library, in
+    # `retrieval_scope.scope_dict`'s shape ({folders, concept, doc_count}; A7b). The integrity
+    # requirement is that a scoped answer can never be mistaken for a whole-library one after
+    # the fact.
     retrieval_scope: dict[str, Any] | None = None
     # ADR-027 D2 (E3) — whether epistemics was allowed to touch the answer layer on this turn
     # (the effective value after U1b override > persisted setting > config default). None = a
@@ -317,9 +319,9 @@ def _row_to_provenance(row: AnswerRecord) -> AnswerProvenance:
         session_id=row.session_id,
         error=row.error,
         created_at=row.created_at,
-        retrieval_scope=(
-            json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
-        ),
+        # A7b: read through the one reader, so a pre-A7b one-folder record comes back in the
+        # current shape and a scoped record never reads as unscoped.
+        retrieval_scope=scope_dict(read_scope(row.retrieval_scope_json)),
         epistemics_markers_enabled=row.epistemics_markers_enabled,
         chat_mode=row.chat_mode,
         chat_mode_evaluated=row.chat_mode_evaluated,

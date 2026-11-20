@@ -21,7 +21,7 @@ export async function* streamChat(
   sessionId: string,
   overrides?: RagOverrides,
   signal?: AbortSignal,
-  scopeFolderId?: string | null,
+  scopeFolderIds: string[] | null = null,
 ): AsyncGenerator<SSEvent> {
   const r = await apiFetch(`${API_BASE}/api/chat`, {
     method: 'POST',
@@ -30,8 +30,9 @@ export async function* streamChat(
       text,
       session_id: sessionId,
       overrides: overrides ?? null,
-      // ADR-025 F2 — only the folder id travels; the backend resolves membership per turn.
-      scope_folder_id: scopeFolderId ?? null,
+      // ADR-025 F2 — only folder ids travel (several since A7b; null = the whole library); the
+      // backend resolves membership per turn.
+      scope_folder_ids: scopeFolderIds,
     }),
     signal,
   })

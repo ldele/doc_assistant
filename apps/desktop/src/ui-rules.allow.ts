@@ -61,8 +61,9 @@ export const MODAL_FRAMES: Record<string, Allowed> = {
 /** Check 5: rules a component writes that another component also writes, word for word (each copy
  *  past the first). One number, not a list: a new copy fails the check, so the second component to
  *  need a rule moves it to shared.css. 211 on 2026-11-06; 179 after piece (d) the same day, which
- *  moved the dialog frame's copies (backdrop, frame, title, head, buttons) and the plainest `.muted`. */
+ *  moved the dialog frame's copies (backdrop, frame, title, head, buttons) and the plainest `.muted`;
+ *  178 on 2026-11-20 (A7b), when both turns' `.scopechip` moved into `ScopeChip.svelte`. */
 export const COPIED_RULES: Allowed = {
-  count: 179,
+  count: 178,
   why: 'ratchet, 2026-11-06: the copies left after ROADMAP 110 (d); a change that touches a copy moves it to shared.css',
 }

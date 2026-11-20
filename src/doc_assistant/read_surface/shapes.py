@@ -227,13 +227,27 @@ class CitedPassage:
 
 
 @dataclass(frozen=True)
+class TurnScope:
+    """What a turn was limited to (A7b, G6). ``folders`` are the folders it asked for, by name
+    (``None`` for one that no longer exists); ``concept`` the concept whose documents it searched;
+    ``documents`` how many documents it searched, each counted once."""
+
+    folders: list[str | None]
+    concept: str | None
+    documents: int
+
+
+@dataclass(frozen=True)
 class Turn:
     question: str
     answer: str
     asked_at: datetime
     cited: list[CitedPassage]
-    #: The folder the turn was limited to, by name; ``None`` for the whole library.
+    #: The folder the turn was limited to, by name, when it was limited to exactly one folder;
+    #: ``None`` for the whole library, several folders or a concept (read ``scope`` for those).
     folder: str | None = None
+    #: What the turn was limited to; ``None`` for the whole library (added in A7b, same version).
+    scope: TurnScope | None = None
 
 
 @dataclass(frozen=True)

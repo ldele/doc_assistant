@@ -9,27 +9,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+# ADR-025 F2 / A7b: the scope lives with its record shape and its reader, so the stores can read it
+# without importing the controller. Re-exported here: every turn view model is in this module.
+from doc_assistant.retrieval_scope import ScopeConcept, ScopeFolder, ScopeView
+
+__all__ = [
+    "ClaimView",
+    "ScopeConcept",
+    "ScopeFolder",
+    "ScopeView",
+    "SourceEpistemics",
+    "SourceEvalSummary",
+    "SourceView",
+    "TurnResult",
+    "UsageView",
+]
+
 # ============================================================
 # View models (pure render payload — no UI framework types)
 # ============================================================
-
-
-@dataclass
-class ScopeView:
-    """The retrieval scope one turn ran under (ADR-025 F2) — render-ready.
-
-    Present only on a scoped turn; ``None`` on ``TurnResult`` means the whole library. This is
-    a **content filter** (which documents), not a quality knob, which is why it rides beside
-    ``RagOverrides`` rather than inside it (docs/specs/feature-corpus-folders-scope.md, S1).
-
-    ``folder_name is None`` means the folder was deleted between the user picking it and the
-    turn running: ``doc_count`` is then 0 and the turn honestly retrieves nothing rather than
-    quietly widening to every document (S3).
-    """
-
-    folder_id: str
-    folder_name: str | None
-    doc_count: int
 
 
 @dataclass(frozen=True)

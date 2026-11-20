@@ -5,7 +5,7 @@
   // same as a live one.
   import type { TurnScope } from '../../lib/core/types'
   import Markdown from './Markdown.svelte'
-  import Icon from '../../shell/Icon.svelte'
+  import ScopeChip from './ScopeChip.svelte'
 
   let {
     question,
@@ -31,19 +31,7 @@
   </div>
   <div class="assistant">
     {#if scope}
-      <div class="scopechip">
-        <Icon name="folder" size={13} />
-        {#if scope.folder_name}
-          <span>
-            Searched <strong>{scope.folder_name}</strong> only — {scope.doc_count} document{scope.doc_count ===
-            1
-              ? ''
-              : 's'}, not the whole library.
-          </span>
-        {:else}
-          <span>Scoped to a folder that no longer exists — <strong>nothing was searched</strong>.</span>
-        {/if}
-      </div>
+      <ScopeChip {scope} />
     {/if}
     <Markdown source={answer} {onCitationClick} {activeCitationN} allowedLinks={[]} />
   </div>
@@ -74,18 +62,5 @@
   .you p {
     margin: 0.1rem 0 0;
     font-weight: 600;
-  }
-  .scopechip {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin: 0 0 0.6rem;
-    padding: 0.3rem 0.55rem;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    color: var(--fg);
-    font-size: 0.76rem;
-    line-height: 1.35;
   }
 </style>

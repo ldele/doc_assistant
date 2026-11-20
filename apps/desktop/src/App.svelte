@@ -219,6 +219,11 @@
   // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
   // grid and scoping a conversation are two different intentions.
   let chatScopeFolderId = $state<string | null>(null)
+  // A7b: the wire takes a list; the picker stays one choice (its tickboxes are A8's), so a
+  // folder goes as `[id]` and *All documents* as `null`.
+  function scopeFolderIds(): string[] | null {
+    return chatScopeFolderId === null ? null : [chatScopeFolderId]
+  }
 
   // Concept graph — state + its loader/rebuild live in `lib/graph/graph.svelte.ts`; lazy-loaded on
   // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
@@ -604,7 +609,7 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, chatScopeFolderId)) {
+      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, scopeFolderIds())) {
         if (ev.event === 'token') chat.turns[idx].answer += ev.data
         else if (ev.event === 'result') chat.turns[idx].result = JSON.parse(ev.data) as TurnResult
         // The turn stopped: the API's sentence names the engine that failed.
@@ -638,7 +643,7 @@
     if (!text || chat.sending || chat.comparing) return
     chat.comparing = true
     try {
-      chat.compareResult = await compareRetrieval(text, chat.overrides, chatScopeFolderId)
+      chat.compareResult = await compareRetrieval(text, chat.overrides, scopeFolderIds())
       setPinned(true) // bring the fresh compare card into view
     } catch (e) {
       console.error('compare failed', e)

@@ -41,7 +41,9 @@ from doc_assistant.read_surface.shapes import (
     LabelDocument,
     LabelFolder,
     Turn,
+    TurnScope,
 )
+from doc_assistant.retrieval_scope import read_scope
 
 MAX_PAGE = 100
 DEFAULT_PAGE = 20
@@ -65,34 +67,48 @@ def _title(text: str | None) -> str:
 
 def _labels(session: Session, doc_ids: Iterable[str]) -> ConversationLabels:
     """The cited documents, by title, and the folders that hold them, by name."""
-    ids = sorted({d for d in doc_ids if d})
-    if not ids:
-        return ConversationLabels()
-    docs = [
-        LabelDocument(document_id=str(i), title=((t or "").strip() or f))
+    return labels_for(session, {"": set(doc_ids)}).get("", ConversationLabels())
+
+
+def labels_for(session: Session, cited: dict[str, set[str]]) -> dict[str, ConversationLabels]:
+    """Each conversation's labels from the documents its answers cited (choice 7).
+
+    ``cited`` maps a conversation to its cited document ids (:func:`cited_documents`). Two
+    queries for the whole map, whatever its size: the documents by title, and the folders that
+    hold them by name. A document no longer in the library drops out of the labels."""
+    every = sorted({d for ids in cited.values() for d in ids if d})
+    if not every:
+        return {sid: ConversationLabels() for sid in cited}
+    titles = {
+        str(i): ((t or "").strip() or str(f))
         for i, t, f in session.execute(
-            select(Document.id, Document.title, Document.filename).where(Document.id.in_(ids))
+            select(Document.id, Document.title, Document.filename).where(Document.id.in_(every))
         ).all()
-    ]
-    folders = [
-        LabelFolder(folder_id=str(i), name=str(n))
-        for i, n in session.execute(
-            select(Folder.id, Folder.name)
-            .where(
-                Folder.id.in_(
-                    select(document_folders.c.folder_id).where(
-                        document_folders.c.document_id.in_(ids)
-                    )
-                )
-            )
-            .order_by(Folder.name)
-        ).all()
-    ]
-    docs.sort(key=lambda d: d.title.casefold())
-    return ConversationLabels(documents=docs, folders=folders)
+    }
+    held: dict[str, set[str]] = {}
+    names: dict[str, str] = {}
+    for doc_id, folder_id, name in session.execute(
+        select(document_folders.c.document_id, Folder.id, Folder.name)
+        .join(Folder, Folder.id == document_folders.c.folder_id)
+        .where(document_folders.c.document_id.in_(every))
+    ).all():
+        held.setdefault(str(doc_id), set()).add(str(folder_id))
+        names[str(folder_id)] = str(name)
+    out: dict[str, ConversationLabels] = {}
+    for sid, ids in cited.items():
+        docs = [LabelDocument(document_id=d, title=titles[d]) for d in sorted(ids) if d in titles]
+        docs.sort(key=lambda d: d.title.casefold())
+        folder_ids = {f for d in ids for f in held.get(d, set())}
+        folders = sorted(
+            (LabelFolder(folder_id=f, name=names[f]) for f in folder_ids),
+            key=lambda f: (f.name, f.folder_id),
+        )
+        out[sid] = ConversationLabels(documents=docs, folders=folders)
+    return out
 
 
-def _cited_doc_ids(session: Session, session_ids: list[str]) -> dict[str, set[str]]:
+def cited_documents(session: Session, session_ids: list[str]) -> dict[str, set[str]]:
+    """Each conversation's cited document ids, read from its answer records (one query)."""
     out: dict[str, set[str]] = {sid: set() for sid in session_ids}
     if not session_ids:
         return out
@@ -103,6 +119,35 @@ def _cited_doc_ids(session: Session, session_ids: list[str]) -> dict[str, set[st
     ).all():
         out[str(sid)].update(str(c["doc_id"]) for c in _cited(raw) if c.get("doc_id"))
     return out
+
+
+def keep_cited(
+    session: Session,
+    cited: dict[str, set[str]],
+    *,
+    document_id: str | None = None,
+    folder_id: str | None = None,
+) -> set[str]:
+    """The conversations in ``cited`` that pass the filters: ``document_id`` keeps those whose
+    answers cited that document, ``folder_id`` those that cited any document in that folder, and
+    both together must both hold. No filter keeps them all. The one filter the read surface and
+    the app's chat list share (A7b, G4)."""
+    in_folder: set[str] | None = None
+    if folder_id is not None:
+        in_folder = {
+            str(d)
+            for d in session.execute(
+                select(document_folders.c.document_id).where(
+                    document_folders.c.folder_id == folder_id
+                )
+            ).scalars()
+        }
+    return {
+        sid
+        for sid, ids in cited.items()
+        if (document_id is None or document_id in ids)
+        and (in_folder is None or bool(in_folder & ids))
+    }
 
 
 def list_conversations(
@@ -143,29 +188,16 @@ def list_conversations(
         filtering = document_id is not None or folder_id is not None
         cited: dict[str, set[str]] = {}
         if filtering:
-            cited = _cited_doc_ids(session, [str(r[0]) for r in rows])
-            in_folder: set[str] | None = None
-            if folder_id is not None:
-                in_folder = {
-                    str(d)
-                    for d in session.execute(
-                        select(document_folders.c.document_id).where(
-                            document_folders.c.folder_id == folder_id
-                        )
-                    ).scalars()
-                }
-            rows = [
-                r
-                for r in rows
-                if (document_id is None or document_id in cited[str(r[0])])
-                and (in_folder is None or bool(in_folder & cited[str(r[0])]))
-            ]
+            cited = cited_documents(session, [str(r[0]) for r in rows])
+            kept = keep_cited(session, cited, document_id=document_id, folder_id=folder_id)
+            rows = [r for r in rows if str(r[0]) in kept]
         total = len(rows)
         page = rows[offset : offset + limit]
         ids = [str(r[0]) for r in page]
         if not filtering:
-            cited = _cited_doc_ids(session, ids)
+            cited = cited_documents(session, ids)
         titles = _titles(session, ids)
+        labels = labels_for(session, {sid: cited.get(sid, set()) for sid in ids})
         items = [
             ConversationItem(
                 conversation_id=sid,
@@ -173,7 +205,7 @@ def list_conversations(
                 turns=int(n),
                 started_at=started,
                 last_at=last,
-                labels=_labels(session, cited.get(sid, set())),
+                labels=labels[sid],
             )
             for sid, n, started, last in ((str(r[0]), r[1], r[2], r[3]) for r in page)
         ]
@@ -300,7 +332,7 @@ def get_conversation(conversation_id: str) -> ConversationRecord | None:
         pager = _Pager(session)
         turns: list[Turn] = []
         for rec, chunks in cited:
-            scope = json.loads(rec.retrieval_scope_json) if rec.retrieval_scope_json else None
+            scope = read_scope(rec.retrieval_scope_json)
             turns.append(
                 Turn(
                     question=rec.original_query or rec.query,
@@ -318,7 +350,21 @@ def get_conversation(conversation_id: str) -> ConversationRecord | None:
                         )
                         for i, c in enumerate(chunks)
                     ],
-                    folder=(scope or {}).get("folder_name") if isinstance(scope, dict) else None,
+                    # G6: `folder` keeps its meaning, set only for exactly one folder.
+                    folder=(
+                        scope.folders[0].folder_name
+                        if scope is not None and scope.concept is None and len(scope.folders) == 1
+                        else None
+                    ),
+                    scope=(
+                        TurnScope(
+                            folders=[f.folder_name for f in scope.folders],
+                            concept=scope.concept.name if scope.concept is not None else None,
+                            documents=scope.doc_count,
+                        )
+                        if scope is not None
+                        else None
+                    ),
                 )
             )
         title = (meta.title_override if meta and meta.title_override else None) or _title(

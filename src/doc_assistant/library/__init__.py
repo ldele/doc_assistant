@@ -69,6 +69,7 @@ from doc_assistant.library.figures import (
     list_document_figures,
 )
 from doc_assistant.library.folders import (
+    FolderMembers,
     FolderSummary,
     _build_folder,
     _edit_membership,
@@ -79,6 +80,7 @@ from doc_assistant.library.folders import (
     delete_folder,
     folder_doc_hashes,
     folder_document_ids,
+    folders_doc_hashes,
     get_folder,
     list_folders,
     remove_documents_from_folder,
@@ -180,6 +182,7 @@ __all__ = [
     "DocumentSummary",
     "FamilyDeletion",
     "FigureView",
+    "FolderMembers",
     "FolderSummary",
     "GraphEdge",
     "GraphNode",
@@ -229,6 +232,7 @@ __all__ = [
     "find_document_by_short_id",
     "folder_doc_hashes",
     "folder_document_ids",
+    "folders_doc_hashes",
     "get_chunk_context",
     "get_document_chunks",
     "get_document_details",

@@ -21,6 +21,7 @@ from doc_assistant.config import CANDIDATE_K
 if TYPE_CHECKING:
     from doc_assistant.chat_controller import (
         ClaimView,
+        ScopeView,
         SourceEpistemics,
         SourceEvalSummary,
         SourceView,
@@ -59,12 +60,12 @@ class ChatRequest(BaseModel):
     text: str
     session_id: str
     overrides: RagOverrides | None = None
-    # ADR-025 F2 — restrict retrieval to one folder for this turn. A sibling of `overrides`,
-    # not a field inside it: a scope is a *content* filter (which documents), while
-    # `RagOverrides` is ADR-010's governance channel for locked *quality* knobs. Only the id
-    # crosses the wire — the backend resolves membership per turn, so a Library edit can never
-    # be out of date by the time the answer is produced.
-    scope_folder_id: str | None = None
+    # ADR-025 F2 — restrict retrieval to these folders for this turn, searched as one set (A7b).
+    # A sibling of `overrides`, not a field inside it: a scope is a *content* filter (which
+    # documents), while `RagOverrides` is ADR-010's governance channel for locked *quality* knobs.
+    # Only ids cross the wire — the backend resolves membership per turn, so a Library edit can
+    # never be out of date by the time the answer is produced. null or [] = the whole library.
+    scope_folder_ids: list[str] | None = None
 
 
 class AdjudicateRequest(BaseModel):
@@ -173,13 +174,51 @@ class UsageViewPayload(BaseModel):
         )
 
 
-class ScopePayload(BaseModel):
-    """The retrieval scope a turn ran under (ADR-025 F2); absent = the whole library.
-    `folder_name` is null when the folder was deleted before the turn ran."""
+class ScopeFolderPayload(BaseModel):
+    """One folder a turn asked for. `folder_name` is null when the folder was unknown or deleted;
+    `doc_count` is its own count before the union, 0 when it added nothing."""
 
     folder_id: str
     folder_name: str | None
     doc_count: int
+
+
+class ScopeConceptPayload(BaseModel):
+    """The concept a turn was scoped to (A7b): its documents are where it is present."""
+
+    concept_id: str
+    name: str
+    graph_stale: bool
+
+
+class ScopePayload(BaseModel):
+    """The retrieval scope a turn ran under (ADR-025 F2, A7b); absent = the whole library.
+    Folders or a concept, never both; `doc_count` is the union retrieval searched."""
+
+    folders: list[ScopeFolderPayload] = []
+    concept: ScopeConceptPayload | None = None
+    doc_count: int
+
+    @classmethod
+    def from_view(cls, v: ScopeView) -> ScopePayload:
+        return cls(
+            folders=[
+                ScopeFolderPayload(
+                    folder_id=f.folder_id, folder_name=f.folder_name, doc_count=f.doc_count
+                )
+                for f in v.folders
+            ],
+            concept=(
+                ScopeConceptPayload(
+                    concept_id=v.concept.concept_id,
+                    name=v.concept.name,
+                    graph_stale=v.concept.graph_stale,
+                )
+                if v.concept is not None
+                else None
+            ),
+            doc_count=v.doc_count,
+        )
 
 
 class TurnResultPayload(BaseModel):
@@ -220,15 +259,7 @@ class TurnResultPayload(BaseModel):
             citation_note_md=r.citation_note_md,
             source_links=list(r.source_links),
             download_path=str(r.download_path) if r.download_path is not None else None,
-            scope=(
-                ScopePayload(
-                    folder_id=r.scope.folder_id,
-                    folder_name=r.scope.folder_name,
-                    doc_count=r.scope.doc_count,
-                )
-                if r.scope is not None
-                else None
-            ),
+            scope=ScopePayload.from_view(r.scope) if r.scope is not None else None,
             source_eval=(
                 SourceEvalSummaryPayload.from_view(r.source_eval)
                 if r.source_eval is not None

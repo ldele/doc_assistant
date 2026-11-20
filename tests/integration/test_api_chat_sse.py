@@ -66,7 +66,7 @@ class FakeController:
         self.adjudicated: list[tuple[str, str, str | None]] = []
         # ADR-010: every handle_message call's `overrides` arg, in call order.
         self.received_overrides: list[object] = []
-        self.received_scopes: list[str | None] = []
+        self.received_scopes: list[list[str] | None] = []
         self.rag = _FakeRag()
 
     def chunk_count(self) -> int:
@@ -90,10 +90,10 @@ class FakeController:
         text: str,
         *,
         overrides: object = None,
-        scope_folder_id: str | None = None,
+        scope_folder_ids: list[str] | None = None,
     ) -> Iterator[object]:
         self.received_overrides.append(overrides)
-        self.received_scopes.append(scope_folder_id)
+        self.received_scopes.append(scope_folder_ids)
         yield Step("Searching documents", "Found 1 passage")
         yield Token("Hello ")
         yield Token("world [1].")
@@ -183,7 +183,7 @@ class _FailingController(FakeController):
         text: str,
         *,
         overrides: object = None,
-        scope_folder_id: str | None = None,
+        scope_folder_ids: list[str] | None = None,
     ) -> Iterator[object]:
         yield Token("Partial ")
         if self.escapes:

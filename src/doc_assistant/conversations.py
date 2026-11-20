@@ -16,9 +16,8 @@ only ``{filename, page, section, chunk_excerpt}`` (not markers, figures, or the 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import func, select
 
@@ -26,6 +25,8 @@ from doc_assistant.chat_modes import DEFAULT_MODE, ChatMode, conversation_mode
 from doc_assistant.db.models import AnswerRecord, ConversationMeta
 from doc_assistant.db.session import session_scope
 from doc_assistant.export import ExportSource, ExportTurn, render_conversation_markdown
+from doc_assistant.read_surface.shapes import ConversationLabels
+from doc_assistant.retrieval_scope import ScopeView, read_scope
 
 _TITLE_MAX = 80
 
@@ -41,6 +42,9 @@ class ConversationSummary:
     last_at: datetime
     pinned: bool = False
     archived: bool = False
+    # A7b (ADR-066 choice 7): the documents the answers cited and the folders holding them,
+    # derived from the records on every read (`read_surface.conversations.labels_for`).
+    labels: ConversationLabels = field(default_factory=ConversationLabels)
 
 
 @dataclass(frozen=True)
@@ -61,10 +65,11 @@ class ConversationTurn:
     answer: str
     sources: list[ConversationSource]
     created_at: datetime
-    # ADR-025 F2 — {folder_id, folder_name, doc_count} if the turn was folder-scoped, else None.
-    # Replayed from the record so a reopened conversation cannot present a scoped answer as a
-    # whole-library one; that would be the same silent lie, just deferred.
-    retrieval_scope: dict[str, Any] | None = None
+    # ADR-025 F2 — the scope the turn ran under (folders or a concept, A7b), else None. Replayed
+    # from the record through `retrieval_scope.read_scope`, which reads both record shapes, so a
+    # reopened conversation cannot present a scoped answer as a whole-library one; that would be
+    # the same silent lie, just deferred.
+    retrieval_scope: ScopeView | None = None
     # A7 — the chat mode this turn's answer prompt used and whether it is evaluated, replayed from
     # the record; None on a turn no answer prompt took part in and on records from before A7.
     chat_mode: str | None = None
@@ -256,19 +261,33 @@ def export_all_conversations(*, dev: bool = False, include_deleted: bool = False
     return HistoryExport("\n".join(header) + "\n" + body, len(parts), total_turns)
 
 
-def list_conversations(limit: int = 100) -> list[ConversationSummary]:
+def list_conversations(
+    limit: int = 100,
+    *,
+    document_id: str | None = None,
+    folder_id: str | None = None,
+) -> list[ConversationSummary]:
     """The most-recently-active conversations (Decision 10: no prune, cap ~100). Soft-deleted
     conversations are excluded; pinned ones sort first, then newest-first within each group.
 
     Groups ``AnswerRecord`` by ``session_id`` (``NULL`` excluded); the title is the earliest
     turn's question (``original_query`` before its rewrite, else ``query``). Pin/archive flags
     come from the ``conversation_meta`` sidecar (absent row = defaults).
+
+    Each conversation carries its **labels**, the documents its answers cited and the folders
+    holding them, and ``document_id`` / ``folder_id`` keep only the conversations that cited that
+    document or a document in that folder, both together = both must hold (A7b, G4). Both are
+    the read surface's derivation (``read_surface.conversations``), read on every call; nothing
+    is stored. The filter applies before the cap, so an older match is not cut off by newer
+    conversations that do not match.
     """
+    from doc_assistant.read_surface.conversations import cited_documents, keep_cited, labels_for
+
     with session_scope() as session:
         deleted_subq = select(ConversationMeta.session_id).where(
             ConversationMeta.deleted_at.is_not(None)
         )
-        agg = session.execute(
+        query = (
             select(
                 AnswerRecord.session_id,
                 func.count(AnswerRecord.id),
@@ -279,8 +298,16 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
             .where(AnswerRecord.session_id.not_in(deleted_subq))
             .group_by(AnswerRecord.session_id)
             .order_by(func.max(AnswerRecord.created_at).desc())
-            .limit(limit)
-        ).all()
+        )
+        filtering = document_id is not None or folder_id is not None
+        cited: dict[str, set[str]] = {}
+        if filtering:
+            every = session.execute(query).all()
+            cited = cited_documents(session, [str(row[0]) for row in every])
+            kept = keep_cited(session, cited, document_id=document_id, folder_id=folder_id)
+            agg = [row for row in every if str(row[0]) in kept][:limit]
+        else:
+            agg = list(session.execute(query.limit(limit)).all())
         if not agg:
             return []
 
@@ -311,6 +338,9 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
         ).all()
         flags = {sid: (bool(pinned), bool(archived)) for sid, pinned, archived, _ in flag_rows}
         overrides = {sid: title for sid, _, _, title in flag_rows if title}
+        if not filtering:
+            cited = cited_documents(session, [str(sid) for sid in session_ids])
+        labels = labels_for(session, {str(sid): cited.get(str(sid), set()) for sid in session_ids})
 
         summaries = [
             ConversationSummary(
@@ -321,6 +351,7 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
                 last_at=last_at,
                 pinned=flags.get(sid, (False, False))[0],
                 archived=flags.get(sid, (False, False))[1],
+                labels=labels[str(sid)],
             )
             for sid, count, started_at, last_at in agg
         ]
@@ -400,9 +431,7 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
                 answer=row.answer,
                 sources=_sources_from_json(row.retrieved_chunks_json),
                 created_at=row.created_at,
-                retrieval_scope=(
-                    json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
-                ),
+                retrieval_scope=read_scope(row.retrieval_scope_json),
                 chat_mode=row.chat_mode,
                 chat_mode_evaluated=row.chat_mode_evaluated,
             )

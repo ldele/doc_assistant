@@ -1,7 +1,7 @@
 """Library folders — manual corpus organisation (feature-corpus-folders.md, ADR-025 F1).
 
 Flat named folders with bulk membership. Since F2 a folder can also scope one chat turn's
-retrieval (``POST /api/chat`` ``scope_folder_id``), so these writes are visible on the answer
+retrieval (``POST /api/chat`` ``scope_folder_ids``), so these writes are visible on the answer
 path — but only by id: membership is resolved per turn, never cached here.
 
 Deleting a folder never deletes documents (spec D6).
@@ -26,7 +26,7 @@ def list_folders_route() -> list[LibraryFolderPayload]:
     """Every folder with its non-archived member count (feature-corpus-folders.md, ADR-025 F1).
 
     A folder organises the Library and, since F2, can scope one chat turn's retrieval
-    (POST /api/chat `scope_folder_id`)."""
+    (POST /api/chat `scope_folder_ids`)."""
     from doc_assistant.library import list_folders
 
     return [LibraryFolderPayload.from_folder(f) for f in list_folders()]

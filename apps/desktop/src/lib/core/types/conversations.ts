@@ -19,6 +19,13 @@ export interface ConversationSummary {
   last_at: string // ISO 8601
   pinned: boolean
   archived: boolean
+  // A7b (ADR-066 choice 7) — the documents its answers cited and the folders holding them,
+  // derived from the records on every read. The list's controls that use them are A8's.
+  labels: ConversationLabels
+}
+export interface ConversationLabels {
+  documents: { document_id: string; title: string }[]
+  folders: { folder_id: string; name: string }[]
 }
 // A rehydrated citation — degraded vs a live SourceView (no markers/figures; not persisted).
 export interface ConversationSource {

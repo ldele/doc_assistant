@@ -24,15 +24,24 @@ router = APIRouter()
 
 
 @router.get("/api/conversations")
-def list_conversations_route() -> list[ConversationSummaryPayload]:
+def list_conversations_route(
+    document_id: str | None = None, folder_id: str | None = None
+) -> list[ConversationSummaryPayload]:
     """Past conversations for the history sidebar (feature-conversation-history.md).
 
     A read over the ``AnswerRecord`` store — the *live* session appears here too once it has
     a persisted turn (the frontend marks it as current). Rows predating the ``session_id``
-    write-fix are ``NULL`` and excluded."""
+    write-fix are ``NULL`` and excluded.
+
+    Each row carries its labels; ``document_id`` / ``folder_id`` keep the conversations that
+    cited that document, or a document in that folder, both together = both must hold (A7b,
+    G4). The derivation is the read surface's; the controls that use it are A8's."""
     from doc_assistant.conversations import list_conversations
 
-    return [ConversationSummaryPayload.from_summary(s) for s in list_conversations()]
+    return [
+        ConversationSummaryPayload.from_summary(s)
+        for s in list_conversations(document_id=document_id, folder_id=folder_id)
+    ]
 
 
 @router.post("/api/conversations/export")

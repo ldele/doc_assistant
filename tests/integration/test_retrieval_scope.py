@@ -135,7 +135,7 @@ def _folder_with(*filenames: str) -> str:
 def _turn(
     controller: ChatController,
     *,
-    scope_folder_id: str | None = None,
+    scope_folder_ids: list[str] | None = None,
     overrides: RagOverrides | None = None,
 ) -> object:
     events = list(
@@ -143,7 +143,7 @@ def _turn(
             Session(),
             "how do neurons connect?",
             overrides=overrides,
-            scope_folder_id=scope_folder_id,
+            scope_folder_ids=scope_folder_ids,
         )
     )
     return next(e.result for e in events if isinstance(e, Result))
@@ -164,25 +164,24 @@ def test_scoped_turn_resolves_membership_records_and_announces(monkeypatch, temp
     rag = FakeRAG()
     controller = ChatController(rag=rag)
 
-    result = _turn(controller, scope_folder_id=folder_id)
+    result = _turn(controller, scope_folder_ids=[folder_id])
 
     # S2 — the backend resolved the folder to its members' doc_hashes.
     assert rag.scope_calls == [frozenset({"h-a.pdf", "h-b.pdf"})]
     # S8 — the structured chip the renderer shows, on the ai path.
     assert result.scope is not None
-    assert (result.scope.folder_id, result.scope.folder_name, result.scope.doc_count) == (
-        folder_id,
-        "Demo corpus",
-        2,
-    )
+    assert [(f.folder_id, f.folder_name, f.doc_count) for f in result.scope.folders] == [
+        (folder_id, "Demo corpus", 2)
+    ]
+    assert result.scope.doc_count == 2
     # ...and the scope is stated in the provenance card, not only in a structured field.
     assert "Retrieval scope" in result.provenance_card_md
     assert "Demo corpus" in result.provenance_card_md
     # S7 — persisted, so the answer can never later be mistaken for a whole-library one.
     (raw,) = _scope_json()
     assert json.loads(raw or "null") == {
-        "folder_id": folder_id,
-        "folder_name": "Demo corpus",
+        "folders": [{"folder_id": folder_id, "folder_name": "Demo corpus", "doc_count": 2}],
+        "concept": None,
         "doc_count": 2,
     }
 
@@ -194,7 +193,7 @@ def test_human_mode_scoped_turn_also_announces_and_records(monkeypatch, temp_db)
     controller = ChatController(rag=FakeRAG())
 
     result = _turn(
-        controller, scope_folder_id=folder_id, overrides=RagOverrides(synthesis_mode="human")
+        controller, scope_folder_ids=[folder_id], overrides=RagOverrides(synthesis_mode="human")
     )
 
     assert result.mode == "human"
@@ -202,7 +201,7 @@ def test_human_mode_scoped_turn_also_announces_and_records(monkeypatch, temp_db)
     # Human mode renders no provenance card, so the note has to ride the answer itself.
     assert "Retrieval scope" in result.answer
     (raw,) = _scope_json()
-    assert json.loads(raw or "null")["folder_name"] == "Demo corpus"
+    assert json.loads(raw or "null")["folders"][0]["folder_name"] == "Demo corpus"
 
 
 # --- S3: never fall back to unscoped ----------------------------------------------------- #
@@ -216,15 +215,15 @@ def test_deleted_folder_searches_nothing_rather_than_everything(monkeypatch, tem
     rag = FakeRAG()
     controller = ChatController(rag=rag)
 
-    result = _turn(controller, scope_folder_id=folder_id)
+    result = _turn(controller, scope_folder_ids=[folder_id])
 
     assert rag.scope_calls == [frozenset()]  # empty, NOT None
     assert result.sources == []
     # The chip still fires, and says the folder is gone rather than naming a folder.
     assert result.scope is not None
-    assert result.scope.folder_name is None
+    assert result.scope.folders[0].folder_name is None
     assert result.scope.doc_count == 0
-    assert json.loads(_scope_json()[0] or "null")["folder_name"] is None
+    assert json.loads(_scope_json()[0] or "null")["folders"][0]["folder_name"] is None
     assert result.answer == "That folder no longer exists, so nothing was searched."  # KI-74
 
 
@@ -235,7 +234,7 @@ def test_empty_folder_searches_nothing(monkeypatch, temp_db) -> None:
     rag = FakeRAG()
     controller = ChatController(rag=rag)
 
-    result = _turn(controller, scope_folder_id=folder.id)
+    result = _turn(controller, scope_folder_ids=[folder.id])
 
     assert rag.scope_calls == [frozenset()]
     assert result.sources == []
@@ -249,7 +248,7 @@ def test_unknown_folder_id_searches_nothing(monkeypatch, temp_db) -> None:
     rag = FakeRAG()
     controller = ChatController(rag=rag)
 
-    result = _turn(controller, scope_folder_id="never-existed")
+    result = _turn(controller, scope_folder_ids=["never-existed"])
 
     assert rag.scope_calls == [frozenset()]
     assert result.sources == []
@@ -281,7 +280,7 @@ def test_scope_does_not_leak_between_turns(monkeypatch, temp_db) -> None:
     controller = ChatController(rag=rag)
     session = Session()
 
-    list(controller.handle_message(session, "q1", scope_folder_id=folder_id))
+    list(controller.handle_message(session, "q1", scope_folder_ids=[folder_id]))
     list(controller.handle_message(session, "q2"))
 
     assert rag.scope_calls == [frozenset({"h-a.pdf"}), None]
@@ -299,7 +298,7 @@ def test_chat_route_forwards_the_scope_and_returns_it_on_the_wire(monkeypatch, t
     controller = ChatController(rag=FakeRAG())
     client = TestClient(create_app(controller=controller))  # type: ignore[arg-type]
 
-    body = {"text": "q", "session_id": "s1", "scope_folder_id": folder_id}
+    body = {"text": "q", "session_id": "s1", "scope_folder_ids": [folder_id]}
     with client.stream("POST", "/api/chat", json=body) as r:
         assert r.status_code == 200
         payload = next(
@@ -309,8 +308,8 @@ def test_chat_route_forwards_the_scope_and_returns_it_on_the_wire(monkeypatch, t
             if line.startswith("data: ") and '"scope"' in line
         )
     assert payload["scope"] == {
-        "folder_id": folder_id,
-        "folder_name": "Demo corpus",
+        "folders": [{"folder_id": folder_id, "folder_name": "Demo corpus", "doc_count": 1}],
+        "concept": None,
         "doc_count": 1,
     }
 
@@ -339,7 +338,7 @@ def test_compare_scopes_both_sides_and_labels_the_card(monkeypatch, temp_db) -> 
     rag = FakeRAG()
     controller = ChatController(rag=rag)
 
-    result = controller.compare_retrieval("q", RagOverrides(top_k=3), folder_id)
+    result = controller.compare_retrieval("q", RagOverrides(top_k=3), [folder_id])
 
     assert rag.scope_calls == [frozenset({"h-a.pdf"}), frozenset({"h-a.pdf"})]  # A and B
     assert result.scope_label == "Demo corpus (1 document)"

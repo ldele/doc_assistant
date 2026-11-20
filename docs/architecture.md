@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-20 (the background work section; A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -233,6 +233,36 @@ screen takes only `Icon`, `Dialog` and `ConfirmDialog` from `shell/`.
 | the providers: *Answering with* · the list · the open provider's form | *Provider & model* | `ProviderSetup.svelte` · `AnsweringWith.svelte` · `ProviderList.svelte` · `ProviderForm.svelte` |
 | *Manage files* · *Letter-spacing ignore list* | *Documents* | `ManageFiles.svelte` · `SpacingIgnoreList.svelte` |
 | *Re-index this folder?* · *Open this library?* | *Re-index* · *Open another library…*, in *Documents* | `ReindexFolder.svelte` · `OpenLibrary.svelte` |
+
+## Background work
+
+The engine is one process serving one person. Work that outlasts a request runs on plain daemon
+threads inside it, with no task queue, no worker process and no scheduler. This is a desktop
+design: a server with several clients would need a queue and `anyio.to_thread`
+(`apps/api/CLAUDE.md`).
+
+| Work | How it runs | How the app follows it | What it refuses |
+|---|---|---|---|
+| A chat turn | `POST /api/chat`: `handle_message` is a blocking generator, so `routers/chat._event_stream` runs it on a thread per turn and passes its events to the SSE stream through an `asyncio.Queue` | the stream itself (`token`, `step`, `result`, `error`, `done`) | nothing: turns can overlap each other and any job |
+| Indexing | `POST /api/ingest` answers `202` and starts the `ingest` thread | `GET /api/ingest/status`, polled by `lib/core/ingest.svelte.ts`; pause and stop (`/api/ingest/pause`, `/stop`) act between documents, never inside one (`ingest/run.py`) | a second indexing run (`409`) |
+| A per-part re-run | `POST /api/library/documents/reingest` answers `202` and starts a thread | `GET /api/library/reingest/status`, polled by `screens/document-page/RerunIngestion.svelte` | a second re-run, and any re-run while indexing runs (`409`) |
+| The concept-graph rebuild | `POST /api/concepts/graph/rebuild` answers `202` and starts the `graph-rebuild` thread | `GET /api/concepts/graph/rebuild/status`, polled by `lib/graph/graph.svelte.ts` | a second rebuild (`409`) |
+| The provider checks | `readiness._all_readiness` probes every local engine at once on a thread pool, under one time budget; a probe that misses it reads as not running and finishes on its own | the readiness route's answer | — |
+| The parent watch | `apps/api/parent_watch.watch_parent` waits on the app's process and stops the engine when it ends (KI-71) | — | — |
+
+**The job shape.** Each job is `202` then poll. Its status lives in a dataclass in
+`apps/api/services.py` on `app.state`, behind one lock per job that the worker and every reader
+take. The worker catches any failure and leaves `state = "error"` with a message, so a job never
+dies out of sight. When indexing finishes, the controller is rebuilt *before* the status says
+`done`, so a client that reads `done` then sees the new corpus. A chat turn reads the controller
+when its request starts, so a turn already running finishes on the old one.
+
+**What is not guarded.** Each job refuses a second copy of itself, and a re-run refuses to start
+during indexing; nothing else is checked. Indexing does not check for a running re-run, and the
+graph rebuild checks neither, so the rebuild can read a library that is changing under it. Job
+status is held in memory: a restart forgets a job, and none resumes. The threads are daemon
+threads, so closing the engine stops a job where it is. (`/mcp` also answers `202`, but that is
+the empty reply to a JSON-RPC notification, not a job.)
 
 ## Two-tier caching
 

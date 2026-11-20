@@ -1,4 +1,4 @@
-<!-- status: accepted · updated: 2026-11-19 (accepted by the user as written; written after the user's seven answers in A7's scoped grill) · class: living -->
+<!-- status: active · updated: 2026-11-20 (built; the gate recorded under As built); 2026-11-19 (accepted by the user as written; written after the user's seven answers in A7's scoped grill) · class: living -->
 
 # Spec — Chat modes change only the framing, and evidence-only calls no model (ROADMAP 37 and 40, session A7)
 
@@ -143,3 +143,70 @@ today with no passages.
 |---|---|---|
 | 1 | Critical reading's exact framing text, the length cap and the check's phrases | settled in the build, pinned by tests |
 | G1–G7 | The grill's seven branches | resolved, 2026-11-19 (Decisions above) |
+
+## As built (2026-11-20)
+
+**Code.** `src/doc_assistant/chat_modes.py` holds the two built-in modes, a person's own (the new
+`chat_modes` table in `library.db`), the check, the format rules, a conversation's mode and the
+`/mode` command. `prompts.py` splits the answer prompt into `ANSWER_FRAMING_DEFAULT` and
+`ANSWER_PROMPT_FROZEN`; `assemble_answer_template(framing)` writes a newline, the framing, one
+space and the frozen remainder, which for the default framing is the old `ANSWER_PROMPT` byte for
+byte. `ANSWER_PROMPT` is still exported, built from the default. The controller reads the
+conversation's mode once per turn (`conversation_meta.mode_id`, read through `session_id`), builds
+its prompt, fits the passages to it, streams with it (`RAGPipeline.stream_answer(prompt=…)`) and
+hashes it (`turn_template_hash`, over that prompt and `REWRITE_PROMPT`). The answer record gains
+`chat_mode` and `chat_mode_evaluated` (additive, NULL on older rows and on turns with no answer
+prompt), and the provenance card's model line ends `· **Mode** <name> (evaluated | not
+evaluated)`. A mode that cannot be read falls back to the default and logs `chat_mode_unreadable`.
+
+**Settled in the build** (open question 1):
+
+- **Critical reading's text**, pinned by `test_critical_reading_wording_is_pinned`: *You are a
+  research assistant who reads the sources critically. Where the sources themselves show it, say
+  where they agree, where they disagree, or where they are limited (their sample, method or date),
+  and cite each such point like any other claim. When the sources show none of this, say nothing
+  about it: no section, no heading, and no remark that they do not.* A first wording ("Besides
+  answering, say where the sources agree, …") failed the gate on llama3.1:8b, which then wrote a
+  limitations section in every answer, mostly uncited ("The sample is not specified in the
+  sources"). The second wording was written after seeing that failure; see the gate's write-up.
+- **The length cap**: 1,000 characters for the framing (about 250 tokens), 60 for the name
+  (`FRAMING_MAX_CHARS`, `NAME_MAX_CHARS`).
+- **The format errors**: an empty text, an over-long one, `{context}`, `{question}` or `{history}`
+  (spaces inside the braces too), and `<source` or `</source` in any case. Any other brace is the
+  person's own character and is doubled so the template reads it as text.
+- **The check's phrases**: asking not to cite (*do not / don't / never / without / skip / omit /
+  avoid / no* within two words of *cite, citing, citations, references, source numbers,
+  brackets*), and asking for outside knowledge (*your own / general / prior / background / world /
+  outside / external knowledge*, *from memory / training*, *beyond / outside / ignore the
+  sources*, *what you know*). Each hit adds one warning saying the frozen rules still apply; the
+  mode is saved.
+- **Names** are unique ignoring case and spacing, and cannot take a built-in mode's name. Built-in
+  ids are `research-assistant` and `critical-reading`; a person's own are UUIDs.
+- **The API** (`apps/api/routers/modes.py`): `GET /api/modes`; `POST /api/modes` and `PATCH
+  /api/modes/{id}` answer the mode and its `warnings`; `DELETE /api/modes/{id}` answers how many
+  conversations went back to the default and the sentence saying so. A format error is a 400, a
+  built-in mode a 409, an unknown id a 404. `PATCH /api/conversations/{id}` takes `mode_id` (`""`
+  = the default; an unknown id is a 404 and changes nothing), and `GET /api/conversations/{id}`
+  carries `mode` and, per turn, `chat_mode` and `chat_mode_evaluated`. The app shows the live
+  turn's mode on its provenance card; the replayed turns' fields are on the wire for A8's picker
+  and layout.
+- **Row 40**: evidence only skips the rewrite and passes `use_multi_query=False`, whatever the
+  settings or the per-turn override say. With earlier turns, the evidence answer ends with *Evidence
+  only searched your question as typed: the earlier turns were not used to rewrite it, since that
+  takes a model call.* It records no mode, as a rule-answered turn and a turn with nothing
+  retrieved do.
+- **The harness**: `scripts/run_eval --mode NAME` (controller columns only) sets the mode on every
+  case's conversation before its first turn, adds `[mode: NAME]` to each run's note and
+  `chat_mode` to its config.
+
+**Tests.** `tests/unit/test_chat_modes.py` holds the spec's guard tests and the harness's;
+`tests/integration/test_api_modes.py` the routes.
+
+**The gate** (`tests/eval/baselines/a7_chat_modes_2026-11-20.md`). Critical reading, second
+wording, both columns, `--repeat 3`, local Ollama with the reviewer pinned: every gated score reads
+*no difference at this n* against the 391ea0e runs (single and conversation `citation_coverage` and
+`cited_answer`, absent `no_invention`, hostile `hostile_hold`). The first wording failed on
+llama3.1:8b, single `citation_coverage` −0.158 [−0.226, −0.087]. One case to watch:
+`absent_radiocarbon_half_life` held in 6 of 6 default-mode trials on llama3.1:8b and in 3 of 6
+under Critical reading, once with a figure from outside the sources. The default mode needed no
+run (`test_the_default_mode_builds_todays_prompt_byte_for_byte`).

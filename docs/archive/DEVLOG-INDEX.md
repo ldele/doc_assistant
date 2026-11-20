@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-16 · class: living -->
+<!-- status: archived · updated: 2026-11-20 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-010.md
 
+- **2026-11-16** (4) — The read surface: ADR-066's seven tools as functions (A3)
+- **2026-11-16** (3) — The text check once per document, after extraction (A2b)
+- **2026-11-16** (2) — The prompt fence, and checks that hold on any model (A2, S-9)
+- **2026-11-16** — The judge, checked against the user's grades (H5)
+- **2026-11-15** (3) — H4's retrieval checks and RG-035's first re-run
+- **2026-11-15** (2) — The first chat-eval baseline (H4)
+- **2026-11-15** — The chat eval's cases (H3)
+- **2026-11-14** (2) — Three new dependency advisories: one upgraded, two reviewed
+- **2026-11-14** — The eval harness instrument for the chat work (H2)
+- **2026-11-13** (3) — The eval harness spec for the chat work (H1)
+- **2026-11-13** (2) — ADR-066 accepted as proposed
 - **2026-11-13** — Repository upkeep: four tickets, and the easy fixes they found
 - **2026-11-12** (3) — ADR-066 proposed: the library is offered to a model as records and passages
 - **2026-11-12** (2) — ADR-062 accepted as proposed

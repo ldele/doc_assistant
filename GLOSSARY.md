@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 · class: living -->
+<!-- status: active · updated: 2026-11-19 · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -271,6 +271,20 @@ verdicts the check cannot make; *hostile* stays the eval family's name)
 **Authoritative in:** `src/doc_assistant/source_checks.py` + `src/doc_assistant/document_checks.py`
 + `apps/desktop/src/screens/document-page/TextCheck.svelte` +
 `tests/eval/baselines/a2_prompt_fence_2026-11-16.md`
+
+## U-006 — chat mode, and the synthesis mode it is not
+
+**Canonical:** `chat mode` (`Research assistant`, `Critical reading`, or a person's own) ·
+`synthesis mode` (`ai` or `human`, the separate switch whose `human` value is *evidence only*)
+**Definition:** A *chat mode* is a name and the persona-and-task text that replaces the answer
+prompt's first line (A7). The rest of the prompt is the same in every mode. A conversation keeps
+one, set with `/mode`, and each answer records it, with *evaluated* for a built-in mode and
+*not evaluated* for a person's own. The *synthesis mode* decides whether an answer is written at
+all: `human` returns the evidence only and calls no model, so no chat mode takes part.
+**Forbidden:** — (not `skill`: a skill would run steps, and ADR-066 parks it; not `mode` alone where
+the two could be confused)
+**Authoritative in:** `src/doc_assistant/chat_modes.py` + `docs/specs/chat-modes.md` +
+`src/doc_assistant/config.py::SYNTHESIS_MODE`
 
 ## D-001 — Provenote vs doc_assistant
 

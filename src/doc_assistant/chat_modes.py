@@ -40,10 +40,11 @@ FRAMING_MAX_CHARS = 1000
 NAME_MAX_CHARS = 60
 
 CRITICAL_READING_FRAMING = (
-    "You are a research assistant who reads the sources critically. Besides answering, say "
-    "where the sources agree, where they disagree, and where they are limited (their sample, "
-    "method or date), judged only from what the sources themselves state; cite each of these "
-    "points like any other claim."
+    "You are a research assistant who reads the sources critically. Where the sources "
+    "themselves show it, say where they agree, where they disagree, or where they are limited "
+    "(their sample, method or date), and cite each such point like any other claim. When the "
+    "sources show none of this, say nothing about it: no section, no heading, and no remark "
+    "that they do not."
 )
 
 

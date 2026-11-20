@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (built; the gate recorded under As built); 2026-11-19 (accepted by the user as written; written after the user's seven answers in A7's scoped grill) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A8a: decision 3's switch superseded by G2); 2026-11-20 (built; the gate recorded under As built); 2026-11-19 (accepted by the user as written; written after the user's seven answers in A7's scoped grill) · class: living -->
 
 # Spec — Chat modes change only the framing, and evidence-only calls no model (ROADMAP 37 and 40, session A7)
 
@@ -210,3 +210,12 @@ llama3.1:8b, single `citation_coverage` −0.158 [−0.226, −0.087]. One case 
 `absent_radiocarbon_half_life` held in 6 of 6 default-mode trials on llama3.1:8b and in 3 of 6
 under Critical reading, once with a figure from outside the sources. The default mode needed no
 run (`test_the_default_mode_builds_todays_prompt_byte_for_byte`).
+
+## Superseded in part (2026-11-20, A8a)
+
+**Decision 3's switch is superseded** (`docs/specs/chat-interface-pass.md`, G2). A chat's mode is
+chosen on the start screen and stored with its folders by the first turn; an open chat never
+changes mode. `/mode` lists the modes and names the chat's own; `/mode <name>` on a chat with turns
+changes nothing and offers *Continue in a new chat* with that mode, and on a chat with no turn yet
+it sets the mode the chat starts with. `PATCH /api/conversations/{id}` with `mode_id` is a 409 on
+a chat with turns. The `/mode` command moved to `chat_setup.mode_command`.

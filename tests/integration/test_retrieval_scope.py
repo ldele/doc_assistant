@@ -271,9 +271,10 @@ def test_unscoped_turn_passes_none_records_null_and_says_nothing(monkeypatch, te
     assert _scope_json() == [None]
 
 
-def test_scope_does_not_leak_between_turns(monkeypatch, temp_db) -> None:
-    """The ADR-010 isolation obligation, applied to the scope: a scoped turn must not make the
-    next turn scoped. Nothing is stored on the session, so this proves the wiring, not a reset."""
+def test_scope_stays_with_its_chat_and_does_not_leak_into_another(monkeypatch, temp_db) -> None:
+    """ADR-025 S9 as amended by A8a: a chat's first turn stores its scope, so its next turn keeps
+    it whatever the request says; another chat is not touched by it (the ADR-010 isolation
+    obligation, now between chats rather than between turns)."""
     monkeypatch.setattr(chat_controller.controller, "answer_record_question", lambda t: None)
     folder_id = _folder_with("a.pdf")
     rag = FakeRAG()
@@ -282,8 +283,9 @@ def test_scope_does_not_leak_between_turns(monkeypatch, temp_db) -> None:
 
     list(controller.handle_message(session, "q1", scope_folder_ids=[folder_id]))
     list(controller.handle_message(session, "q2"))
+    list(controller.handle_message(Session(), "q3"))
 
-    assert rag.scope_calls == [frozenset({"h-a.pdf"}), None]
+    assert rag.scope_calls == [frozenset({"h-a.pdf"}), frozenset({"h-a.pdf"}), None]
 
 
 # --- API round-trip ---------------------------------------------------------------------- #

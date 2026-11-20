@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 · class: append-only -->
+<!-- status: active · updated: 2026-11-20 (addendum: S9 amended by A8a, the scope stored on the chat); 2026-07-20 · class: append-only -->
 
 # ADR-025 — Corpus groups = folders, with query-time retrieval scoping
 
@@ -109,3 +109,27 @@ that a folder's members survive a reindex — now holds: `ingest --rebuild` no l
 `Document` rows, so `document_folders` is never cascaded away. F3 spec M3/M9 are amended
 accordingly; the demo folder is preserved on a rebuild rather than repopulated, so no hand
 removal is ever re-fought.
+
+## Addendum (2026-11-20, A8a) — S9 amended: the scope is stored on the chat
+
+**What changes.** S9 kept the composer's scope in memory only, so a forgotten scope could not
+narrow every later answer. Since A8a (`docs/specs/chat-interface-pass.md`) a chat's folders are
+chosen on the start screen *New chat* opens and **stored on the chat** by its first turn
+(`conversation_meta.scope_json`, beside `mode_id`); every later turn reads them and ignores the
+request's scope field. A one-off `/folder <name>: <question>` (A7b) still scopes its own turn only
+and leaves the stored setup alone. Changing the folders means *Continue in a new chat*.
+
+**Why.** The user, 2026-11-20, in A8's wireframe rounds: the pickers in the composer got in the
+way, and most chats never change their folders. Taking the picker out of the composer leaves no
+per-turn control to be sticky in memory.
+
+**The safeguard that replaces S9's.** The chat line at the top of every chat always names the
+chat's mode and folders with their document count, and each answer's scope note is unchanged. A
+stored scope cannot be forgotten while the line names it. The New chat defaults (`settings.json`
+→ `new_chat`) are per library and open the start screen preselected; they are visible before the
+first question is asked.
+
+**What still holds.** F2's rules, all of them: an unknown, deleted or emptied folder narrows or
+empties the search and is named, never widened. A stored scope whose folder is deleted later
+searches nothing and the line says which folder holds nothing; defaults whose folders are all
+gone keep the gone ids (they search nothing) rather than fall back to the whole library.

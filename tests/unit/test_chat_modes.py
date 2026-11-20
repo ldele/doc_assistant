@@ -344,27 +344,28 @@ def test_a_persons_mode_can_be_renamed_and_edited(temp_db: Path) -> None:
 # ============================================================
 
 
-def test_mode_command_lists_switches_from_the_next_turn_and_names_unknowns(
-    temp_db: Path,
-) -> None:
+def test_mode_command_lists_sets_an_empty_chat_and_names_unknowns(temp_db: Path) -> None:
+    """A8a (G2) superseded A7's decision 3: `/mode <name>` sets the mode of a chat with no turn
+    yet; a chat with turns keeps its mode (see `test_chat_setup.py`)."""
     rag = CountingRAG()
     controller = ChatController(rag=rag)  # type: ignore[arg-type]
     session = Session(session_id="conv-1")
 
     listing = _turn(controller, session, "/mode").answer
     assert "**Chat mode:** Research assistant" in listing
-    assert "Critical reading" in listing and "← this conversation" in listing
+    assert "Critical reading" in listing and "← this chat" in listing
 
     unknown = _turn(controller, session, "/mode nonsense").answer
     assert "No mode is named “nonsense”" in unknown and "Research assistant" in unknown
     assert chat_modes.conversation_mode("conv-1") is DEFAULT_MODE
 
-    switched = _turn(controller, session, "/mode critical reading").answer
-    assert "From the next turn this conversation uses **Critical reading**" in switched
+    switched = _turn(controller, session, "/mode critical reading")
+    assert "This chat will answer as **Critical reading**" in switched.answer
+    assert switched.mode_offer == ("set", CRITICAL_READING.id)
     assert rag.model_calls == []  # a command calls no model
 
     _turn(controller, session, "Where do neurons meet?")
-    assert _template(rag.prompts[-1]).startswith("\n" + CRITICAL_READING_TEXT + " ")
+    assert _template(rag.prompts[-1]).startswith(chr(10) + CRITICAL_READING_TEXT + " ")
 
 
 def test_help_lists_mode() -> None:
@@ -377,8 +378,10 @@ def test_the_hash_changes_with_the_mode_and_each_record_names_its_own(temp_db: P
     session = Session(session_id="conv-2")
 
     first = _record(_turn(controller, session, "Where do neurons meet?").record_id)
-    _turn(controller, session, "/mode critical reading")
-    second = _record(_turn(controller, session, "And axons?").record_id)
+    # A8a: a chat keeps its mode, so the second mode is a second chat (`/mode` offers one).
+    other = Session(session_id="conv-2b")
+    _turn(controller, other, "/mode critical reading")
+    second = _record(_turn(controller, other, "And axons?").record_id)
 
     assert first.prompt_version and second.prompt_version
     assert first.prompt_version != second.prompt_version
@@ -457,7 +460,7 @@ def test_modes_work_at_zero_documents(temp_db: Path) -> None:
     controller = ChatController(rag=EmptyRAG())  # type: ignore[arg-type]
     session = Session(session_id="conv-9")
     mode = chat_modes.create_mode("Tutor", "You are a tutor.").mode
-    assert "uses **Tutor**" in _turn(controller, session, "/mode tutor").answer
+    assert "answer as **Tutor**" in _turn(controller, session, "/mode tutor").answer
     assert chat_modes.conversation_mode("conv-9") == mode
     result = _turn(controller, session, "Anything?")
     assert result.route == "no_sources"

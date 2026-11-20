@@ -71,6 +71,7 @@ async def _event_stream(
     overrides: RagOverrides | None = None,
     *,
     scope_folder_ids: list[str] | None = None,
+    mode_id: str | None = None,
 ) -> AsyncIterator[ServerSentEvent]:
     """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1.
 
@@ -86,7 +87,11 @@ async def _event_stream(
     def worker() -> None:
         try:
             for event in controller.handle_message(
-                session, text, overrides=overrides, scope_folder_ids=scope_folder_ids
+                session,
+                text,
+                overrides=overrides,
+                scope_folder_ids=scope_folder_ids,
+                mode_id=mode_id,
             ):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
         except Exception as e:
@@ -127,7 +132,12 @@ async def chat(request: Request, body: ChatRequest) -> EventSourceResponse:
     )
     return EventSourceResponse(
         _event_stream(
-            controller, session, body.text, overrides, scope_folder_ids=body.scope_folder_ids
+            controller,
+            session,
+            body.text,
+            overrides,
+            scope_folder_ids=body.scope_folder_ids,
+            mode_id=body.mode_id,
         )
     )
 

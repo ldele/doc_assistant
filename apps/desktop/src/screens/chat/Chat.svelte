@@ -9,14 +9,27 @@
   // Everything conversation-*view* related (`viewing`, `viewedConvo`, `resumedHistory`) and every
   // action that spans domains (send, compare, export, resume) arrives as a prop: those read or
   // write state App owns, so that coupling stays visible there rather than being reached for here.
+  //
+  // A8a (docs/specs/chat-interface-pass.md): a chat's mode and folders are chosen on the start
+  // screen, then fixed and named by the chat line at the top; the composer holds the text box and
+  // *Send* only (plus *Test override* while an override is set).
   import Icon from '../../shell/Icon.svelte'
   import Turn from './Turn.svelte'
   import ReadonlyTurn from './ReadonlyTurn.svelte'
   import CompareCard from './CompareCard.svelte'
+  import StartScreen from './StartScreen.svelte'
+  import ChatLine from './ChatLine.svelte'
   import { autogrow, chat, onConvoScroll } from '../../lib/chat/chat.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
   import { outstandingSteps } from '../../lib/settings/setup'
-  import type { ConversationDetail, LibraryFolder } from '../../lib/core/types'
+  import type {
+    ChatMode,
+    ChatSetup,
+    ConversationDetail,
+    ConversationTurn,
+    LibraryFolder,
+  } from '../../lib/core/types'
+  import type { FolderChoice } from '../../lib/chat/setup'
   import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
@@ -24,25 +37,48 @@
     viewedConvo: ConversationDetail | null
     resumedHistory: ConversationDetail | null
     folders: LibraryFolder[]
-    /** Bindable: the `<select>` writes it directly, exactly as before the extraction. */
-    chatScopeFolderId: string | null
+    libraryCount: number
+    modes: ChatMode[]
+    /** The start screen's choice, bindable: the chat's first turn stores it. */
+    startModeId: string
+    startFolders: FolderChoice
+    startNotice: string
+    savedNote: string
+    /** The live chat's setup once it has a turn or was continued from another; else null. */
+    liveSetup: ChatSetup | null
+    /** The exchanges the live chat carried in, as they were answered. */
+    carried: ConversationTurn[]
     /** Only true while a retrieval-affecting override is set — with none, both sides of a compare
      *  retrieve identically and the button is dead weight. */
     hasRetrievalOverride: boolean
-    sampleQuestions: string[]
     onSend: () => void
     onKey: (e: KeyboardEvent) => void
     onCompare: () => void
     onUseSample: (q: string) => void
     onResume: () => void
     onBackToCurrent: () => void
+    onMakeDefault: () => void
+    onContinueNew: (sessionId: string, setup: ChatSetup | null) => void
+    onOpenChat: (sessionId: string) => void
   }
   let {
-    viewing, viewedConvo, resumedHistory, folders,
-    chatScopeFolderId = $bindable(),
-    hasRetrievalOverride, sampleQuestions,
-    onSend, onKey, onCompare, onUseSample, onResume, onBackToCurrent,
+    viewing, viewedConvo, resumedHistory, folders, libraryCount, modes,
+    startModeId = $bindable(), startFolders = $bindable(), startNotice, savedNote,
+    liveSetup, carried,
+    hasRetrievalOverride,
+    onSend, onKey, onCompare, onUseSample, onResume, onBackToCurrent, onMakeDefault,
+    onContinueNew, onOpenChat,
   }: Props = $props()
+
+  // The live chat's line: its stored setup, else (a reopened chat continued, before its first
+  // new turn has been read back) the setup its detail came with.
+  const liveLine = $derived(liveSetup ?? resumedHistory?.setup ?? null)
+  const showStart = $derived(
+    chat.turns.length === 0 && !resumedHistory && !liveSetup?.continued_from,
+  )
+  function citation(turnKey: string, n: number): void {
+    chat.activeCitation = { turnKey, n }
+  }
 
   // The outstanding first-run steps (ADR-034), shaped by the same tested helper the Settings
   // panel uses so the two surfaces can never disagree about what is left.
@@ -51,6 +87,15 @@
 
 <section class="conversation" bind:this={chat.convoEl} onscroll={onConvoScroll}>
   {#if viewing && viewedConvo}
+    {#if viewedConvo.setup}
+      <ChatLine
+        setup={viewedConvo.setup}
+        activeCitation={chat.activeCitation}
+        onContinueNew={() => onContinueNew(viewedConvo.session_id, viewedConvo.setup)}
+        {onOpenChat}
+        onCitationClick={citation}
+      />
+    {/if}
     <p class="readonly-note">
       Viewing a past conversation (read-only).
       <button class="linkish" onclick={onResume} use:tooltip={'Carry on this conversation from where it ended'}>Continue this chat</button>
@@ -67,10 +112,22 @@
       />
     {/each}
   {:else}
+    {#if liveLine && !showStart}
+      <ChatLine
+        setup={liveLine}
+        {carried}
+        activeCitation={chat.activeCitation}
+        onContinueNew={() => onContinueNew(chat.sessionId, liveLine)}
+        {onOpenChat}
+        onCitationClick={citation}
+      />
+    {/if}
     {#if resumedHistory}
+      <!-- A8a, open question 1: a reopened chat continued remembers its own exchanges (fitted to
+           the model's window), superseding the resume spec's empty memory. -->
       <p class="readonly-note resumed">
-        Continuing <strong>{resumedHistory.title}</strong> · earlier chat.turns are shown for
-        reference. New questions start fresh — grounded in your corpus, not the old chat.
+        Continuing <strong>{resumedHistory.title}</strong>. Its earlier turns are shown for
+        reference, and new questions remember them, fitted to the model's window.
       </p>
       {#each resumedHistory.turns as t (t.record_id)}
         <ReadonlyTurn
@@ -97,20 +154,22 @@
         </ul>
         <button class="btn btn-primary" onclick={() => (shell.showSettings = true)} use:tooltip={'Open Settings at the steps that are left'}>Finish setup…</button>
       </div>
-    {:else if chat.turns.length === 0 && !resumedHistory}
-      <div class="empty">
-        <span class="state-mark"><Icon name="book-open-text" size={26} /></span>
-        <h2>Ask your library a question</h2>
-        <p>
-          Every answer is grounded in your own documents, with inline citations, provenance,
-          and per-claim review.
-        </p>
-        <div class="chips">
-          {#each sampleQuestions as q}
-            <button class="chip" onclick={() => onUseSample(q)} use:tooltip={'Put this question in the box, ready to edit or send'}>{q}</button>
-          {/each}
-        </div>
-      </div>
+    {/if}
+    {#if showStart}
+      <!-- A8a: the start screen shows at 0 documents too (folders empty, *All documents · 0*),
+           under the first-run steps when they are left; the first question then gets today's
+           empty-library answer. -->
+      <StartScreen
+        {modes}
+        {folders}
+        {libraryCount}
+        bind:modeId={startModeId}
+        bind:choice={startFolders}
+        notice={startNotice}
+        {savedNote}
+        {onUseSample}
+        {onMakeDefault}
+      />
     {/if}
     {#each chat.turns as t (t.id)}
       <Turn
@@ -162,25 +221,6 @@
         {chat.comparing ? 'Comparing…' : 'Test override'}
       </button>
     {/if}
-    {#if folders.length > 0}
-      <!-- ADR-025 F2 scope selector. Session-sticky, never persisted (see chatScopeFolderId).
-           "All documents" is always the first option, so returning to the whole library is
-           one click and never a hidden state. -->
-      <label class="scopepick" class:scoped={chatScopeFolderId !== null}>
-        <Icon name="folder" size={13} />
-        <select
-          bind:value={chatScopeFolderId}
-          disabled={chat.sending}
-          aria-label="Search scope"
-          use:tooltip={'Choose which documents this question searches'}
-        >
-          <option value={null}>All documents</option>
-          {#each folders as f (f.id)}
-            <option value={f.id}>{f.name} ({f.doc_count})</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
     <button class="btn btn-primary send" onclick={onSend} disabled={chat.sending || chat.input.trim() === ''} aria-busy={chat.sending} use:tooltip={chat.sending ? 'Waiting for the answer' : chat.input.trim() === '' ? 'Type a question first' : 'Ask your documents this question (Enter)'}>
       {#if chat.sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
     </button>
@@ -201,8 +241,7 @@
     padding: var(--space-2) var(--space-3);
     scrollbar-gutter: stable;
   }
-  /* Empty + first-run states share one centered, mark-led layout (V2). */
-  .empty,
+  /* The first-run state: one centered, mark-led layout (V2); the start screen draws its own. */
   .banner {
     max-width: 540px;
     margin: var(--space-6) auto 0;
@@ -223,20 +262,12 @@
     justify-content: center;
     margin-bottom: var(--space-4);
   }
-  .empty h2,
   .banner strong {
     font-family: var(--font-serif);
     font-size: var(--text-title);
     font-weight: 600;
     color: var(--fg);
     margin: 0;
-  }
-  .empty p {
-    color: var(--fg-2);
-    font-size: var(--text-sm);
-    line-height: 1.6;
-    max-width: 46ch;
-    margin: var(--space-2) 0 var(--space-4);
   }
   /* The outstanding-steps list (ADR-034): left-aligned inside the centered card, because these
      are instructions to read in order, not a headline. */
@@ -256,26 +287,6 @@
     font-family: inherit;
     font-size: inherit;
     color: var(--fg);
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    justify-content: center;
-  }
-  /* A suggested question, not an action: it fills the composer and sends nothing. */
-  .chip {
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-    color: var(--accent);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: var(--space-2) var(--space-3);
-  }
-  .chip:hover {
-    border-color: var(--accent);
   }
   .readonly-note {
     font-size: 0.78rem;
@@ -362,39 +373,6 @@
   .send {
     min-width: 4.4rem;
     justify-content: center;
-  }
-  /* ADR-025 F2 scope selector — reads as a quiet control until a scope is set, then it is
-     tinted so a narrowed conversation is visible without opening anything. */
-  .scopepick {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    flex: none;
-    padding: 0.25rem 0.4rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--fg-2);
-    background: var(--surface);
-  }
-  .scopepick.scoped {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-  .scopepick select {
-    font: inherit;
-    font-size: 0.78rem;
-    max-width: 11rem;
-    border: none;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .scopepick select:focus {
-    outline: none;
-  }
-  .scopepick select:disabled {
-    cursor: not-allowed;
   }
   .spinner {
     width: 0.95em;

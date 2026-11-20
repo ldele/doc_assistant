@@ -40,3 +40,25 @@ class SettingsUpdate(BaseModel):
         if (self.llm_provider is None) != (self.llm_model is None):
             raise ValueError("llm_provider and llm_model must be provided together")
         return self
+
+
+class NewChatDefaultsUpdate(BaseModel):
+    """PUT body for the New chat defaults (A8a, W2): a mode's id ("" or null = the default mode)
+    and the folders New chat starts with (null or [] = the whole library)."""
+
+    mode_id: str | None = None
+    folder_ids: list[str] | None = None
+
+
+class NewChatDefaultsPayload(BaseModel):
+    """The New chat defaults as the start screen opens with them (A8a). ``missing_folders``
+    names default folders that no longer exist (dropped); ``nothing_left`` says every default
+    folder is gone: ``folder_ids`` then keeps the gone ids, which search nothing, rather than the
+    whole library (ADR-025 F2)."""
+
+    mode_id: str
+    mode_name: str
+    folder_ids: list[str] | None = None
+    missing_folders: list[str] = []
+    mode_missing: str | None = None
+    nothing_left: bool = False

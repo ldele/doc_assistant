@@ -105,14 +105,17 @@ def test_the_conversation_routes_carry_the_mode(client: TestClient) -> None:
     assert before["turns"][0]["chat_mode"] == "Research assistant"
     assert before["turns"][0]["chat_mode_evaluated"] is True
 
+    # A8a (G2): a chat with turns keeps its mode; the PATCH sets an empty chat's only.
     assert (
         client.patch("/api/conversations/s2", json={"mode_id": "critical-reading"}).status_code
-        == 200
+        == 409
     )
-    assert client.get("/api/conversations/s2").json()["mode"]["name"] == "Critical reading"
+    assert client.get("/api/conversations/s2").json()["mode"]["name"] == "Research assistant"
 
-    assert client.patch("/api/conversations/s2", json={"mode_id": ""}).status_code == 200
-    assert client.get("/api/conversations/s2").json()["mode"]["id"] == "research-assistant"
+    assert client.patch("/api/conversations/new", json={"mode_id": "critical-reading"}).json()
+    assert client.get("/api/conversations/new/setup").json()["mode"]["id"] == "critical-reading"
+    assert client.patch("/api/conversations/new", json={"mode_id": ""}).status_code == 200
+    assert client.get("/api/conversations/new/setup").json()["mode"]["id"] == "research-assistant"
 
 
 def test_an_unknown_mode_id_is_a_404_and_changes_nothing(client: TestClient) -> None:

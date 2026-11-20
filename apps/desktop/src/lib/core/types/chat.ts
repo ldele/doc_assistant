@@ -71,6 +71,13 @@ export interface TurnResult {
   source_eval: SourceEvalSummary | null
   // A2 — the web addresses in this turn's passages: an answer link outside them shows as text.
   source_links: string[]
+  // A8a (G2) — set only on a `/mode <name>` reply: `continue` opens *Continue in a new chat*
+  // prefilled with `mode_id`; `set` sets the start screen's mode chip.
+  mode_offer?: ModeOffer | null
+}
+export interface ModeOffer {
+  action: 'continue' | 'set'
+  mode_id: string
 }
 // The retrieval scope a turn ran under: several folders searched as one set, or one concept's
 // documents (A7b). A folder's `folder_name` is null when it was unknown or deleted; its

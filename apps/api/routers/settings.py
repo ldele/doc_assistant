@@ -7,7 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from apps.api.models.settings import SettingsUpdate
+from apps.api.models.settings import (
+    NewChatDefaultsPayload,
+    NewChatDefaultsUpdate,
+    SettingsUpdate,
+)
 from apps.api.services import _full_settings
 from doc_assistant import app_settings
 from doc_assistant.chat_controller import ChatController
@@ -73,3 +77,39 @@ def reindex_keywords(request: Request) -> dict[str, Any]:
     except (OSError, sqlite3.Error) as e:
         raise HTTPException(status_code=500, detail=f"index rebuild failed: {e}") from e
     return {"chunks": chunks, **_full_settings(request.app)}
+
+
+def _defaults_payload() -> NewChatDefaultsPayload:
+    from doc_assistant.chat_setup import get_new_chat_defaults
+
+    d = get_new_chat_defaults()
+    return NewChatDefaultsPayload(
+        mode_id=d.mode.id,
+        mode_name=d.mode.name,
+        folder_ids=d.folder_ids,
+        missing_folders=d.missing_folders,
+        mode_missing=d.mode_missing,
+        nothing_left=d.nothing_left,
+    )
+
+
+@router.get("/api/settings/new-chat")
+def get_new_chat_defaults_route() -> NewChatDefaultsPayload:
+    """The New chat defaults (A8a, W2): the mode and folders the start screen opens with, a
+    default folder that no longer exists dropped and named. Kept in the library's own
+    ``settings.json``, so they are per library."""
+    return _defaults_payload()
+
+
+@router.put("/api/settings/new-chat")
+def put_new_chat_defaults_route(body: NewChatDefaultsUpdate) -> NewChatDefaultsPayload:
+    """Save the New chat defaults (the *New chat defaults* window, *Make this my default*).
+    An unknown mode id is a 404, changing nothing; an unknown folder id is not saved."""
+    from doc_assistant.chat_modes import ModeNotFound
+    from doc_assistant.chat_setup import set_new_chat_defaults
+
+    try:
+        set_new_chat_defaults(body.mode_id or None, body.folder_ids)
+    except ModeNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return _defaults_payload()

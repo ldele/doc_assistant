@@ -1081,6 +1081,14 @@ class ConversationMeta(Base):
     # A7: the conversation's chat mode — a built-in mode's id or a `chat_modes` row's id. NULL
     # means the default mode; an id that no longer resolves reads as the default too.
     mode_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # A8a (`chat_setup`, docs/specs/chat-interface-pass.md): the folders the chat searches, stored
+    # by its first turn as {"folder_ids": [...]} or the JSON text `null` for the whole library.
+    # SQL NULL = no setup stored (a chat from before A8, or one with no turn yet).
+    scope_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # A8a: the chat this one was continued from (*Continue in a new chat*), and how many of its
+    # exchanges were carried into this chat's memory. NULL on every other chat.
+    continued_from: Mapped[str | None] = mapped_column(String, nullable=True)
+    carried_exchanges: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 

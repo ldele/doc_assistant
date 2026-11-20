@@ -18,6 +18,7 @@ from apps.api.models.chat import ScopePayload
 from apps.api.models.modes import ChatModePayload
 
 if TYPE_CHECKING:
+    from doc_assistant.chat_setup import SetupView
     from doc_assistant.conversations import (
         ConversationDetail,
         ConversationSummary,
@@ -43,6 +44,13 @@ class ConversationLabelsPayload(BaseModel):
     folders: list[LabelFolderPayload] = []
 
 
+class SetupFolderPayload(BaseModel):
+    """A folder a chat searches, by its current name; ``name`` null = since deleted."""
+
+    folder_id: str
+    name: str | None = None
+
+
 class ConversationSummaryPayload(BaseModel):
     """One conversation in the sidebar list."""
 
@@ -54,6 +62,9 @@ class ConversationSummaryPayload(BaseModel):
     pinned: bool = False
     archived: bool = False
     labels: ConversationLabelsPayload = ConversationLabelsPayload()
+    # A8a: what the rail's Group reads; `folders` empty = the whole library.
+    mode_name: str = "Research assistant"
+    folders: list[SetupFolderPayload] = []
 
     @classmethod
     def from_summary(cls, s: ConversationSummary) -> ConversationSummaryPayload:
@@ -75,6 +86,8 @@ class ConversationSummaryPayload(BaseModel):
                     for f in s.labels.folders
                 ],
             ),
+            mode_name=s.mode_name,
+            folders=[SetupFolderPayload(folder_id=f.folder_id, name=f.name) for f in s.folders],
         )
 
 
@@ -144,6 +157,78 @@ class ConversationTurnPayload(BaseModel):
         )
 
 
+class ContinuedFromPayload(BaseModel):
+    """The chat this one was continued from, as the line at the top names it (A8a)."""
+
+    session_id: str
+    title: str | None = None
+    mode_name: str
+    scope: ScopePayload | None = None
+
+
+class ChatSetupPayload(BaseModel):
+    """A chat's setup (A8a): its mode and folders, fixed for the chat. ``scope`` is the
+    folders resolved now (null = the whole library), so the line at the top of the chat names
+    each folder with its count and says which one holds nothing (ADR-025 F2). ``stored``: written
+    on the chat; ``derived``: a chat from before A8, worked out from its last record."""
+
+    mode: ChatModePayload
+    folder_ids: list[str] | None = None
+    scope: ScopePayload | None = None
+    stored: bool = False
+    derived: bool = False
+    continued_from: ContinuedFromPayload | None = None
+    carried_exchanges: int = 0
+
+    @classmethod
+    def from_view(cls, v: SetupView) -> ChatSetupPayload:
+        origin = v.continued_from
+        return cls(
+            mode=ChatModePayload.from_mode(v.setup.mode),
+            folder_ids=v.setup.folder_ids,
+            scope=ScopePayload.from_view(v.scope) if v.scope is not None else None,
+            stored=v.setup.stored,
+            derived=v.setup.derived,
+            continued_from=(
+                ContinuedFromPayload(
+                    session_id=origin.session_id,
+                    title=origin.title,
+                    mode_name=origin.mode_name,
+                    scope=ScopePayload.from_view(origin.scope) if origin.scope else None,
+                )
+                if origin is not None
+                else None
+            ),
+            carried_exchanges=v.setup.carried_exchanges,
+        )
+
+
+class ContinueRequest(BaseModel):
+    """POST body for *Continue in a new chat* (A8a): the new chat's id and setup, and whether
+    to carry the old chat's exchanges into its memory (G3, ticked by default)."""
+
+    session_id: str
+    mode_id: str | None = None
+    folder_ids: list[str] | None = None
+    carry: bool = True
+
+
+class ContinuePayload(BaseModel):
+    """The new chat: its setup, and the old chat's turns it carried, as they were answered."""
+
+    session_id: str
+    setup: ChatSetupPayload
+    carried: list[ConversationTurnPayload] = []
+
+
+class ResumePayload(BaseModel):
+    """*Continue this chat* (A8a, open question 1): how many of its own exchanges its memory
+    now holds, read from its records."""
+
+    session_id: str
+    carried_exchanges: int
+
+
 class ConversationDetailPayload(BaseModel):
     """A reopened conversation — its title + ordered turns (read-only transcript), and the chat
     mode its next turn uses (A7)."""
@@ -152,12 +237,17 @@ class ConversationDetailPayload(BaseModel):
     title: str
     turns: list[ConversationTurnPayload]
     mode: ChatModePayload
+    # A8a: the chat's setup, for the line at the top of a reopened chat.
+    setup: ChatSetupPayload | None = None
 
     @classmethod
-    def from_detail(cls, d: ConversationDetail) -> ConversationDetailPayload:
+    def from_detail(
+        cls, d: ConversationDetail, setup: SetupView | None = None
+    ) -> ConversationDetailPayload:
         return cls(
             session_id=d.session_id,
             title=d.title,
             turns=[ConversationTurnPayload.from_turn(t) for t in d.turns],
             mode=ChatModePayload.from_mode(d.mode),
+            setup=ChatSetupPayload.from_view(setup) if setup is not None else None,
         )

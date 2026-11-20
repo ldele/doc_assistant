@@ -4,6 +4,7 @@
 
 import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
+  NewChatDefaults,
   Settings,
 } from '../types'
 
@@ -54,4 +55,24 @@ export async function reindexKeywords(): Promise<Settings> {
   const r = await apiFetch(`${API_BASE}/api/settings/reindex-keywords`, { method: 'POST' })
   if (!r.ok) throw new Error(await errorDetail(r, 'rebuild the keyword index'))
   return (await r.json()) as Settings
+}
+
+/** The New chat defaults (A8a, W2): the mode and folders the start screen opens with. */
+export async function getNewChatDefaults(): Promise<NewChatDefaults> {
+  const r = await apiFetch(`${API_BASE}/api/settings/new-chat`)
+  if (!r.ok) throw new Error(`new chat defaults failed: ${r.status}`)
+  return (await r.json()) as NewChatDefaults
+}
+/** Save the New chat defaults (*New chat defaults* window, *Make this my default*). */
+export async function saveNewChatDefaults(
+  modeId: string,
+  folderIds: string[] | null,
+): Promise<NewChatDefaults> {
+  const r = await apiFetch(`${API_BASE}/api/settings/new-chat`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode_id: modeId, folder_ids: folderIds }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'save new chat defaults'))
+  return (await r.json()) as NewChatDefaults
 }

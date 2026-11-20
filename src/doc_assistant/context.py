@@ -201,10 +201,17 @@ class ContextRecord:
     window_source: WindowSource
     rewrite: dict[str, Any] | None = None
     answer: dict[str, Any] | None = field(default=None)
+    # A8a: the carried exchanges the turn's prompt held, ``{exchanges, kept, dropped}``
+    # (`chat_setup.carried_held`); absent from the record when the chat carried nothing.
+    carried: dict[str, int] | None = None
 
     @classmethod
     def of(
-        cls, window: Window, rewrite: RewriteFit | None, answer: AnswerFit | None
+        cls,
+        window: Window,
+        rewrite: RewriteFit | None,
+        answer: AnswerFit | None,
+        carried: dict[str, int] | None = None,
     ) -> ContextRecord:
         def _rewrite(r: RewriteFit) -> dict[str, Any]:
             return {
@@ -228,10 +235,14 @@ class ContextRecord:
             window_source=window.source,
             rewrite=_rewrite(rewrite) if rewrite is not None else None,
             answer=_answer(answer) if answer is not None else None,
+            carried=carried,
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        out = asdict(self)
+        if out.get("carried") is None:
+            out.pop("carried", None)  # a chat that carried nothing records what it did before A8a
+        return out
 
 
 def _count(n: int, one: str, many: str) -> str:

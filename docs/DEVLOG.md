@@ -44,6 +44,39 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-20 (3) — A chat's mode and folders set when it starts, and Continue in a new chat (A8a)
+
+**What changed.** A chat's mode and folders are chosen on the start screen *New chat* opens (mode
+chips, *Search in* with the folder tickboxes, *All documents* set apart, the union count, sample
+questions per mode, *Make this my default*) and stored on the chat by its first turn
+(`conversation_meta.scope_json`, `continued_from`, `carried_exchanges`, additive); later turns
+ignore the request's scope except a one-off `/folder <name>: <question>`. New module
+`chat_setup.py`. The chat line at the top of a chat names the mode and folders with their count,
+with *Continue in a new chat…*, whose dialog carries the old chat's exchanges, read from its
+records, into the new chat's memory, fitted by A5; each record keeps `context_json.carried`.
+*Continue this chat* on a reopened chat carries its own exchanges (open question 1). `/mode`
+follows G2. *New chat defaults* (⚙ beside *New chat*) live in `settings.json` → `new_chat`. The
+composer is the text box and *Send*. The rail's sort menu gains *Group* and *Only chats that
+cited*; rows' date lines carry their labels. ADR-025's addendum amends S9.
+
+**Why.** ROADMAP 103, session A8a; `docs/specs/chat-interface-pass.md` (accepted 2026-11-20) and
+the approved wireframe (`docs/wireframes/chat.md`): the composer's pickers got in the way.
+
+**Measured.** Tests and a driven check, $0, no eval run. Full suite: 3,626 passed, 3 skipped (one A7b-era test of S9's
+unstored scope rewritten to the amendment).
+`tests/integration/test_chat_setup.py` 28; the turn-parity test unchanged. Desktop: 444 tests,
+`svelte-check` 0 errors, `vite build` clean. Driven over a scratch data home of 30 invented
+documents in four folders, `/api/chat` mocked in the page: each of `[s2]`–`[s6]` and `[s9]`, both
+themes, 375 px (the spec's As built lists what was not foreseen).
+
+**Rejected.** Keeping a picker in the composer (the user circled it); summarising carried
+exchanges (G3: never); dropping every gone default folder to an empty choice, which reads as the
+whole library; a second label or grouping derivation in the window.
+
+**What it opens.** A8b (claims in the answer, the records card, the carried card, a reopened
+chat's claims). Not foreseen by the spec, in its As built: A5's history cap means a turn holds at
+most the newest three carried exchanges, and only the rewrite call holds them.
+
 ## 2026-11-20 (2) — Questions within several folders or a concept, and the chat list's labels (A7b)
 
 **What changed.** A turn's scope is several folders, searched as one set: `scope_folder_ids`

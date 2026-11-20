@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (A7b: asking within several folders or one concept; `/folder` and `/concept` questions); 2026-11-20 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A8a: a chat's mode and folders are set when it starts; Continue in a new chat carries its exchanges); 2026-11-20 (A7b: asking within several folders or one concept; `/folder` and `/concept` questions); 2026-11-20 (A7: chat modes; evidence only calls no model); 2026-11-19 (A6: questions about the library itself, answered from its records); 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
 
 # How answers work — evidence vs. interpretation
 
@@ -68,8 +68,10 @@ material, never as instructions.
   use knowledge from outside the sources, you get a warning that the fixed rules still apply,
   and the mode is saved anyway.
 
-A mode belongs to a conversation: `/mode` lists the modes, and `/mode <name>` switches the
-conversation from its next turn. Each answer's provenance card names the mode that wrote it.
+A mode belongs to a chat, chosen when it starts (see *A chat's mode and folders* below), and
+kept for the whole chat. `/mode` lists the modes and names the chat's own; `/mode <name>` on a
+chat that has answers offers *Continue in a new chat* with that mode, and on a chat with none yet
+it sets the mode it starts with. Each answer's provenance card names the mode that wrote it.
 A built-in mode is marked *evaluated*: it was run against the evaluation questions before it
 shipped. Your own modes are marked *not evaluated*. A mode has no effect in evidence only, or
 on a question answered from the library's records, because no answer prompt is written there.
@@ -97,9 +99,9 @@ it is kept in the conversation's history like any other answer.
 An answer can be drawn from part of your library instead of all of it. Whatever limits it, the
 answer says so above its text, and the record keeps it, so a reopened conversation says it too.
 
-- **Folders.** The folder picker above the question box limits the next questions to one folder
-  (choosing several is coming). Several folders are searched as one set of documents, each
-  document once: *Searched **A**, **B** only: 14 documents.*
+- **Folders.** *Search in*, on the start screen *New chat* opens, limits a chat to some folders,
+  for the whole chat. Several folders are searched as one set of documents, each document once:
+  *Searched **A**, **B** only: 14 documents.*
 - **A folder that held nothing** (empty, or deleted since you chose it) is left out and named:
   *“**C** held no documents and was left out.”* When no chosen folder holds a document, nothing
   is searched and the answer says so. It never falls back to the whole library.
@@ -113,6 +115,34 @@ answer says so above its text, and the record keeps it, so a reopened conversati
 - A concept whose documents the concept graph has not listed yet (no rebuild since it was taken
   on, or the graph never built) searches nothing, and the answer asks you to rebuild the graph.
   When the graph is out of date, the answer says the list may be too.
+
+## A chat's mode and folders
+
+A chat's mode and folders are chosen when it starts, on the start screen *New chat* opens: the
+mode chips, *Search in* (*All documents*, or some folders, with how many documents that is, each
+counted once), and sample questions that follow the mode. Your first question starts the chat
+with that choice, and the chat keeps it. The **chat line** at the top of the chat always names
+it, with the document count; a folder that no longer holds a document is named there.
+
+- **Defaults.** The ⚙ beside *New chat* opens *New chat defaults*: the mode and folders every New
+  chat starts with. *Make this my default* on the start screen saves the current choice there.
+  Each library has its own defaults. A default folder that no longer exists is left out and
+  named; if none is left, the start screen says so and searches nothing until you tick where to
+  search. It never falls back to the whole library.
+- **Changing them means a new chat.** *Continue in a new chat…* beside the chat line opens the same
+  choices, filled in with the chat's own, and *Carry this chat's exchanges*. The new chat starts
+  its memory with the old chat's questions and answers (their text, no sources block), read from
+  the answers on record; nothing is summarised and no model is called to carry them. The old chat
+  is not changed. The new chat says where it came from, with the carried exchanges folded at its
+  top, each opening as it was answered.
+- **How much a turn holds.** Earlier messages, carried or not, help the next question be read in
+  context (the step that rewrites a follow-up into a question that stands on its own). That step
+  holds at most the newest three exchanges, fewer when the model's window is small, oldest left
+  out first. Each answer's record keeps how many carried exchanges it held.
+- **Continue this chat**, on a chat you reopened from the list, now remembers that chat's own
+  exchanges the same way, rather than starting with an empty memory.
+- **One question elsewhere** stays a command: `/folder <name>: <question>` (above) asks within a
+  folder for that turn only and leaves the chat's folders as they are.
 
 ## The flow
 

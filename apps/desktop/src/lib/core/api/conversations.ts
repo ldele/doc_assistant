@@ -4,16 +4,72 @@
 
 import { API_BASE, apiFetch } from './_base'
 import type {
+  ChatSetup,
+  ContinueRequest,
+  ContinueResult,
   ConversationDetail,
   ConversationSummary,
+  ResumeResult,
   TurnResult,
+  TurnScope,
 } from '../types'
 
-/** List past conversations for the history sidebar (feature-conversation-history.md). */
-export async function listConversations(): Promise<ConversationSummary[]> {
-  const r = await apiFetch(`${API_BASE}/api/conversations`)
+/** List past conversations for the history sidebar (feature-conversation-history.md). With a
+ *  filter, only the chats that cited that document or a document in that folder (A7b, A8a's
+ *  *Only chats that cited*). */
+export async function listConversations(
+  filter: { document_id?: string; folder_id?: string } = {},
+): Promise<ConversationSummary[]> {
+  const params = new URLSearchParams()
+  if (filter.document_id) params.set('document_id', filter.document_id)
+  if (filter.folder_id) params.set('folder_id', filter.folder_id)
+  const qs = params.toString()
+  const r = await apiFetch(`${API_BASE}/api/conversations${qs ? `?${qs}` : ''}`)
   if (!r.ok) throw new Error(`conversations failed: ${r.status}`)
   return (await r.json()) as ConversationSummary[]
+}
+/** The folders resolved now (A8a): each folder's count and the union, each document once.
+ *  `null` = the whole library. What *Search in* counts. */
+export async function previewScope(folderIds: string[] | null): Promise<TurnScope | null> {
+  const params = new URLSearchParams()
+  for (const id of folderIds ?? []) params.append('folder_ids', id)
+  const qs = params.toString()
+  const r = await apiFetch(`${API_BASE}/api/conversations/scope${qs ? `?${qs}` : ''}`)
+  if (!r.ok) throw new Error(`scope failed: ${r.status}`)
+  return (await r.json()) as TurnScope | null
+}
+/** A chat's setup (A8a): stored, worked out from its last record, or the default. */
+export async function getChatSetup(sessionId: string): Promise<ChatSetup> {
+  const r = await apiFetch(
+    `${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}/setup`,
+  )
+  if (!r.ok) throw new Error(`setup failed: ${r.status}`)
+  return (await r.json()) as ChatSetup
+}
+/** *Continue in a new chat* (A8a): the new chat, set up, with the old one's exchanges carried. */
+export async function continueInNewChat(
+  fromSessionId: string,
+  body: ContinueRequest,
+): Promise<ContinueResult> {
+  const r = await apiFetch(
+    `${API_BASE}/api/conversations/${encodeURIComponent(fromSessionId)}/continue`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!r.ok) throw new Error(`continue failed: ${r.status}`)
+  return (await r.json()) as ContinueResult
+}
+/** *Continue this chat* (A8a): its memory starts with its own exchanges. */
+export async function resumeChat(sessionId: string): Promise<ResumeResult> {
+  const r = await apiFetch(
+    `${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}/resume`,
+    { method: 'POST' },
+  )
+  if (!r.ok) throw new Error(`resume failed: ${r.status}`)
+  return (await r.json()) as ResumeResult
 }
 /** Rehydrate one conversation as a read-only transcript. */
 export async function getConversation(sessionId: string): Promise<ConversationDetail> {

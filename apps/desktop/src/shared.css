@@ -30,3 +30,22 @@
 .muted {
   color: var(--fg-2);
 }
+
+/* The parts of a chat's setup dialogs (A8a: New chat defaults, Continue in a new chat). */
+.setup-sub {
+  margin: 0 0 var(--space-2);
+  font-size: 0.78rem;
+}
+.setup-warn {
+  color: var(--warn-fg);
+}
+.setup-sep {
+  border-top: 1px solid var(--border);
+  margin: var(--space-3) 0 var(--space-2);
+}
+.setup-head {
+  margin: 0 0 var(--space-1);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

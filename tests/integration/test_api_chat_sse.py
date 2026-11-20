@@ -91,6 +91,7 @@ class FakeController:
         *,
         overrides: object = None,
         scope_folder_ids: list[str] | None = None,
+        mode_id: str | None = None,
     ) -> Iterator[object]:
         self.received_overrides.append(overrides)
         self.received_scopes.append(scope_folder_ids)
@@ -184,6 +185,7 @@ class _FailingController(FakeController):
         *,
         overrides: object = None,
         scope_folder_ids: list[str] | None = None,
+        mode_id: str | None = None,
     ) -> Iterator[object]:
         yield Token("Partial ")
         if self.escapes:

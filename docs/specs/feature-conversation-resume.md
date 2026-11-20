@@ -59,3 +59,12 @@ later exploration). That lands exactly on a design that's also the cheapest to b
 - Conversation management (delete / pin / archive / projects) — the next cluster, on top of this.
 - `ReadonlyTurn` shows no source **list** (only clickable citations → degraded panel); a resumed
   chat's history inherits that. The compact sources strip is live-turn only.
+
+## Superseded in part (2026-11-20, A8a)
+
+**Decision 1's empty memory is superseded.** *Continue this chat* on a reopened chat now starts the
+chat's memory with its own exchanges, read from its answer records (question and answer text, no
+sources block) and fitted to the model's window by A5 like any earlier message; each answer's record
+says how many it held (`docs/specs/chat-interface-pass.md`, open question 1, accepted by the user
+2026-11-20; `POST /api/conversations/{id}/resume`). Decision 2's limitation no longer applies to
+exchanges that fit. The read-only rendering of the old turns above the composer is unchanged.

@@ -22,6 +22,7 @@ export async function* streamChat(
   overrides?: RagOverrides,
   signal?: AbortSignal,
   scopeFolderIds: string[] | null = null,
+  modeId: string | null = null,
 ): AsyncGenerator<SSEvent> {
   const r = await apiFetch(`${API_BASE}/api/chat`, {
     method: 'POST',
@@ -33,6 +34,9 @@ export async function* streamChat(
       // ADR-025 F2 — only folder ids travel (several since A7b; null = the whole library); the
       // backend resolves membership per turn.
       scope_folder_ids: scopeFolderIds,
+      // A8a — the start screen's mode chip. Only a chat's first turn reads it (and the folders):
+      // it stores them as the chat's setup, and later turns keep that setup.
+      mode_id: modeId,
     }),
     signal,
   })

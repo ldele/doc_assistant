@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
+<!-- status: active · updated: 2026-11-20 (U-007: a chat's setup and its controls, A8a); 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -285,6 +285,28 @@ all: `human` returns the evidence only and calls no model, so no chat mode takes
 the two could be confused)
 **Authoritative in:** `src/doc_assistant/chat_modes.py` + `docs/specs/chat-modes.md` +
 `src/doc_assistant/config.py::SYNTHESIS_MODE`
+
+## U-007 — a chat's setup, and the controls that choose it
+
+**Canonical:** `setup` (a chat's chat mode and its folders, fixed for the chat) · `start screen`
+(what *New chat* opens: the mode chips, `Search in`, the sample questions, `Make this my
+default`) · `Search in` (the button that opens the folder list; `All documents` set apart, then
+one tickbox per folder) · `New chat defaults` (the window the ⚙ beside *New chat* opens, and its
+heading) · `chat line` (the line at the top of a chat naming its mode and folders, with
+`Continue in a new chat…`) · `Continue in a new chat` (the dialog, and its button) · `Carry this
+chat's exchanges` (its tickbox) · `carried exchanges` (what a new chat starts its memory with,
+shown folded at its top) · `Continue this chat` (a reopened chat continued, carrying its own
+exchanges) · in the rail's sort menu, `Group` (`No groups` · `By mode` · `By folder`) and `Only
+chats that cited`
+**Definition:** A chat's *setup* is chosen on the *start screen* and stored by its first turn
+(A8a, `docs/specs/chat-interface-pass.md`); later turns keep it, and the *chat line* always names
+it. Changing it means *Continue in a new chat*, which leaves the old chat as it was. A one-off
+`/folder <name>: <question>` scopes its own turn only and leaves the setup alone.
+**Forbidden:** `scope picker` · `folder picker` (the composer's select, removed in A8a) · `New
+chat settings` (the defaults window is not Settings). In prose: an open chat never changes mode
+(G2), so no control offers to change it in place.
+**Authoritative in:** `src/doc_assistant/chat_setup.py` + `docs/specs/chat-interface-pass.md` +
+`apps/desktop/src/screens/chat/StartScreen.svelte` + `apps/desktop/src/screens/chat/ChatLine.svelte`
 
 ## D-001 — Provenote vs doc_assistant
 

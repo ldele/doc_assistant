@@ -3,10 +3,24 @@
   // management actions by feature-conversation-management.md). The filter, select mode and sort,
   // pinned grouped into their own section, per-row pin + ⋯ menu, inline rename, the archived
   // toggle. App hands it to the sidebar frame (`shell/Sidebar.svelte`) as the chat rail.
-  import type { ConversationSummary } from '../../lib/core/types'
+  //
+  // A8a (W3, `[s9]`): the rail is otherwise unchanged. The ⚙ beside *New chat* opens *New chat
+  // defaults*; the sort menu gains *Group* (No groups · By mode · By folder) and *Only chats that
+  // cited* (a folder or a document, A7b's filter); each row's date line gains its labels. Group
+  // and the filter are the window's own preferences (`lib/shell/prefs`).
+  import type { ConversationSummary, LibraryDocument, LibraryFolder } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
   import { isSelectClick, pick, selectAllLabel, selectAllOrNone } from '../../lib/shell/selection'
   import { tooltip } from '../../lib/shell/tooltip'
+  import { listConversations } from '../../lib/core/api'
+  import {
+    GROUP_KEYS,
+    GROUP_LABELS,
+    citedOptions,
+    groupChats,
+    labelLine,
+  } from '../../lib/chat/setup'
+  import { chatListPrefs, setChatGroup, setCitedFilter } from '../../lib/shell/prefs.svelte'
 
   let {
     conversations,
@@ -14,6 +28,9 @@
     liveSessionId,
     viewingSessionId,
     onNew,
+    onDefaults,
+    folders = [],
+    documents = [],
     onSelect,
     onPin,
     onArchive,
@@ -28,6 +45,11 @@
     liveSessionId: string
     viewingSessionId: string | null
     onNew: () => void
+    /** Opens *New chat defaults* (A8a, W2). */
+    onDefaults: () => void
+    /** For *Only chats that cited*: the folders and documents it can take. */
+    folders?: LibraryFolder[]
+    documents?: LibraryDocument[]
     onSelect: (sessionId: string) => void
     onPin: (sessionId: string, pinned: boolean) => void
     onArchive: (sessionId: string, archived: boolean) => void
@@ -117,14 +139,48 @@
   // Archived conversations are hidden behind a toggle; pinned ones get their own section on top.
   let showArchived = $state(false)
   const archivedCount = $derived(conversations.filter((c) => c.archived).length)
+  // *Only chats that cited* (A7b's filter): the ids of the chats that cited the chosen folder or
+  // document, asked of the backend whenever the filter or the list changes. Until it answers
+  // the list is shown unfiltered rather than empty.
+  let citedIds = $state<Set<string> | null>(null)
+  let citedAsked = 0
+  $effect(() => {
+    const f = chatListPrefs.cited
+    void conversations.length
+    const n = ++citedAsked
+    if (!f) {
+      citedIds = null
+      return
+    }
+    listConversations(f.kind === 'folder' ? { folder_id: f.id } : { document_id: f.id })
+      .then((list) => {
+        if (n === citedAsked) citedIds = new Set(list.map((c) => c.session_id))
+      })
+      .catch(() => {
+        if (n === citedAsked) citedIds = null
+      })
+  })
+  let citedQuery = $state('')
+  const citedMatches = $derived(
+    citedOptions(
+      citedQuery,
+      folders,
+      documents.map((d) => ({ id: d.id, title: d.title ?? d.filename })),
+    ),
+  )
+
   const matchedConvos = $derived(
     (showArchived ? conversations : conversations.filter((c) => !c.archived)).filter(
-      (c) => q === '' || c.title.toLowerCase().includes(q),
+      (c) =>
+        (q === '' || c.title.toLowerCase().includes(q)) &&
+        (citedIds === null || citedIds.has(c.session_id)),
     ),
   )
   const sortedConvos = $derived(sortConvos(matchedConvos, sortKey))
   const pinnedConvos = $derived(sortedConvos.filter((c) => c.pinned))
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
+  // Group (A8a): the unpinned chats in groups, each keeping the sort order; pinned stay on top.
+  const otherGroups = $derived(groupChats(otherConvos, chatListPrefs.group))
 
   // --- Select mode: tick several chats, delete them in one action (user request 2026-08-10).
   // Shift-click ranges and Ctrl/Cmd-click toggles (ROADMAP 78; logic in `selection.ts`), and
@@ -312,6 +368,54 @@
               {SORT_LABELS[k]}
             </button>
           {/each}
+          <div class="menusep" role="separator"></div>
+          <p class="menuhead">Group</p>
+          {#each GROUP_KEYS as g}
+            <button
+              class="sortitem"
+              class:active={chatListPrefs.group === g}
+              role="menuitemradio"
+              aria-checked={chatListPrefs.group === g}
+              onclick={() => setChatGroup(g)}
+              type="button"
+              use:tooltip={g === 'folder' ? 'Group the chats by the folders they search; a chat in several folders sits under each' : g === 'mode' ? 'Group the chats by their chat mode' : 'One list, no groups'}
+            >
+              <span class="tick">{#if chatListPrefs.group === g}<Icon name="check" size={14} />{/if}</span>
+              {GROUP_LABELS[g]}
+            </button>
+          {/each}
+          <div class="menusep" role="separator"></div>
+          <p class="menuhead">Only chats that cited</p>
+          {#if chatListPrefs.cited}
+            <button class="citedon" onclick={() => setCitedFilter(null)} type="button" use:tooltip={'Show every chat again'}>
+              <Icon name={chatListPrefs.cited.kind === 'folder' ? 'folder' : 'file-text'} size={13} />
+              <span class="citedname">{chatListPrefs.cited.name}</span>
+              <Icon name="x" size={13} />
+            </button>
+          {:else}
+            <input
+              class="citedq"
+              type="text"
+              bind:value={citedQuery}
+              placeholder="A folder or a document"
+              aria-label="Only chats that cited a folder or a document"
+            />
+            {#each citedMatches as o (o.kind + o.id)}
+              <button
+                class="sortitem"
+                onclick={() => {
+                  setCitedFilter(o)
+                  citedQuery = ''
+                }}
+                type="button"
+                use:tooltip={o.kind === 'folder' ? 'Show only the chats whose answers cited a document in this folder' : 'Show only the chats whose answers cited this document'}
+              >
+                <span class="tick"><Icon name={o.kind === 'folder' ? 'folder' : 'file-text'} size={13} /></span>
+                <span class="citedname">{o.name}</span>
+              </button>
+            {/each}
+          {/if}
+          <p class="menunote">A row's labels: what its answers cited, read from the records.</p>
         </div>
       {/if}
     </div>
@@ -342,7 +446,7 @@
         <span class="pickbody">
           <span class="title">{c.title}</span>
           <span class="rowmeta">
-            <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+            <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}{#if labelLine(c.labels)} · {labelLine(c.labels)}{/if}</span>
           </span>
         </span>
       </button>
@@ -370,7 +474,7 @@
         <span class="title">{c.title}</span>
         <span class="rowmeta">
           {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
-          <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+          <span class="metatext">{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}{#if labelLine(c.labels)} · {labelLine(c.labels)}{/if}</span>
         </span>
       </button>
       <div class="rowactions">
@@ -431,10 +535,15 @@
   <!-- New chat as a tree-style row (like Library's "All documents" and Graph's "Taxonomy") —
        each rail opens with the same slim row idiom instead of a chunky filled button. -->
   {#if !selectMode}
-    <button class="treerow" onclick={onNew} type="button" use:tooltip={'Start an empty conversation'}>
-      <span class="treeicon"><Icon name="plus" size={14} /></span>
-      <span class="treelabel">New chat</span>
-    </button>
+    <div class="newrow">
+      <button class="treerow" onclick={onNew} type="button" use:tooltip={'Start an empty conversation, from the New chat defaults'}>
+        <span class="treeicon"><Icon name="plus" size={14} /></span>
+        <span class="treelabel">New chat</span>
+      </button>
+      <button class="btn btn-icon" onclick={onDefaults} aria-label="New chat defaults" type="button" use:tooltip={'New chat defaults: the mode and folders every New chat starts with'}>
+        <Icon name="settings" size={14} />
+      </button>
+    </div>
   {/if}
   {#if conversations.length === 0 && !conversationsLoaded}
     <p class="empty">Loading…</p>
@@ -446,8 +555,13 @@
       {#each pinnedConvos as c (c.session_id)}{@render convRow(c)}{/each}
     {/if}
     {#if otherConvos.length > 0}
-      <p class="section-header">Recent</p>
-      {#each otherConvos as c (c.session_id)}{@render convRow(c)}{/each}
+      {#each otherGroups as g (g.key)}
+        <p class="section-header">{g.label || 'Recent'}</p>
+        {#each g.chats as c (c.session_id)}{@render convRow(c)}{/each}
+      {/each}
+    {/if}
+    {#if chatListPrefs.cited && citedIds !== null && pinnedConvos.length === 0 && otherConvos.length === 0}
+      <p class="empty">No chat cited {chatListPrefs.cited.name}.</p>
     {/if}
     {#if q !== '' && pinnedConvos.length === 0 && otherConvos.length === 0}
       <p class="empty">No chats match “{query.trim()}”.</p>
@@ -570,6 +684,64 @@
   }
   .sortitem:hover {
     background: var(--surface-2);
+  }
+  .menuhead,
+  .menunote {
+    margin: 0.2rem 0.5rem 0.1rem;
+    font-size: 0.7rem;
+    color: var(--fg-2);
+  }
+  .menuhead {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .citedq {
+    font: inherit;
+    font-size: 0.8rem;
+    margin: 0.1rem 0.3rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--fg);
+  }
+  .citedon {
+    font: inherit;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.1rem 0.3rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    cursor: pointer;
+  }
+  .citedname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  .newrow {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .sortmenu .menusep {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0;
+  }
+  .metatext {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sortitem.active {
     color: var(--accent);

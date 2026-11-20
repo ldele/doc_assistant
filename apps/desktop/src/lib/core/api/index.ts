@@ -6,7 +6,8 @@
 export { streamChat, adjudicate, figureUrl } from './chat'
 export type { SSEvent } from './chat'
 export { getHealth } from './health'
-export { listConversations, getConversation, updateConversationMeta, exportConversation, bulkUpdateConversations, exportAllConversations } from './conversations'
+export { listConversations, getConversation, updateConversationMeta, exportConversation, bulkUpdateConversations, exportAllConversations, previewScope, getChatSetup, continueInNewChat, resumeChat } from './conversations'
+export { listModes } from './modes'
 export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, getSourceDocumentView, listLibraryDocuments, locateChunk, resetDocumentMeta, revealDocument, sourcePageUrl, startReingest, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
@@ -31,6 +32,8 @@ export {
   setLlmProvider,
   setMarkersEnabled,
   reindexKeywords,
+  getNewChatDefaults,
+  saveNewChatDefaults,
 } from './settings'
 export { getSetup, saveProviderKey, clearProviderKey, fetchProviderModels, testServer, removeServer, setNotBilled } from './setup'
 export {

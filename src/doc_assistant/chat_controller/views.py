@@ -135,3 +135,6 @@ class TurnResult:
     # address an AI (a planted link is not a source's link). The renderer shows an answer's
     # link as a link only when its address is here; any other link is plain text.
     source_links: list[str] = field(default_factory=list)
+    # A8a (G2): `/mode <name>`'s offer to the window: ``("continue", mode_id)`` opens *Continue in
+    # a new chat* prefilled with that mode; ``("set", mode_id)`` sets the start screen's chip.
+    mode_offer: tuple[Literal["continue", "set"], str] | None = None

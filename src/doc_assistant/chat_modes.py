@@ -328,34 +328,4 @@ def set_conversation_mode(session_id: str, mode_id: str | None) -> ChatMode:
     return mode
 
 
-# ============================================================
-# `/mode`
-# ============================================================
-
-
-def _mode_line(mode: ChatMode, current: ChatMode) -> str:
-    kind = "built in" if mode.built_in else "yours, not evaluated"
-    marker = " ← this conversation" if mode.id == current.id else ""
-    return f"- **{mode.name}** ({kind}){marker}"
-
-
-def mode_command(session_id: str, arg: str) -> str:
-    """The `/mode` command: list the modes, or switch this conversation from its next turn."""
-    current = conversation_mode(session_id)
-    modes = list_modes()
-    listing = "\n".join(_mode_line(m, current) for m in modes)
-    if not arg.strip():
-        return (
-            f"**Chat mode:** {current.name}.\n\n{listing}\n\n"
-            "`/mode <name>` switches this conversation from its next turn."
-        )
-    mode = find_mode(arg)
-    if mode is None:
-        return f"No mode is named “{arg.strip()}”. The modes are:\n\n{listing}"
-    set_conversation_mode(session_id, mode.id)
-    tail = (
-        "" if mode.evaluated else " It is your own mode, so its answers are marked not evaluated."
-    )
-    if mode.id == current.id:
-        return f"This conversation already uses **{mode.name}**.{tail}"
-    return f"From the next turn this conversation uses **{mode.name}**.{tail}"
+# `/mode` lives in `chat_setup.mode_command` since A8a (G2): an open chat never changes mode.

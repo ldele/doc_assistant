@@ -20,6 +20,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from doc_assistant import (
     app_settings,
     chat_modes,
+    chat_setup,
     compare,
     context,
     conversations,
@@ -332,6 +333,7 @@ class ChatController:
         *,
         overrides: RagOverrides | None = None,
         scope_folder_ids: list[str] | None = None,
+        mode_id: str | None = None,
     ) -> Iterator[TurnEvent]:
         """Drive one turn. Ports ``on_message``'s dispatch order verbatim:
         (a) slash command, (b) pending claim-edit, (c) library query, (d) RAG path.
@@ -341,9 +343,11 @@ class ChatController:
         byte-identical to before this feature existed.
 
         ``scope_folder_ids`` (ADR-025 F2; several since A7b) restricts retrieval to those folders'
-        documents, searched as one set, for this turn only — request-scoped like ``overrides``,
-        never stored on the session: a scope the backend remembered would be a scope the user
-        could forget (spec S9). ``None`` or ``[]`` is the whole library. Same RAG-path-only carve.
+        documents, searched as one set. ``None`` or ``[]`` is the whole library. Same RAG-path-only
+        carve. Since A8a (`chat_setup`, ADR-025's addendum to S9) it and ``mode_id`` are the start
+        screen's choice: the chat's first turn stores them on the chat, and every later turn reads
+        the stored setup and ignores both. The safeguard against a forgotten scope is the line at
+        the top of the chat, which always names it.
 
         ``/folder <name>: <question>`` and ``/concept <name>: <question>`` (A7b, G3) run the
         question as an ordinary turn on that folder's or concept's documents. The command's
@@ -351,6 +355,9 @@ class ChatController:
         # --- Slash commands ---
         started = time.monotonic()
         parsed = parse_command(text)
+        if parsed is None or parsed[0] != "mode":
+            # `/mode` reads the setup itself: on a chat with no turn yet it sets the start mode.
+            scope_folder_ids = self._turn_scope(session, scope_folder_ids, mode_id)
         if parsed is not None:
             cmd, arg = parsed
             try:
@@ -380,12 +387,12 @@ class ChatController:
                 # Export commands need the live session transcript, so they're handled here
                 # (stateful) rather than in the stateless commands.execute_command dispatcher.
                 if cmd == "mode":
-                    # A7: the conversation's chat mode, listed or switched from the next turn.
-                    yield Result(
-                        self._command_result(
-                            chat_modes.mode_command(session.session_id, arg), route="command"
-                        )
-                    )
+                    # A8a (G2): an open chat never changes mode; `/mode <name>` offers a new chat.
+                    reply = chat_setup.mode_command(session.session_id, arg)
+                    result = self._command_result(reply.text, route="command")
+                    if reply.action is not None and reply.mode_id is not None:
+                        result.mode_offer = (reply.action, reply.mode_id)
+                    yield Result(result)
                 elif cmd in ("export", "export-conversation", "export_conversation"):
                     msg, path = self.export_conversation(session, dev=False)
                     yield Result(self._command_result(msg, download_path=path, route="command"))
@@ -468,6 +475,21 @@ class ChatController:
             )
 
     # -- internal ---------------------------------------------------------
+
+    @staticmethod
+    def _turn_scope(
+        session: Session, request_folder_ids: list[str] | None, request_mode_id: str | None
+    ) -> list[str] | None:
+        """The folder ids this turn searches: the chat's stored setup, stored by this turn if it
+        is the first (A8a). If the setup cannot be read or written the request's scope is used,
+        as before A8a, and the failure is logged: a turn never fails on its setup."""
+        try:
+            return chat_setup.scope_folder_ids(
+                chat_setup.turn_setup(session.session_id, request_folder_ids, request_mode_id)
+            )
+        except Exception as e:
+            log.warning("chat_setup_unavailable", error=str(e))
+            return request_folder_ids
 
     def _command_result(
         self, answer: str, *, download_path: Path | None = None, route: str = "command"
@@ -790,8 +812,14 @@ class ChatController:
             if answer_fit.passages_dropped or answer_fit.top_passage_clipped:
                 scored = [(d, scored[i][1]) for i, d in enumerate(answer_fit.docs)]
                 docs = list(answer_fit.docs)
+        # A8a: how many carried exchanges the rewrite call held, recorded beside A5's counts.
+        carried = chat_setup.carried_held(
+            session.carried_messages,
+            len(history),
+            rewrite_fit.history_used if rewrite_fit is not None and not rewrite_fit.skipped else 0,
+        )
         context_record = (
-            context.ContextRecord.of(window, rewrite_fit, answer_fit)
+            context.ContextRecord.of(window, rewrite_fit, answer_fit, carried)
             if rewrite_fit is not None or answer_fit is not None
             else None
         )

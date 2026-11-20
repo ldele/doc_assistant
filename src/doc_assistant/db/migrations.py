@@ -110,6 +110,12 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("conversation_meta", "mode_id", "VARCHAR", None),
     ("answer_records", "chat_mode", "VARCHAR", None),
     ("answer_records", "chat_mode_evaluated", "BOOLEAN", None),
+    # A8a — a chat's stored setup (`chat_setup`): its folders, the chat it was continued from and
+    # how many exchanges it carried. NULL on every existing row and not backfilled: a chat from
+    # before A8 has its setup worked out from its last record, and nothing is written back.
+    ("conversation_meta", "scope_json", "TEXT", None),
+    ("conversation_meta", "continued_from", "VARCHAR", None),
+    ("conversation_meta", "carried_exchanges", "INTEGER", None),
 ]
 
 

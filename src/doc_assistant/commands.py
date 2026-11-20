@@ -164,7 +164,7 @@ def help_message() -> str:
 - `/records` — list the most recent answer records
 - `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent
 - `/synthesis` — show the current synthesis mode (`human` evidence-only vs `ai` dual-layer)
-- `/mode` — list the chat modes; `/mode <name>` switches this conversation from its next turn
+- `/mode` — list the chat modes; `/mode <name>` sets an empty chat's mode, else offers a new chat
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.

@@ -65,3 +65,57 @@ export function startSidebarResize(e: PointerEvent): void {
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
 }
+
+// The chat list's Group and *Only chats that cited* (A8a, the rail's sort menu): the window's own
+// preferences, like the sort order, never the library's. A cited filter names a folder or a
+// document by id, with the name it was chosen by, so the menu can show it before the lists load.
+export type ChatGroupKey = 'none' | 'mode' | 'folder'
+export interface CitedFilter {
+  kind: 'folder' | 'document'
+  id: string
+  name: string
+}
+
+function loadGroup(): ChatGroupKey {
+  try {
+    const v = localStorage.getItem('convGroup')
+    if (v === 'mode' || v === 'folder') return v
+  } catch {
+    /* ignore — fall back to no groups */
+  }
+  return 'none'
+}
+
+function loadCited(): CitedFilter | null {
+  try {
+    const v = JSON.parse(localStorage.getItem('convCited') ?? 'null') as CitedFilter | null
+    if (v && (v.kind === 'folder' || v.kind === 'document') && typeof v.id === 'string') return v
+  } catch {
+    /* ignore — no filter */
+  }
+  return null
+}
+
+export const chatListPrefs = $state({
+  group: loadGroup(),
+  cited: loadCited(),
+})
+
+export function setChatGroup(group: ChatGroupKey): void {
+  chatListPrefs.group = group
+  try {
+    localStorage.setItem('convGroup', group)
+  } catch {
+    /* ignore — the grouping just won't persist */
+  }
+}
+
+export function setCitedFilter(cited: CitedFilter | null): void {
+  chatListPrefs.cited = cited
+  try {
+    if (cited) localStorage.setItem('convCited', JSON.stringify(cited))
+    else localStorage.removeItem('convCited')
+  } catch {
+    /* ignore — the filter just won't persist */
+  }
+}

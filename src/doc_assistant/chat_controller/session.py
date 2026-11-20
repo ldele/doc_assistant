@@ -5,6 +5,7 @@ singleton cannot leak overrides into each other."""
 
 from __future__ import annotations
 
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,7 +28,15 @@ class Session:
     counter: TokenCounter = field(default_factory=TokenCounter)
     export_turns: list[export.ExportTurn] = field(default_factory=list)
     awaiting_edit: dict[str, Any] | None = None
-    session_id: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))
+    # A suffix keeps two sessions started in the same second apart: since A8a a chat's first
+    # turn stores its setup on the id, so two chats sharing one would share a setup.
+    session_id: str = field(
+        default_factory=lambda: f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(3)}"
+    )
+    # A8a: how many of ``history``'s first messages were carried in from another chat
+    # (*Continue in a new chat*) or from this chat's own records (*Continue this chat*). Each
+    # answer's record says how many of those exchanges its prompt held.
+    carried_messages: int = 0
 
 
 @dataclass(frozen=True)

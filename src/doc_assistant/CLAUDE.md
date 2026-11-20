@@ -7,7 +7,7 @@
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `sparse_index.py`
   (the keyword arm, on disk and the only one since ADR-038), `llm.py`, `synthesis.py`,
   `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, `doc_vectors.py`, plus app services
-  (`conversations` · `app_settings` · `credentials` · `readiness` · `compare` · `health` · `export`).
+  (`conversations` · `chat_setup` · `app_settings` · `credentials` · `readiness` · `compare` · `health` · `export`).
 - `chat_controller/` — turn orchestration. `read_surface/` — ADR-066's read-only tools (MCP, lookups).
 - `library/` — document-store API, sub-domains matching `apps/api/routers/library/`: `models` ·
   `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity` ·

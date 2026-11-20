@@ -22,13 +22,22 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from doc_assistant.chat_modes import DEFAULT_MODE, ChatMode, conversation_mode
-from doc_assistant.db.models import AnswerRecord, ConversationMeta
+from doc_assistant.chat_setup import ChatSetup, read_setup, setups_for
+from doc_assistant.db.models import AnswerRecord, ConversationMeta, Folder
 from doc_assistant.db.session import session_scope
 from doc_assistant.export import ExportSource, ExportTurn, render_conversation_markdown
 from doc_assistant.read_surface.shapes import ConversationLabels
 from doc_assistant.retrieval_scope import ScopeView, read_scope
 
 _TITLE_MAX = 80
+
+
+@dataclass(frozen=True)
+class SetupFolder:
+    """One folder a chat searches, by its current name; ``name is None`` = since deleted."""
+
+    folder_id: str
+    name: str | None
 
 
 @dataclass(frozen=True)
@@ -45,6 +54,10 @@ class ConversationSummary:
     # A7b (ADR-066 choice 7): the documents the answers cited and the folders holding them,
     # derived from the records on every read (`read_surface.conversations.labels_for`).
     labels: ConversationLabels = field(default_factory=ConversationLabels)
+    # A8a: what the rail's Group reads: the chat's mode and the folders it searches (empty = the
+    # whole library), from its stored setup or, for a chat from before A8, its last record.
+    mode_name: str = DEFAULT_MODE.name
+    folders: list[SetupFolder] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -84,6 +97,8 @@ class ConversationDetail:
     title: str
     turns: list[ConversationTurn]
     mode: ChatMode = DEFAULT_MODE
+    # A8a: the chat's setup (stored, or worked out from its last record before A8).
+    setup: ChatSetup = field(default_factory=ChatSetup)
 
 
 def _truncate(text: str, limit: int = _TITLE_MAX) -> str:
@@ -341,6 +356,18 @@ def list_conversations(
         if not filtering:
             cited = cited_documents(session, [str(sid) for sid in session_ids])
         labels = labels_for(session, {str(sid): cited.get(str(sid), set()) for sid in session_ids})
+        setups = setups_for([str(sid) for sid in session_ids])
+        wanted_folders = {f for st in setups.values() for f in st.folder_ids}
+        folder_names = (
+            {
+                str(fid): str(name)
+                for fid, name in session.execute(
+                    select(Folder.id, Folder.name).where(Folder.id.in_(wanted_folders))
+                ).all()
+            }
+            if wanted_folders
+            else {}
+        )
 
         summaries = [
             ConversationSummary(
@@ -352,6 +379,11 @@ def list_conversations(
                 pinned=flags.get(sid, (False, False))[0],
                 archived=flags.get(sid, (False, False))[1],
                 labels=labels[str(sid)],
+                mode_name=setups[str(sid)].mode_name,
+                folders=[
+                    SetupFolder(folder_id=f, name=folder_names.get(f))
+                    for f in setups[str(sid)].folder_ids
+                ],
             )
             for sid, count, started_at, last_at in agg
         ]
@@ -441,6 +473,11 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
         title = (meta.title_override if meta and meta.title_override else None) or _truncate(
             rows[0].original_query or rows[0].query
         )
+    setup = read_setup(session_id)
     return ConversationDetail(
-        session_id=session_id, title=title, turns=turns, mode=conversation_mode(session_id)
+        session_id=session_id,
+        title=title,
+        turns=turns,
+        mode=setup.mode if setup.derived else conversation_mode(session_id),
+        setup=setup,
     )

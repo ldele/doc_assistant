@@ -65,3 +65,17 @@ export interface ProviderOption {
   available: boolean
   paid: boolean
 }
+
+// A8a (W2) — the New chat defaults: GET/PUT /api/settings/new-chat. A default folder that no
+// longer exists is dropped and named in `missing_folders`; `nothing_left` means every default
+// folder is gone: `folder_ids` then keeps the gone ids, which search nothing (never the whole
+// library, ADR-025 F2), until the person ticks where to search.
+// Mirrors apps/api/models/settings.py::NewChatDefaultsPayload.
+export interface NewChatDefaults {
+  mode_id: string
+  mode_name: string
+  folder_ids: string[] | null
+  missing_folders: string[]
+  mode_missing: string | null
+  nothing_left: boolean
+}

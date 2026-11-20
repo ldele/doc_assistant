@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type {
+    ChatSetup,
     ConversationDetail,
     KeywordFamilyProposal,
     MemberBreadth,
@@ -19,6 +20,8 @@
     streamChat,
     bulkUpdateConversations,
     updateConversationMeta,
+    continueInNewChat,
+    resumeChat,
   } from './lib/core/api'
   import { GRAPH_TAB_ENABLED } from './lib/core/features'
   import Chat from './screens/chat/Chat.svelte'
@@ -39,6 +42,8 @@
   import Graph from './screens/graph/Graph.svelte'
   import ConceptIndex from './screens/graph/ConceptIndex.svelte'
   import ChatHistory from './screens/chat/ChatHistory.svelte'
+  import NewChatDefaults from './screens/chat/NewChatDefaults.svelte'
+  import ContinueInANewChat from './screens/chat/ContinueInANewChat.svelte'
   import KeyboardShortcuts from './shell/KeyboardShortcuts.svelte'
   import About from './shell/About.svelte'
   import Taxonomy from './screens/taxonomy/Taxonomy.svelte'
@@ -154,6 +159,18 @@
     restoreConversations,
   } from './lib/chat/conversations.svelte'
   import { tooltip } from './lib/shell/tooltip'
+  import {
+    closeContinue,
+    loadDefaults,
+    loadModes,
+    modeName,
+    openContinue,
+    refreshLiveSetup,
+    resetStart,
+    saveDefaults,
+    setup,
+  } from './lib/chat/setup.svelte'
+  import type { FolderChoice } from './lib/chat/setup'
 
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
@@ -213,16 +230,50 @@
   let lastSession = $state(
     restoredDocuments || restoredFolders || restoredChats || restoredGraph,
   )
-  // ADR-025 F2 — the chat retrieval scope. Sticky across chat.turns, in memory ONLY: a reload
-  // returns to the whole library. Persisting it is the rejected option — a scope you forgot
-  // you set silently narrows every future answer, which is the exact lie the integrity layer
-  // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
-  // grid and scoping a conversation are two different intentions.
-  let chatScopeFolderId = $state<string | null>(null)
-  // A7b: the wire takes a list; the picker stays one choice (its tickboxes are A8's), so a
-  // folder goes as `[id]` and *All documents* as `null`.
+  // A8a (ADR-025's addendum to S9): the chat's folders are chosen on the start screen and stored
+  // on the chat by its first turn; the chat line always names them, which is the safeguard S9's
+  // unstored scope used to be. Before the first turn the start screen's choice travels; after it
+  // the backend reads the stored setup and ignores what is sent. Deliberately separate from
+  // `libraryCollection`: filtering the Library grid and scoping a chat are two intentions.
   function scopeFolderIds(): string[] | null {
-    return chatScopeFolderId === null ? null : [chatScopeFolderId]
+    return setup.live ? setup.live.folder_ids : setup.startFolders
+  }
+  // The documents in the library, for *All documents · N* (the Library's list, read when ready).
+  const libraryCount = $derived(library.list.length)
+  // What the defaults could not keep, said on the start screen (W2, ADR-025 F2).
+  const startNotice = $derived.by(() => {
+    const d = setup.defaults
+    if (!d) return ''
+    const parts: string[] = []
+    if (d.missing_folders.length > 0) {
+      const names = d.missing_folders.join(', ')
+      parts.push(
+        d.nothing_left
+          ? `Your default folders (${names}) no longer exist, so this chat would search nothing: tick where to search.`
+          : `Left out of your defaults, since they no longer exist: ${names}.`,
+      )
+    }
+    if (d.mode_missing) parts.push(`Your default mode ${d.mode_missing} no longer exists; ${d.mode_name} is used.`)
+    return parts.join(' ')
+  })
+  let savedNote = $state('')
+  async function makeStartDefault(): Promise<void> {
+    const ok = await saveDefaults(setup.startModeId, setup.startFolders)
+    const where =
+      setup.startFolders === null
+        ? 'the whole library'
+        : setup.startFolders
+            .map((id) => folders.list.find((f) => f.id === id)?.name ?? 'a folder that no longer exists')
+            .join(', ')
+    savedNote = ok
+      ? `Saved: every New chat starts as ${modeName(setup.startModeId)}, searching ${where}.`
+      : 'The defaults could not be saved. Try again.'
+  }
+  async function saveDefaultsFromWindow(modeId: string, choice: FolderChoice): Promise<boolean> {
+    const ok = await saveDefaults(modeId, choice)
+    // An empty New chat on screen opens from the new defaults; a chat with turns keeps its own.
+    if (ok && chat.turns.length === 0 && !setup.live && !resumedHistory) resetStart()
+    return ok
   }
 
   // Concept graph — state + its loader/rebuild live in `lib/graph/graph.svelte.ts`; lazy-loaded on
@@ -327,8 +378,10 @@
     // Read-only transcripts (a viewed chat, or a resumed chat's history) key by record_id;
     // a resumed chat also has live chat.turns below, so fall through to those if not found here.
     const detail = viewedConvo ?? resumedHistory
-    if (detail) {
-      const t = detail.turns.find((t) => t.record_id === chat.activeCitation!.turnKey)
+    // A8a: a new chat's carried exchanges are read-only turns too, keyed by their record id.
+    const readonlyTurns = [...(detail?.turns ?? []), ...(viewedConvo ? [] : setup.carried)]
+    if (readonlyTurns.length > 0) {
+      const t = readonlyTurns.find((t) => t.record_id === chat.activeCitation!.turnKey)
       const s = t?.sources.find((s) => s.n === chat.activeCitation!.n)
       // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
       // as a SourceView so SourcePanel/SourceCard render it unchanged.
@@ -542,9 +595,12 @@
           void refreshSetup() // ADR-034 — what this install still needs, if anything
           void loadAccepts() // formats + limits the uploader states (security S-1/S-2)
           void refreshConversations()
-          // The composer's scope selector needs the folder list even if the user never
-          // opens the Library.
+          // The start screen's *Search in* needs the folder list and the document count even if
+          // the user never opens the Library (A8a); so do the chat modes and the defaults.
           void refreshFolders()
+          if (!library.loaded) void refreshDocuments()
+          void loadModes()
+          void loadDefaults(chat.turns.length === 0 && !setup.live && !resumedHistory)
           // Replace whatever the last session left on screen with the live lists.
           if (lastSession) {
             lastSession = false
@@ -568,13 +624,9 @@
     }
   })
 
-  // A scope naming a folder that no longer exists would silently become "search nothing" on the
-  // next turn. Drop it the moment the folder leaves the list, so the selector can't lie.
-  $effect(() => {
-    if (chatScopeFolderId !== null && !folders.list.some((f) => f.id === chatScopeFolderId)) {
-      chatScopeFolderId = null
-    }
-  })
+  // A8a: a folder deleted after it was chosen stays in the choice and resolves to nothing; the
+  // start screen's count and the chat line say so (ADR-025 F2). It is never dropped silently,
+  // which would widen the search to whatever is left, or to the whole library.
 
 
   // Sample questions for the empty state — corpus-agnostic openers that run one-click on any
@@ -582,11 +634,6 @@
   // reader still presses Send. Kept generic because the corpus topics aren't known at this layer.
   const EMPTY_TURN =
     'No answer came back, and no reason with it. Settings → Getting started shows what the app still needs.'
-  const sampleQuestions = [
-    'What are the main themes across my documents?',
-    'Where do my sources agree and disagree?',
-    'What are the key findings, with citations?',
-  ]
   function useSample(q: string): void {
     chat.input = q
     chat.taEl?.focus()
@@ -609,7 +656,10 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, scopeFolderIds())) {
+      // The start screen's mode and folders travel with every turn until the chat has a setup;
+      // the backend stores them on the first and ignores them after (A8a).
+      const modeId = setup.live ? null : setup.startModeId
+      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, scopeFolderIds(), modeId)) {
         if (ev.event === 'token') chat.turns[idx].answer += ev.data
         else if (ev.event === 'result') chat.turns[idx].result = JSON.parse(ev.data) as TurnResult
         // The turn stopped: the API's sentence names the engine that failed.
@@ -619,13 +669,26 @@
       const t = chat.turns[idx]
       // A stream that ends with nothing said used to leave the question alone on screen.
       if (!t.answer && !t.result && !t.error) t.error = EMPTY_TURN
+      // `/mode <name>` (G2): on an empty chat it sets the start screen's chip, and the reply
+      // stays as the start screen's note rather than a turn; on a chat with turns it opens
+      // *Continue in a new chat* prefilled with that mode.
+      const offer = t.result?.mode_offer
+      if (offer?.action === 'set') {
+        setup.startModeId = offer.mode_id
+        savedNote = t.answer.replace(/\*\*/g, '')
+        chat.turns.splice(idx, 1)
+      } else if (offer?.action === 'continue') {
+        openContinue(chat.sessionId, setup.live, offer.mode_id)
+      }
     } catch (e) {
       chat.turns[idx].error = String(e)
     } finally {
-      chat.turns[idx].streaming = false
+      if (chat.turns[idx]) chat.turns[idx].streaming = false
       chat.sending = false
       // The finished turn is now persisted — refresh the sidebar so this chat appears/updates.
       void refreshConversations()
+      // The first turn stored the chat's setup: read it back for the chat line.
+      if (!setup.live && chat.turns.length > 0) void refreshLiveSetup(chat.sessionId)
     }
   }
 
@@ -678,9 +741,60 @@
     resetComposer()
     resetTurnIds()
     chat.sessionId = freshSessionId()
+    // A8a: the start screen opens from the New chat defaults, read again in case they changed.
+    setup.live = null
+    setup.carried = []
+    savedNote = ''
+    resetStart()
+    void loadDefaults(true)
     setPinned(true)
     shell.sidebarOpen = false
     chat.taEl?.focus()
+  }
+
+  // *Continue in a new chat* (A8a, G3): the new chat is set up by the backend, which reads the
+  // old chat's exchanges into its memory; the old chat is not changed.
+  let continueBusy = $state(false)
+  let continueError = $state('')
+  async function submitContinue(): Promise<void> {
+    const from = setup.continueFrom
+    if (!from || continueBusy || chat.sending) return
+    continueBusy = true
+    continueError = ''
+    try {
+      const sid = freshSessionId()
+      const res = await continueInNewChat(from, {
+        session_id: sid,
+        mode_id: setup.continueModeId,
+        folder_ids: setup.continueFolders,
+        carry: setup.continueCarry,
+      })
+      chat.turns = []
+      chat.activeCitation = null
+      chat.compareResult = null
+      viewing = null
+      viewedConvo = null
+      resumedHistory = null
+      chat.input = ''
+      resetComposer()
+      resetTurnIds()
+      chat.sessionId = res.session_id
+      setup.live = res.setup
+      setup.carried = res.carried
+      closeContinue()
+      setPinned(true)
+      shell.sidebarOpen = false
+      chat.taEl?.focus()
+    } catch (e) {
+      continueError = 'The new chat could not be started. Try again.'
+      console.error('continue failed', e)
+    } finally {
+      continueBusy = false
+    }
+  }
+  function startContinue(sessionId: string, from: ChatSetup | null): void {
+    continueError = ''
+    openContinue(sessionId, from)
   }
 
   // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its chat.turns
@@ -689,7 +803,13 @@
   // standalone corpus queries, not a replay of the old conversation (memory is a later increment).
   function resumeConversation(): void {
     if (!viewedConvo || !viewing) return
+    // A8a, open question 1: the chat's memory starts with its own exchanges (fitted by A5),
+    // superseding the resume spec's decision 1. A failure leaves the memory empty, as before.
+    const sid = viewing
+    void resumeChat(sid).catch((e) => console.error('resume failed', e))
     resumedHistory = viewedConvo
+    setup.live = viewedConvo.setup
+    setup.carried = []
     chat.sessionId = viewing
     viewing = null
     viewedConvo = null
@@ -955,6 +1075,12 @@
     liveSessionId={chat.sessionId}
     viewingSessionId={viewing}
     onNew={newConversation}
+    onDefaults={() => {
+      void loadDefaults(false)
+      setup.defaultsOpen = true
+    }}
+    folders={folders.list}
+    documents={library.list}
     onSelect={openConversation}
     onPin={pinConversation}
     onArchive={archiveConversation}
@@ -1133,15 +1259,24 @@
           {viewedConvo}
           {resumedHistory}
           folders={folders.list}
-          bind:chatScopeFolderId
+          {libraryCount}
+          modes={setup.modes}
+          bind:startModeId={setup.startModeId}
+          bind:startFolders={setup.startFolders}
+          {startNotice}
+          {savedNote}
+          liveSetup={setup.live}
+          carried={setup.carried}
           {hasRetrievalOverride}
-          {sampleQuestions}
           onSend={send}
           {onKey}
           onCompare={doCompare}
           onUseSample={useSample}
           onResume={resumeConversation}
           onBackToCurrent={backToCurrent}
+          onMakeDefault={() => void makeStartDefault()}
+          onContinueNew={startContinue}
+          onOpenChat={(sid) => void openConversation(sid)}
         />
       {/if}
     </main>
@@ -1242,6 +1377,32 @@
     onToggle={toggleKeywordFacet}
     onClear={clearKeywordFacets}
     onClose={() => (keywordFilterOpen = false)}
+  />
+{/if}
+
+{#if setup.defaultsOpen}
+  <NewChatDefaults
+    modes={setup.modes}
+    folders={folders.list}
+    {libraryCount}
+    defaults={setup.defaults}
+    onSave={saveDefaultsFromWindow}
+    onClose={() => (setup.defaultsOpen = false)}
+  />
+{/if}
+
+{#if setup.continueFrom !== null}
+  <ContinueInANewChat
+    modes={setup.modes}
+    folders={folders.list}
+    {libraryCount}
+    bind:modeId={setup.continueModeId}
+    bind:choice={setup.continueFolders}
+    bind:carry={setup.continueCarry}
+    busy={continueBusy}
+    error={continueError}
+    onContinue={() => void submitContinue()}
+    onClose={closeContinue}
   />
 {/if}
 

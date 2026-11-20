@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (the background work section; A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-20 (A8a: the start screen, the chat line, two dialogs); 2026-11-20 (the background work section; A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -203,7 +203,10 @@ screen takes only `Icon`, `Dialog` and `ConfirmDialog` from `shell/`.
 | The frame of every dialog (backdrop, Esc, focus, Tab kept inside) | every dialog | `Dialog.svelte` (its list of open dialogs: `lib/shell/dialogs.ts`) |
 | **Chat tab** | top bar | `screens/chat/` |
 | the tab | *Chat* | `Chat.svelte` |
-| Chat history (the sidebar rail: filter, select mode, sort, a row's ⋯ menu) | sidebar, Chat | `ChatHistory.svelte` (App hands it to the sidebar frame) |
+| Chat history (the sidebar rail: filter, select mode, sort with *Group* and *Only chats that cited*, a row's ⋯ menu) | sidebar, Chat | `ChatHistory.svelte` (App hands it to the sidebar frame) |
+| the start screen (mode chips, *Search in*, sample questions, *Make this my default*) and its folder list | *New chat* | `StartScreen.svelte` · `FolderTicks.svelte` |
+| the chat line (mode and folders, continued-from, the carried exchanges) | the top of a chat | `ChatLine.svelte` |
+| *New chat defaults* · *Continue in a new chat* (both with *Answer as*) | the ⚙ beside *New chat* · *Continue in a new chat…*, `/mode <name>` | `NewChatDefaults.svelte` · `ContinueInANewChat.svelte` · `ModeChoice.svelte` |
 | an answer and its parts | | `Turn`, `ReadonlyTurn`, `ScopeChip`, `Markdown`, `Provenance`, `ClaimReview`, `SourceEvaluation` |
 | the comparison | *Test override* | `CompareCard.svelte` |
 | a citation's source | an answer's [n] | `SourcePanel`, `SourceCard`, `ChunkContextView` |

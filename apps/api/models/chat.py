@@ -66,6 +66,17 @@ class ChatRequest(BaseModel):
     # Only ids cross the wire — the backend resolves membership per turn, so a Library edit can
     # never be out of date by the time the answer is produced. null or [] = the whole library.
     scope_folder_ids: list[str] | None = None
+    # A8a: the start screen's mode chip. Read by a chat's first turn only, which stores it with
+    # the folders as the chat's setup; every later turn ignores both (`chat_setup`).
+    mode_id: str | None = None
+
+
+class ModeOfferPayload(BaseModel):
+    """`/mode <name>`'s offer (A8a, G2): ``continue`` opens *Continue in a new chat*
+    prefilled with ``mode_id``; ``set`` sets the start screen's mode chip."""
+
+    action: Literal["continue", "set"]
+    mode_id: str
 
 
 class AdjudicateRequest(BaseModel):
@@ -241,6 +252,8 @@ class TurnResultPayload(BaseModel):
     source_eval: SourceEvalSummaryPayload | None = None
     # A2: the web addresses in the passages; an answer's link outside this list renders as text.
     source_links: list[str] = []
+    # A8a (G2): set only on a `/mode <name>` reply.
+    mode_offer: ModeOfferPayload | None = None
 
     @classmethod
     def from_turn_result(cls, r: TurnResult) -> TurnResultPayload:
@@ -263,6 +276,11 @@ class TurnResultPayload(BaseModel):
             source_eval=(
                 SourceEvalSummaryPayload.from_view(r.source_eval)
                 if r.source_eval is not None
+                else None
+            ),
+            mode_offer=(
+                ModeOfferPayload(action=r.mode_offer[0], mode_id=r.mode_offer[1])
+                if r.mode_offer is not None
                 else None
             ),
         )

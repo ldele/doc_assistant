@@ -30,3 +30,12 @@ class SessionStore:
     def get(self, session_id: str) -> Session | None:
         """Return the session for ``session_id`` or ``None`` (→ a 404 for claims/export)."""
         return self._sessions.get(session_id)
+
+    def preload(self, session_id: str, messages: list[dict[str, str]]) -> Session:
+        """Start ``session_id``'s memory with ``messages`` carried from records (A8a): a new chat
+        continued from another, or a reopened chat continued. Replaces any session held for it."""
+        session = Session(
+            session_id=session_id, history=list(messages), carried_messages=len(messages)
+        )
+        self._sessions[session_id] = session
+        return session

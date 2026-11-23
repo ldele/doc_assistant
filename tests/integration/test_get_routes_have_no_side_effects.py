@@ -10,9 +10,10 @@ called once over a library where a write or a call-out would show:
 - a network call: any outbound connection, refused here before it leaves.
 
 The routes are read off the app, so a route added later is checked without editing this file.
-Four routes have side effects today: the three S15 named, and one this test found. They are
-listed below with what each does, and the list can only shrink: a listed route that no longer
-writes or calls out fails too, so the line is removed when it is fixed.
+The four routes found with side effects (the three S15 named, and `/api/ingest/plan`, which this
+test found) lost them in S-17: their work moved to a POST the window calls. `KNOWN` stays as the
+place to name one, with what it does, if a GET must ever write; a listed route that stops writing
+fails too.
 """
 
 from __future__ import annotations
@@ -31,18 +32,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import event
 
 #: The GET routes known to write or call out, and what they do. Fixing one removes its line.
-KNOWN: dict[str, str] = {
-    "/api/sources": "commits the registry rows its walk of the source folder finds (S15)",
-    "/api/updates": (
-        "checks GitHub and records the answer in settings when the person opted in and a "
-        "check is due (S15)"
-    ),
-    "/api/setup": "probes the configured Ollama host to say whether it answers (S15)",
-    "/api/ingest/plan": (
-        "commits the registry rows its walk of the source folder finds, as /api/sources does "
-        "(found by this test, not in S15)"
-    ),
-}
+KNOWN: dict[str, str] = {}
 
 #: Routes that stream rather than answer, walked by their own tests.
 _STREAMS = {"/api/chat/stream"}

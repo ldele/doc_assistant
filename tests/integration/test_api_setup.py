@@ -99,8 +99,25 @@ def test_setup_lists_installed_ollama_models(
 ) -> None:
     monkeypatch.setattr(llm, "ollama_probe", lambda *a, **k: (True, ("llama3.1:8b",), None))
     client = TestClient(create_app(controller=FakeController(count=1)))
-    ollama = next(p for p in client.get("/api/setup").json()["providers"] if p["id"] == "ollama")
+    probed = client.post("/api/setup/probe").json()["providers"]
+    ollama = next(p for p in probed if p["id"] == "ollama")
     assert (ollama["ready"], ollama["models"]) == (True, ["llama3.1:8b"])
+
+
+def test_a_get_of_setup_never_probes(clean_install: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """S-17: a web page can make the engine run a GET, so only the POST probes."""
+    probes: list[int] = []
+
+    def probe(*_a: object, **_k: object) -> tuple[bool, tuple[str, ...], None]:
+        probes.append(1)
+        return True, ("llama3.1:8b",), None
+
+    monkeypatch.setattr(llm, "ollama_probe", probe)
+    client = TestClient(create_app(controller=FakeController(count=1)))
+    client.get("/api/setup")
+    assert probes == []
+    client.post("/api/setup/probe")
+    assert probes == [1]
 
 
 def test_post_key_verifies_stores_and_refreshes_the_model(

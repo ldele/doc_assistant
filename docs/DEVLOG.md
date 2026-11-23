@@ -44,6 +44,45 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-23 (6) — No GET route writes or calls out (A8″b, S-17)
+
+**What changed.** The four GETs with a side effect lost it, each to a POST the window calls:
+`POST /api/sources/scan` (the walk that registers new files; `GET /api/sources` now lists the
+registry read-only, `registry.stored_sources`), `GET /api/ingest/plan` counts the stored rows
+(`plan_library(scan=False)`) after the window's scan, `POST /api/updates/auto` (the opted-in daily
+check; `GET /api/updates` answers from the last one), `POST /api/setup/probe` (the model-server
+probe; `GET /api/setup` never probes). The floor test's `KNOWN` list is empty.
+
+**Why.** `docs/security.md` S15 and S-17 (T2: a page can make the engine run a GET); spec
+`docs/specs/ingestion-queue.md` decision 9.
+
+**Measured.** $0. The floor test (every GET route, 49) passes with nothing listed; route tests moved
+to the POSTs, plus a test each that a GET never checks for updates and never probes. Window 456.
+
+**Rejected.** Keeping the walk in the GET behind a header: a page cannot send one, but any other
+caller still triggers writes on a read.
+
+**What it opens.** Nothing reachable from a web page is open in `docs/security.md`. S-16 is next.
+
+## 2026-11-23 (5) — The letter-spacing block at the foot of the page, folded once ruled (A8″b, T-009)
+
+**What changed.** The block moved below References on the document page, with a fold in its
+heading: open while the document has spacing to judge and no rule, or a change waiting for a re-run;
+closed once ruled (`lib/library/spacing.ts` `spacingOpenByDefault`, tested). A test drives a *Keep
+every run spaced* rule on a real PDF through a per-part text re-run, a folder index, a rebuild and
+an extraction from scratch.
+
+**Why.** T-009 (the owner, 2026-11-19); spec `docs/specs/ingestion-queue.md` decision 10.
+
+**Measured.** $0. Window 456 (one new), `svelte-check` 0; the re-ingest test passes in about 10 s.
+Driven in the dev window over a scratch home (a letter-spaced PDF): last on the page, open with no
+rule, open while the change waited, folded by hand with the count shown, closed once the re-run
+applied it; dark, light and 375 px, no console error. Not yet in the installed build.
+
+**Rejected.** Remembering open or closed per document: the default already follows the rule.
+
+**What it opens.** Nothing further for T-009 once it is driven in the installed build (A9).
+
 ## 2026-11-23 (4) — `docs/security.md` rewritten around the questions a reader brings
 
 **What changed.** The file keeps its section numbers, so every citation of §1 to §7 still holds, but

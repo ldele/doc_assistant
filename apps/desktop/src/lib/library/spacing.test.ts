@@ -15,6 +15,7 @@ import {
   removedNote,
   rowCaption,
   shownText,
+  spacingOpenByDefault,
   splitRows,
   writeWithGaps,
 } from './spacing.ts'
@@ -100,4 +101,12 @@ test('a removal says what happens next, and never counts zero documents', () => 
   assert.equal(removedNote(1, 1), "Removed 1 entry. It takes effect when that document's text is re-run.")
   assert.equal(removedNote(3, 2), "Removed 3 entries. They take effect when the 2 documents' text is re-run.")
   assert.equal(removedNote(1, 0), 'Removed 1 entry. No document in this library is affected.')
+})
+
+test('the block opens while there is spacing to judge and no rule, and starts closed once ruled', () => {
+  assert.equal(spacingOpenByDefault({ keepAll: false, kept: 0, pending: 0 }), true)
+  assert.equal(spacingOpenByDefault({ keepAll: false, kept: 2, pending: 0 }), false)
+  assert.equal(spacingOpenByDefault({ keepAll: true, kept: 0, pending: 0 }), false)
+  // A change waiting for a re-run keeps it open, so the waiting re-run is seen.
+  assert.equal(spacingOpenByDefault({ keepAll: false, kept: 2, pending: 1 }), true)
 })

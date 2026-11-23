@@ -70,7 +70,14 @@ def _payload(status: update_check.UpdateStatus) -> dict[str, Any]:
 
 @router.get("/api/updates")
 def get_updates() -> dict[str, Any]:
-    """The current answer, checking the network only if the user opted in and one is due."""
+    """The answer the last check left. A GET calls nothing out and writes nothing (S-17)."""
+    return _payload(_cached_status())
+
+
+@router.post("/api/updates/auto")
+def post_auto_check() -> dict[str, Any]:
+    """The opted-in daily check: it checks the network only if the user opted in and one is
+    due, else answers as the GET does. The window sends it once at launch."""
     if app_settings.get_update_check_enabled() and update_check.due_for_check(
         app_settings.get_update_last_checked()
     ):

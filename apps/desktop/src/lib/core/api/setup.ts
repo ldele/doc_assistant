@@ -7,9 +7,11 @@ import type { ApiKeyResult, ModelList, ServerResult, ServerUpdate, SetupState } 
 
 /** The first-run picture: which providers can answer, what is indexed, what is left to do.
  *  `probe: false` answers from local state only (no network) — use it when a refresh must
- *  not pay for a round trip. */
+ *  not pay for a round trip. The probe is a POST since S-17: a GET calls nothing out. */
 export async function getSetup(probe = true): Promise<SetupState> {
-  const r = await apiFetch(`${API_BASE}/api/setup?probe=${probe ? 'true' : 'false'}`)
+  const r = probe
+    ? await apiFetch(`${API_BASE}/api/setup/probe`, { method: 'POST' })
+    : await apiFetch(`${API_BASE}/api/setup`)
   if (!r.ok) throw new Error(await errorDetail(r, 'read setup state'))
   return (await r.json()) as SetupState
 }

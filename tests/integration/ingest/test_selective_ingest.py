@@ -244,8 +244,11 @@ def test_api_sources_scan_patch_and_selective_ingest(sources_env: Path) -> None:
     )
     client = TestClient(app)
 
-    # GET scans the dir → both files new, doc_type null, not excluded
-    rows = client.get("/api/sources").json()
+    # GET walks nothing (S-17): before a scan the registry is empty
+    assert client.get("/api/sources").json() == []
+    # The scan (a POST) registers the dir → both files new, doc_type null, not excluded
+    rows = client.post("/api/sources/scan").json()
+    assert client.get("/api/sources").json() == rows, "GET lists what the scan registered"
     assert {r["rel_path"]: r["status"] for r in rows} == {"a.pdf": "new", "b.pdf": "new"}
     assert all(r["doc_type"] is None and r["excluded"] is False for r in rows)
 
@@ -375,6 +378,7 @@ def test_the_plan_route_and_only_new_files(sources_env: Path, speed_settings: No
             controller_factory=_FakeController,
         )
     )
+    client.post("/api/sources/scan")  # the plan counts the registry the last scan left (S-17)
     plan = client.get("/api/ingest/plan").json()
     assert (plan["new"], plan["changed"], plan["unchanged"]) == (1, 1, 1)
     assert plan["seconds_all"] is None and plan["measured_documents"] == 0

@@ -73,7 +73,8 @@ export interface SetupStep {
   offline: boolean
 }
 
-/** GET /api/setup — the whole first-run picture. Mirrors SetupStateModel. */
+/** GET /api/setup (local state) or POST /api/setup/probe (with the probe, S-17) — the whole
+ *  first-run picture. Mirrors SetupStateModel. */
 export interface SetupState {
   providers: ProviderReadiness[]
   active_provider: string

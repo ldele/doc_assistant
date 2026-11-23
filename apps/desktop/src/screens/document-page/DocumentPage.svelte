@@ -144,21 +144,6 @@
         viewerPage = page
       }}
     />
-    <!-- ADR-056: what extraction did to this document's letter-spaced runs. Renders nothing for
-         a document that has none, which is nearly every document. -->
-    <LetterSpacing
-      {docId}
-      listed={doc}
-      onShowPage={(page) => {
-        viewerOpen = true
-        viewerPage = page
-      }}
-      onOpenSettings={() => {
-        shell.settingsSection = 'documents'
-        shell.settingsFocus = 'spacing'
-        shell.showSettings = true
-      }}
-    />
 
     <!-- E4 (ADR-027 D1): what this document is *near* + who cites it. What it cites is the
          References block at the foot. Advisory; degrades to one quiet line on failure. -->
@@ -179,6 +164,22 @@
     <div class="block" id="doc-references">
       <References {docId} {onOpenDocument} />
     </div>
+
+    <!-- ADR-056, T-009: what extraction did to this document's letter-spaced runs, at the foot of
+         the page and folded once ruled. Renders nothing for a document that has none. -->
+    <LetterSpacing
+      {docId}
+      listed={doc}
+      onShowPage={(page) => {
+        viewerOpen = true
+        viewerPage = page
+      }}
+      onOpenSettings={() => {
+        shell.settingsSection = 'documents'
+        shell.settingsFocus = 'spacing'
+        shell.showSettings = true
+      }}
+    />
     </div>
 
     {#if viewerOpen}

@@ -27,10 +27,11 @@ export async function startIngest(paths?: string[]): Promise<IngestStatus> {
   if (!r.ok) throw new Error(await errorDetail(r, 'start ingest'))
   return (await r.json()) as IngestStatus
 }
-/** Selective ingestion (S2): stat-only scan of the source folder → every file with a derived
- *  ingest status + its `excluded` flag. Cheap ($0/offline); safe to call on every panel open. */
+/** Selective ingestion (S2): a stat-only scan of every registered folder, which registers what
+ *  is new, then every file with a derived ingest status + its `excluded` flag. A POST since S-17,
+ *  because the scan writes the registry. Cheap ($0/offline); safe to call on every panel open. */
 export async function getSources(): Promise<SourceFile[]> {
-  const r = await apiFetch(`${API_BASE}/api/sources`)
+  const r = await apiFetch(`${API_BASE}/api/sources/scan`, { method: 'POST' })
   if (!r.ok) throw new Error(`sources failed: ${r.status}`)
   return (await r.json()) as SourceFile[]
 }
@@ -50,8 +51,10 @@ export async function getIngestStatus(): Promise<IngestStatus> {
   if (!r.ok) throw new Error(`ingest status failed: ${r.status}`)
   return (await r.json()) as IngestStatus
 }
-/** What a Re-index of the library folder would read, and a rough duration. Stat-only, $0. */
+/** What a Re-index of the library folder would read, and a rough duration. Stat-only, $0. The
+ *  plan counts the registry as the last scan left it (S-17), so the folder is scanned first. */
 export async function getIngestPlan(): Promise<IngestPlan> {
+  await getSources()
   const r = await apiFetch(`${API_BASE}/api/ingest/plan`)
   if (!r.ok) throw new Error(await errorDetail(r, 'plan the re-index'))
   return (await r.json()) as IngestPlan

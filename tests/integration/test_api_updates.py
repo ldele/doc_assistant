@@ -63,20 +63,29 @@ def test_get_does_not_hit_the_network_when_auto_check_is_off(
     assert body["current_version"] == __version__
 
 
-def test_get_checks_when_enabled_and_due(client: TestClient, calls: list[int]) -> None:
+def test_the_auto_check_runs_when_enabled_and_due(client: TestClient, calls: list[int]) -> None:
     client.post("/api/updates/settings", json={"auto_check_enabled": True})
-    body = client.get("/api/updates").json()
+    body = client.post("/api/updates/auto").json()
     assert len(calls) == 1
     assert body["state"] == "update_available"
     assert body["latest_version"] == "99.0.0"
 
 
-def test_a_second_get_inside_the_interval_does_not_recheck(
+def test_a_get_never_checks_even_when_enabled_and_due(
+    client: TestClient, calls: list[int]
+) -> None:
+    """S-17: a web page can make the engine run a GET; the check calls out and writes settings."""
+    client.post("/api/updates/settings", json={"auto_check_enabled": True})
+    assert client.get("/api/updates").json()["state"] == "unknown"
+    assert calls == []
+
+
+def test_a_second_auto_check_inside_the_interval_does_not_recheck(
     client: TestClient, calls: list[int]
 ) -> None:
     client.post("/api/updates/settings", json={"auto_check_enabled": True})
-    client.get("/api/updates")
-    client.get("/api/updates")
+    client.post("/api/updates/auto")
+    client.post("/api/updates/auto")
     assert len(calls) == 1
 
 
@@ -84,10 +93,10 @@ def test_the_check_is_due_again_after_the_interval(
     client: TestClient, calls: list[int], tmp_path: Path
 ) -> None:
     client.post("/api/updates/settings", json={"auto_check_enabled": True})
-    client.get("/api/updates")
+    client.post("/api/updates/auto")
     stale = (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat()
     app_settings.set_update_last_checked(stale)
-    client.get("/api/updates")
+    client.post("/api/updates/auto")
     assert len(calls) == 2
 
 

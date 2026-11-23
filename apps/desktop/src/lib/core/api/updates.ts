@@ -4,10 +4,11 @@
 import { API_BASE, apiFetch, errorDetail } from './_base'
 import type { UpdateStatus } from '../types'
 
-/** The cached answer. Costs a network request only if the user opted into automatic checks and
- *  one is due (24 h), so calling this on mount is free in the default configuration. */
+/** The cached answer, after the automatic check when the user opted in and one is due (24 h);
+ *  free on mount in the default configuration. A POST since S-17: the check calls out and writes
+ *  settings, which a GET may not. */
 export async function getUpdateStatus(): Promise<UpdateStatus> {
-  const r = await apiFetch(`${API_BASE}/api/updates`)
+  const r = await apiFetch(`${API_BASE}/api/updates/auto`, { method: 'POST' })
   if (!r.ok) throw new Error(`update status failed: ${r.status}`)
   return (await r.json()) as UpdateStatus
 }

@@ -1,17 +1,18 @@
-<!-- status: active · updated: 2026-11-23 (accepted by the owner as written: all ten recommendations) · class: living -->
+<!-- status: active · updated: 2026-11-23 (one list of items, not jobs: decisions 2, 4, 7 revised by the owner); 2026-11-23 (A8″b built: As built added; A8″a waits on its wireframe); 2026-11-23 (accepted by the owner as written: all ten recommendations) · class: living -->
 
 # Spec — One queue for every ingestion, adds while the engine starts, and the letter-spacing block (session A8″)
 
 > The executor brief. Target executor: **Claude Code**. Session A8″ of the plan
 > (`docs/plans/PLAN_2026-10-31_next-two-releases.md`), tickets T-007, T-009, T-010 and T-011, with
 > S-17 as its security step (`docs/security.md` §4). **Accepted by the owner, 2026-11-23, as
-> written:** every recommendation under *To decide* holds, so the contract below is the build's.
+> written; then revised the same day:** the queue is one list of items, not a line of jobs
+> (decisions 2, 4 and 7). The contract below is the build's.
 
 ## In one sentence
 
-Every ingestion (an add, a whole-folder index, a re-run of a document's parts) joins one queue in
-the engine and runs in turn, so nothing is refused while another runs; an add made while the engine
-is starting waits in the window and is sent when the engine is ready.
+Every file to index and every re-run of a document's parts is one item in a single list in the
+engine, run in order, so nothing is refused while another runs: an add puts its files at the end of
+the list. An add made while the engine is starting waits in the window and is sent when it is ready.
 
 ## A worked example
 
@@ -21,9 +22,9 @@ Forty papers are indexing; the status bar reads *Indexing 12 of 40*. The person 
   already running*. The files sit in the library folder, not indexed, until the person finds Manage
   files and indexes them by hand after the forty finish. A re-run of one document's text, asked for
   meanwhile, is refused the same way.
-- **After:** the three join the queue behind the forty. The status bar reads *Indexing 12 of 40 ·
-  1 waiting*; the indexing screen lists the waiting job (*3 papers, added 14:02*) with *Remove*. The
-  re-run joins as a second waiting job. When the forty finish, the three start, then the re-run.
+- **After:** the three join the end of the list. The status bar reads *Indexing 12 of 43*; the
+  indexing screen shows them as three more *Waiting* rows, each with *Remove*. The re-run joins as a
+  row of its own (*survey-2024.pdf · Text & chunks*). The list runs on, in order, to its end.
 
 ## Today (read in the code and measured, 2026-11-23)
 
@@ -63,16 +64,19 @@ Forty papers are indexing; the status bar reads *Indexing 12 of 40*. The person 
    A job left waiting when the engine stops is not lost: its files are already in the library
    folder, which Manage files lists as *not indexed*, with *Index new files*. *Instead:* a queue
    stored in `library.db`, which survives a restart at the cost of a table and a recovery path.
-2. **What a job is.** *Recommended:* three kinds, run by the one runner: *index these files* (an
-   add, or a selection), *index the folder*, and *re-run these parts of these documents*. The two
-   status objects become one, and the three 409s go. A file or a (document, part) already waiting is
-   not queued twice.
+2. **What the list holds.** *Revised by the owner, 2026-11-23:* one list of **items**, not a line of
+   jobs: each item is a file to index, or one document's parts to re-run. An add or a selection puts
+   its files at the end; *index the folder* puts the folder's new and changed files there (and its
+   sweep of vanished files runs with it). A file or a (document, part) already waiting is not added
+   twice. The two status objects become one, and the three 409s go. *(Accepted first: three kinds of
+   job, each waiting whole behind the one running.)*
 3. **The add's copy step.** *Recommended:* unchanged: the files are copied or registered when the
    person confirms the add sheet; only the indexing waits. *Undo all* stays possible while the job is
    waiting, and is refused once it runs (as today, for the same reason: the extractor reads them).
-4. **Stop, and what waits.** *Recommended:* *Pause* and *Stop* act on the running job as today. After
-   a Stop, the waiting jobs do not start by themselves: the screen says *2 waiting* with *Start*, so
-   a Stop never sets off more work. Any waiting job can be removed.
+4. **Stop, and what waits.** *Revised by the owner, 2026-11-23:* *Pause* and *Stop* act on the whole
+   list, as on today's run: after a Stop, what did not start shows *Not started*, with *Index the
+   remaining N*, as on the approved stopped screen. Any waiting item can be removed. *(Accepted
+   first: waiting jobs held after a Stop until Start.)*
 5. **Adds while the engine starts (T-007).** *Recommended:* the window keeps the picked files as a
    pending add (*Waiting for the engine*, in the status bar) and sends them once it is `ready`; if
    it goes `down`, the status bar says the add was not made and keeps the files to try again. Held
@@ -82,9 +86,10 @@ Forty papers are indexing; the status bar reads *Indexing 12 of 40*. The person 
    chat line notes *Indexing: answers take longer*. Throttling (the ingest yields between batches
    while a turn runs, or uses fewer threads) is a measured trade-off for later, recorded in
    `docs/performance.md` with today's numbers.
-7. **The indexing screen and the status bar.** *Recommended:* a wireframe round first, as for every
-   screen change (house skill *wireframe-first*): the waiting list, *Remove*, *Start*, *Add to queue*
-   on the screen, and the status bar's *· N waiting*.
+7. **The indexing screen and the status bar.** *Revised by the owner, 2026-11-23:* a wireframe round
+   first, as for every screen change (house skill *wireframe-first*): added items as *Waiting* rows
+   at the end of the one list, *Remove* on a waiting row, *Add to queue* in the header, the count
+   growing with the list (*Indexing 14 of 33*), and the status bar's states (S7).
 8. **Two builds.** *Recommended:* A8″a, the queue (decisions 1 to 7, T-007, T-010, T-011); A8″b, the
    letter-spacing block (T-009) and S-17. One commit each; the queue's wireframe gates A8″a only.
 9. **S-17, the four GETs.** *Recommended:* each GET reads what is stored, and the work it did moves
@@ -99,17 +104,21 @@ Forty papers are indexing; the status bar reads *Indexing 12 of 40*. The person 
 
 ## The contract (follows the recommendations)
 
-**Engine (A8″a).** `src/doc_assistant/ingest/queue.py`: `IngestQueue` holds `Job`s (`kind`,
-`files` or `(document_ids, parts)`, `added_at`, `state`: waiting · running · done · failed ·
-removed), runs one at a time on one thread through `ingest.main` and `reingest.rerun`, and after a
-job that changed text forgets the replaced hashes and reloads the engine (as S18's fix does today).
-`apps/api` keeps thin routes: `POST /api/ingest` and the re-ingest route enqueue and answer 202 with
-the job; `GET /api/ingest/status` reports the running job and the waiting ones; `DELETE
-/api/ingest/jobs/{id}` removes a waiting job; `POST /api/ingest/start` starts the queue after a Stop.
-`POST /api/documents/add` no longer refuses during a run.
+**Engine (A8″a).** `src/doc_assistant/ingest/queue.py`: `IngestQueue` holds one list of `Item`s
+(a file to index, or one document's parts to re-run; `added_at`; `state`: waiting · running · added
+· unchanged · failed · removed · not started). One thread runs it: it takes the waiting file items
+in a batch through `ingest.main(files=…)` and the re-run items through `reingest.rerun`, in list
+order, and items added meanwhile wait their turn in the same list. The steps a run does once happen
+once, when the list is empty: the text check of the new documents, forgetting replaced hashes, and
+the engine's reload (as S18's fix does after a re-run today). Pause and Stop act between documents,
+on the whole list. `apps/api` keeps thin routes: `POST /api/ingest` and the re-ingest route add
+items and answer 202; `GET /api/ingest/status` and `/api/ingest/files` report the one list;
+`DELETE /api/ingest/items/{id}` removes a waiting item. `POST /api/documents/add` no longer refuses
+during a run.
 
-**Window (A8″a).** The status bar chip and the indexing screen render the queue, per the approved
-wireframe; the add sheet enqueues; a pending add is held while the engine is `connecting`.
+**Window (A8″a).** The status bar chip and the indexing screen render the one list, per the
+approved wireframe; the add sheet adds to it; a pending add is held while the engine is
+`connecting`.
 
 **A8″b.** The block's place and default; the re-ingest test; the four routes per decision 9 and
 their window clients; `test_get_routes_have_no_side_effects.py`'s `KNOWN` list emptied.
@@ -141,3 +150,22 @@ Throttling the ingest while a chat turn runs (decision 6); a queue that survives
 ## Open questions
 
 None beyond *To decide*.
+
+## As built — A8″b (2026-11-23)
+
+- **T-009.** `LetterSpacing` sits at the foot of the document page, after References, with a fold in
+  its heading (`aria-expanded`, hover text). `lib/library/spacing.ts` `spacingOpenByDefault`: open
+  while the document has runs and no rule of the person's (nothing kept, not every run kept), or a
+  change waits for a re-run; closed otherwise. A folded block with a waiting change says how many
+  in its heading. The person's toggle holds until another document is shown.
+- **The rule through a re-ingest.** `tests/integration/test_spacing_rule_survives_reingest.py`: a
+  real PDF with a letter-spaced title is closed without a rule; *Keep every run spaced* then holds
+  through a per-part text re-run, an index of the folder, a rebuild, and an extraction from scratch.
+- **S-17, as decided.** `GET /api/sources` lists the registry read-only (`registry.stored_sources`;
+  a library never scanned lists nothing), and `POST /api/sources/scan` walks every root.
+  `GET /api/ingest/plan` counts the stored rows (`plan_library(scan=False)`); the window's
+  `getIngestPlan` scans first. `GET /api/updates` answers from the last check; `POST
+  /api/updates/auto` runs the opted-in daily check, and the window's `getUpdateStatus` calls it.
+  `GET /api/setup` never probes; `POST /api/setup/probe` does, and `getSetup(probe)` picks one.
+  `KNOWN` in `test_get_routes_have_no_side_effects.py` is empty.
+- **Not foreseen.** `GET /api/setup?probe=true` no longer probes: the parameter is gone.

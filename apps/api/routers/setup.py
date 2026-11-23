@@ -24,9 +24,16 @@ router = APIRouter()
 
 
 @router.get("/api/setup")
-def get_setup(request: Request, probe: bool = True) -> dict[str, Any]:
-    """The first-run picture. ``?probe=false`` answers from local state only (no network)."""
-    return setup_state_dict(request.app, probe=probe)
+def get_setup(request: Request) -> dict[str, Any]:
+    """The first-run picture from local state only. A GET calls nothing out (S-17): a web page can
+    make the engine run a GET, so the probe of the local model server is a POST."""
+    return setup_state_dict(request.app, probe=False)
+
+
+@router.post("/api/setup/probe")
+def probe_setup(request: Request) -> dict[str, Any]:
+    """The first-run picture, with the local model server asked whether it answers."""
+    return setup_state_dict(request.app, probe=True)
 
 
 def _known(provider_id: str) -> str:

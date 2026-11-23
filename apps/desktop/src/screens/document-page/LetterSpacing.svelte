@@ -12,7 +12,7 @@
   import { getDocumentSpacing, keepRunSpaced, removeRunEntry, setKeepAllSpaced, sourcePageUrl } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
   import EditSpacing from './EditSpacing.svelte'
-  import { markRemovedSpaces, rowCaption, shownText, splitRows } from '../../lib/library/spacing'
+  import { markRemovedSpaces, rowCaption, shownText, spacingOpenByDefault, splitRows } from '../../lib/library/spacing'
   import { rerunLabel } from '../../lib/library/reingest'
   import { openRerun } from '../../lib/library/reingest.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
@@ -48,6 +48,12 @@
   const rows = $derived(splitRows(data?.rows ?? []))
   const pending = $derived((data?.rows ?? []).filter((r) => r.pending !== null).length)
   const visible = $derived(data !== null && data.pageable && (data.rows.length > 0 || data.keep_all))
+  // T-009: open while there is spacing to judge and no rule, or a change waits; closed once ruled.
+  // The person's own toggle wins until another document is shown; it is not remembered.
+  let toggled = $state<boolean | null>(null)
+  const open = $derived(
+    toggled ?? spacingOpenByDefault({ keepAll: data?.keep_all ?? false, kept: rows.kept.length, pending }),
+  )
 
   // Last-write-wins token, like the other document blocks. A refetch of the same document keeps
   // its rows and an open editor on screen; only another document clears them.
@@ -61,6 +67,7 @@
       if (data?.document_id !== id) {
         data = null
         editing = null
+        toggled = null
       }
     })
     if (!id) return
@@ -101,9 +108,20 @@
 {:else if visible && data}
   <section class="spacing" aria-label="Letter-spacing on this document">
     <h3>
-      Letter-spacing on this document
+      <button
+        class="fold"
+        type="button"
+        aria-expanded={open}
+        onclick={() => (toggled = !open)}
+        use:tooltip={open ? 'Fold the letter-spacing block' : 'Show what extraction did to this document’s letter-spaced runs'}
+      >
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} />
+        Letter-spacing on this document
+      </button>
       <span class="count">{data.rows.length} {data.rows.length === 1 ? 'run' : 'runs'}</span>
+      {#if !open && pending > 0}<span class="count">· {pending} waiting for a re-run</span>{/if}
     </h3>
+    {#if open}
     <p class="lead">
       The letter-spaced runs extraction closed here, and the ones you keep as extracted. A change takes
       effect when this document's text is re-run.
@@ -205,6 +223,7 @@
       <span class="spacer"></span>
       <button class="btn" type="button" onclick={onOpenSettings} use:tooltip={'See the letter-spacing entries of every document, in Settings'}>All entries in Settings</button>
     </div>
+    {/if}
   </section>
 
   {#if editing}
@@ -235,6 +254,20 @@
   h3 {
     font-size: 0.9rem;
     margin: 0 0 0.3rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .fold {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
   }
   h4 {
     font-size: 0.8rem;

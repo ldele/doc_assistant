@@ -117,3 +117,11 @@ export function shownText(row: {
   if (target === 'closed') return row.rule
   return row.written
 }
+
+/** Whether a document's letter-spacing block opens on its own (T-009). It opens while there is
+ *  something to judge: runs and no rule of the person's yet (nothing kept, not every run kept), or
+ *  a change still waiting for a re-run. Once a rule is set and applied, it starts closed. */
+export function spacingOpenByDefault(state: { keepAll: boolean; kept: number; pending: number }): boolean {
+  if (state.pending > 0) return true
+  return !state.keepAll && state.kept === 0
+}

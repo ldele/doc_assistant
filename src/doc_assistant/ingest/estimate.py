@@ -63,13 +63,19 @@ class IngestPlan:
         return self.to_read(only_new) * self.seconds_per_document
 
 
-def plan_library(session: Session, source_dir: Path) -> IngestPlan:
-    """Count what a Re-index of ``source_dir`` would read, from the registry's stat-only scan."""
+def plan_library(session: Session, source_dir: Path, *, scan: bool = True) -> IngestPlan:
+    """Count what a Re-index of ``source_dir`` would read, from the registry's stat-only scan.
+
+    ``scan=False`` counts the rows as the last scan left them and writes nothing, which is what
+    ``GET /api/ingest/plan`` answers (S-17); the window scans first."""
     from doc_assistant.ingest import registry
 
     counts = {"new": 0, "changed": 0, "unchanged": 0, "excluded": 0}
     sizes = {"new": 0, "changed": 0}
-    for view in registry.scan_sources(session, source_dir):
+    views = (
+        registry.scan_sources(session, source_dir) if scan else registry.stored_sources(session)
+    )
+    for view in views:
         if view.root_id != LIBRARY_ROOT_ID or view.status == registry.STATUS_MISSING:
             continue
         if view.excluded:

@@ -157,12 +157,14 @@ def _new_files_selection(source: Path, body: IngestRequest) -> list[Path]:
 def ingest_plan() -> IngestPlanPayload:
     """What a Re-index of the library folder would read, and roughly how long it would take.
 
-    Stat-only: no extraction, no model, safe to call each time the confirmation opens.
+    From the registry as the last scan left it, with a stat of each file: no walk, no write, no
+    extraction, no model (S-17). The window calls ``POST /api/sources/scan`` first.
     """
     from doc_assistant.ingest.estimate import plan_library
 
     with session_scope() as session:
-        plan = plan_library(session, app_settings.get_source_dir().resolve())
+        # As the last scan left the registry (S-17): the window scans first.
+        plan = plan_library(session, app_settings.get_source_dir().resolve(), scan=False)
     return IngestPlanPayload(
         new=plan.new,
         new_bytes=plan.new_bytes,
@@ -247,8 +249,19 @@ def ingest_files(
 
 @router.get("/api/sources")
 def list_sources(request: Request) -> list[SourceFilePayload]:
-    """Selective ingestion (S1): stat-only scan of the source dir → each file with a
-    derived ingest status (new / changed / ingested / missing) + its ``excluded`` flag."""
+    """Selective ingestion (S1): each registered file as the last scan left it, with its derived
+    ingest status (new / changed / ingested / missing) and its ``excluded`` flag. Walks nothing
+    and writes nothing (S-17); ``POST /api/sources/scan`` finds what is new."""
+    from doc_assistant.ingest import registry
+
+    with session_scope() as session:
+        return [SourceFilePayload.from_view(v) for v in registry.stored_sources(session)]
+
+
+@router.post("/api/sources/scan")
+def scan_sources_route(request: Request) -> list[SourceFilePayload]:
+    """Stat-only walk of every registered root: registers what is new, then lists every file as
+    ``GET /api/sources`` does. A POST, because it writes the registry (S-17)."""
     from doc_assistant.ingest import registry
 
     source = app_settings.get_source_dir()

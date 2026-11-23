@@ -95,7 +95,7 @@ export interface IngestFilesPage {
   offset: number
   files: IngestFile[]
 }
-// Selective ingestion (feature-selective-ingestion.md, S2). GET /api/sources lists every file
+// Selective ingestion (feature-selective-ingestion.md, S2). POST /api/sources/scan lists every file
 // under the source dir with a derived ingest status; PATCH /api/sources sets `excluded`; POST
 // /api/ingest {paths} ingests a selection. Mirrors apps/api/models/sources.py::SourceFilePayload.
 // `doc_type` is always null in v1 (the backend's dormant column).

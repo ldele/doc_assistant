@@ -441,6 +441,46 @@ def scan_sources(session: Session, source_dir: Path) -> list[SourceView]:
     return views
 
 
+def stored_sources(session: Session) -> list[SourceView]:
+    """Every registered root's rows as the last scan left them: no walk and no write (S-17).
+
+    What a GET may answer. Each status is derived from a stat of the row's own file, so a file
+    deleted since the scan reads ``missing``; a file added since appears only after the next scan
+    (`scan_sources`, which the window asks for with ``POST /api/sources/scan``). No root is created
+    here: a library that was never scanned lists nothing, which is true.
+    """
+    roots = sorted(
+        session.execute(select(SourceRoot)).scalars(), key=lambda r: (r.kind != "library", r.path)
+    )
+    doc_keys = _document_source_keys(session)
+    views: list[SourceView] = []
+    for root in roots:
+        reachable = _root_available(root)
+        base = Path(root.path).resolve() if reachable else Path(root.path)
+        rows = session.execute(select(SourceFile).where(SourceFile.root_id == root.id)).scalars()
+        for row in sorted(rows, key=lambda r: r.rel_path):
+            path = base / row.rel_path
+            if reachable and path.is_file():
+                status = derive_status(True, _cache_is_fresh(path), _pathkey(path) in doc_keys)
+            else:
+                status = derive_status(False, False, False)
+            views.append(
+                SourceView(
+                    rel_path=row.rel_path,
+                    format=row.format,
+                    size=row.size,
+                    mtime=row.mtime,
+                    status=status,
+                    excluded=row.excluded,
+                    doc_type=row.doc_type,
+                    root_id=root.id,
+                    root_kind=root.kind,
+                    root_available=reachable,
+                )
+            )
+    return views
+
+
 def set_source_meta(
     session: Session,
     rel_path: str,

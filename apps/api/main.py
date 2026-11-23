@@ -59,7 +59,6 @@ from apps.api.services import (
     _default_reingest,
     _GraphRebuildStatus,
     _IngestStatus,
-    _ReingestStatus,
     _settings_view,
 )
 from apps.api.sessions import SessionStore
@@ -159,12 +158,12 @@ def create_app(
     app.state.sessions = SessionStore()
     app.state.ingest_status = _IngestStatus()
     app.state.ingest_lock = threading.Lock()
-    #: The current or last run's files and controls (ROADMAP 31); replaced when a run starts.
-    app.state.ingest_run = None
+    #: The engine's one list (A8″) is made on first use: `services.ingest_queue`.
+    app.state.ingest_queue = None
+    #: The latest re-run request's rows in that list, for the re-run dialog's status.
+    app.state.reingest_ticket = []
     app.state.graph_rebuild_status = _GraphRebuildStatus()
     app.state.graph_rebuild_lock = threading.Lock()
-    app.state.reingest_status = _ReingestStatus()
-    app.state.reingest_lock = threading.Lock()
     # Injectable for the same reason `ingest_fn` is: a test drives the route without importing
     # the heavy ingest -> torch chain.
     app.state.reingest_fn = _default_reingest

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (A8b: the claim colours and the two cards); 2026-11-20 (A8a: the start screen, the chat line, two dialogs); 2026-11-20 (the background work section; A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-23 (A8″a: indexing and re-runs as one list); 2026-11-20 (A8b: the claim colours and the two cards); 2026-11-20 (A8a: the start screen, the chat line, two dialogs); 2026-11-20 (the background work section; A7b: ScopeChip); 2026-11-17 (A4: the MCP route and the AI programs section); 2026-11-16 (A2b: the text-check route and block); 2026-11-10 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -247,8 +247,7 @@ design: a server with several clients would need a queue and `anyio.to_thread`
 | Work | How it runs | How the app follows it | What it refuses |
 |---|---|---|---|
 | A chat turn | `POST /api/chat`: `handle_message` is a blocking generator, so `routers/chat._event_stream` runs it on a thread per turn and passes its events to the SSE stream through an `asyncio.Queue` | the stream itself (`token`, `step`, `result`, `error`, `done`) | nothing: turns can overlap each other and any job |
-| Indexing | `POST /api/ingest` answers `202` and starts the `ingest` thread | `GET /api/ingest/status`, polled by `lib/core/ingest.svelte.ts`; pause and stop (`/api/ingest/pause`, `/stop`) act between documents, never inside one (`ingest/run.py`) | a second indexing run (`409`) |
-| A per-part re-run | `POST /api/library/documents/reingest` answers `202` and starts a thread | `GET /api/library/reingest/status`, polled by `screens/document-page/RerunIngestion.svelte` | a second re-run, and any re-run while indexing runs (`409`) |
+| Indexing and re-runs: one list (A8″) | `POST /api/ingest` (a selection, an add's files or the library folder) and `POST /api/library/documents/reingest` (one row per document) put items at the end of the engine's one list and answer `202`; one `ingest` thread runs it in order (`ingest/queue.py`): consecutive files as one batch through `ingest.main`, the folder as its files once it starts, a re-run one document at a time | `GET /api/ingest/status` and `/api/ingest/files`, polled by `lib/core/ingest.svelte.ts`; `GET /api/library/reingest/status` follows the latest re-run's rows for `RerunIngestion.svelte`; pause and stop act on the whole list between documents (`ingest/run.py`); `DELETE /api/ingest/items/{id}` removes a waiting item | nothing because something else runs; an *Undo all* of files already being read (`409`) |
 | The concept-graph rebuild | `POST /api/concepts/graph/rebuild` answers `202` and starts the `graph-rebuild` thread | `GET /api/concepts/graph/rebuild/status`, polled by `lib/graph/graph.svelte.ts` | a second rebuild (`409`) |
 | The provider checks | `readiness._all_readiness` probes every local engine at once on a thread pool, under one time budget; a probe that misses it reads as not running and finishes on its own | the readiness route's answer | — |
 | The parent watch | `apps/api/parent_watch.watch_parent` waits on the app's process and stops the engine when it ends (KI-71) | — | — |
@@ -256,8 +255,9 @@ design: a server with several clients would need a queue and `anyio.to_thread`
 **The job shape.** Each job is `202` then poll. Its status lives in a dataclass in
 `apps/api/services.py` on `app.state`, behind one lock per job that the worker and every reader
 take. The worker catches any failure and leaves `state = "error"` with a message, so a job never
-dies out of sight. When indexing finishes, the controller is rebuilt *before* the status says
-`done`, so a client that reads `done` then sees the new corpus. A chat turn reads the controller
+dies out of sight. When the indexing list is empty, the controller is rebuilt *before* the status
+says `done`, so a client that reads `done` then sees the new corpus; that, and forgetting what the
+re-runs replaced, happens once per list, not per item. A chat turn reads the controller
 when its request starts, so a turn already running finishes on the old one.
 
 **What is not guarded.** Each job refuses a second copy of itself, and a re-run refuses to start

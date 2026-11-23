@@ -62,7 +62,7 @@ from .cleanup import (
 )
 from .estimate import record_speed
 from .figures import figure_parent_text, find_figure_context
-from .run import NO_TEXT, DocumentResult, IngestRun, short_reason
+from .run import NO_TEXT, DocumentResult, IngestRun, RunSink, short_reason
 from .store import (
     _existing_document_id,
     build_path_index,
@@ -577,7 +577,7 @@ def main(
     files: list[Path] | None = None,
     dry_run: bool = False,
     on_progress: ProgressFn | None = None,
-    run: IngestRun | None = None,
+    run: RunSink | None = None,
 ) -> dict[str, int]:
     # `run` (ROADMAP 31): each file's outcome is recorded on it, and between two documents the
     # loop asks it whether to wait (paused) or to end (stopped). See `ingest.run`.

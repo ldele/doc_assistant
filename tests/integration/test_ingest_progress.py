@@ -1,4 +1,7 @@
-"""The ingest progress channel: `ingest.main` -> `_IngestStatus` -> GET /api/ingest/status.
+"""The ingest progress channel: `ingest.main` -> the run's rows -> GET /api/ingest/status.
+
+Since A8″ the position is read from the engine's one list (`ingest/run.py`), which `ingest.main`
+reports each file to (``begin`` / ``reading`` / ``record``); the fakes below drive it the same way.
 
 Why this file exists: before this, `/api/ingest/status` reported `{running, 0, 0, 0}` for the whole
 duration of a run and only filled in at the end, so the desktop app had nothing to show while a
@@ -13,11 +16,14 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from apps.api.main import create_app
 from fastapi.testclient import TestClient
+
+from doc_assistant.ingest.run import DocumentResult
 
 Sink = Callable[[int, int, str | None], None] | None
 
@@ -54,10 +60,14 @@ def test_status_carries_position_while_a_run_is_in_flight() -> None:
     release = threading.Event()
 
     def fake_ingest(
-        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+        *, scope: str | None = None, on_progress: Sink = None, run: Any = None
     ) -> dict[str, int]:
-        assert on_progress is not None, "the route must install a progress sink"
-        on_progress(3, 12, "hodgkin_huxley_1952.pdf")
+        names = [f"paper-{i}.pdf" for i in range(11)] + ["hodgkin_huxley_1952.pdf"]
+        run.begin([Path(n) for n in names])
+        for i in range(3):
+            run.reading(i)
+            run.record(i, DocumentResult("added", passages=4))
+        run.reading(11)  # the file in flight
         reported.set()
         release.wait(timeout=5)
         return {"added": 12, "skipped": 0, "error": 0}
@@ -81,11 +91,12 @@ def test_nothing_is_in_flight_once_the_run_is_done() -> None:
     """`current` must clear, or the bar keeps naming a file that finished long ago."""
 
     def fake_ingest(
-        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+        *, scope: str | None = None, on_progress: Sink = None, run: Any = None
     ) -> dict[str, int]:
-        assert on_progress is not None
-        on_progress(0, 2, "a.pdf")
-        on_progress(2, 2, None)
+        run.begin([Path("a.pdf"), Path("b.pdf")])
+        for i in range(2):
+            run.reading(i)
+            run.record(i, DocumentResult("added", passages=4))
         return {"added": 2, "skipped": 0, "error": 0}
 
     with _client(fake_ingest) as c:
@@ -120,20 +131,22 @@ def test_a_new_run_does_not_open_on_the_previous_run_s_position() -> None:
     calls: list[int] = []
 
     def fake_ingest(
-        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+        *, scope: str | None = None, on_progress: Sink = None, run: Any = None
     ) -> dict[str, int]:
-        assert on_progress is not None
         calls.append(1)
-        if len(calls) == 1:
-            on_progress(9, 9, None)
-        return {"added": 0, "skipped": 0, "error": 0}
+        paths = [Path(f"p{i}.pdf") for i in range(9)] if len(calls) == 1 else []
+        run.begin(paths)
+        for i, _ in enumerate(paths):
+            run.reading(i)
+            run.record(i, DocumentResult("skipped"))
+        return {"added": 0, "skipped": len(paths), "error": 0}
 
     with _client(fake_ingest) as c:
         c.post("/api/ingest")
         assert _await_final(c)["done"] == 9
 
-        # The second run reports nothing at all, so whatever the endpoint says is what the reset
-        # left behind.
+        # The second run finds no file at all, so whatever the endpoint says is what a new list
+        # starts from.
         c.post("/api/ingest")
         body = _await_final(c)
         assert (body["done"], body["total"]) == (0, 0)

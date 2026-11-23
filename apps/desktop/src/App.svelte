@@ -454,8 +454,16 @@
   // `onClose`, never to `onAdded`: clearing on success unmounted the sheet before the outcome
   // (and the Undo button) could be seen. Caught by the AD3 live test, invisible to svelte-check.
   let reviewingAdd = $state(false)
+  // T-007 (A8″): the sheet inspects through the engine, so it opens once the engine answers;
+  // until then the staged papers wait and the status bar says so (PendingAddChip).
   $effect(() => {
-    if (accept.pending.length > 0) reviewingAdd = true
+    if (accept.pending.length > 0 && shell.status === 'ready') {
+      reviewingAdd = true
+      accept.engineGaveUp = false
+    }
+  })
+  $effect(() => {
+    if (accept.pending.length > 0 && shell.status === 'down') accept.engineGaveUp = true
   })
 
   $effect(() => watchDrops())

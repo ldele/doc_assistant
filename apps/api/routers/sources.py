@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import threading
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -26,7 +26,7 @@ from apps.api.models.sources import (
     SourcePatch,
     UndoAddRequest,
 )
-from apps.api.services import _ingest_status_dict, _IngestStatus, log
+from apps.api.services import _ingest_status_dict, _IngestStatus, ingest_queue
 from doc_assistant import app_settings
 from doc_assistant.db.session import session_scope
 
@@ -71,66 +71,17 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
                     detail={"error": "invalid selection", "offenders": e.offenders},
                 ) from e
 
-    from doc_assistant.ingest.run import IngestRun
-
-    run = IngestRun()
+    # A8″: nothing is refused because something else runs. The files, or the library folder,
+    # join the end of the engine's one list; an add made during a run says when it was added.
+    queue = ingest_queue(app_)
     status: _IngestStatus = app_.state.ingest_status
-    with app_.state.ingest_lock:
-        if status.state == "running":
-            raise HTTPException(status_code=409, detail="ingest already running")
-        app_.state.ingest_run = run
-        status.state = "running"
-        status.source_dir = str(source)
-        status.added = status.skipped = status.errors = 0
-        status.message = None
-        # Cleared with the counters, or the bar would open showing the *previous* run's position.
-        status.total = status.done = 0
-        status.current = None
-
-    def _on_progress(done: int, total: int, current: str | None) -> None:
-        """Copy one `ingest.main` progress tick onto the shared status.
-
-        Runs on the ingest thread, so it takes the same lock every reader takes. It only ever
-        *writes position* — never `added`/`skipped`/`errors`, which stay end-of-run outcomes.
-        """
-        with app_.state.ingest_lock:
-            status.done, status.total, status.current = done, total, current
-
-    def _worker() -> None:
-        try:
-            if selection is not None:
-                stats = app_.state.ingest_fn(files=selection, on_progress=_on_progress, run=run)
-            else:
-                stats = app_.state.ingest_fn(scope=str(source), on_progress=_on_progress, run=run)
-        except Exception as e:  # surface any ingest failure to the status view
-            log.exception("ingest_failed", source=str(source))
-            with app_.state.ingest_lock:
-                status.state = "error"
-                status.message = str(e)
-                status.current = None  # nothing is in flight any more; the bar must not say it is
-            return
-        # Reload the controller so the new corpus is live BEFORE reporting "done" — a client
-        # that sees "done" then reads chunk_count must get the updated count (BM25 + Chroma
-        # handles are built at construction). A reload failure is logged but doesn't fail the
-        # ingest: the documents are persisted, a restart picks them up, so a successful ingest
-        # never flips to "error".
-        try:
-            app_.state.controller.release_keyword_index()  # KI-77: Windows keeps an open file
-            app_.state.controller = app_.state.controller_factory()
-        except Exception:
-            log.exception("controller_reload_failed_after_ingest")
-        with app_.state.ingest_lock:
-            status.added = int(stats.get("added", 0))
-            status.skipped = int(stats.get("skipped", 0))
-            status.errors = int(stats.get("error", 0))
-            status.message = (
-                f"indexed {status.added} new, {status.skipped} unchanged, {status.errors} errors"
-            )
-            status.current = None
-            # A stopped run ends like a finished one (its documents are live), and says so.
-            status.state = "stopped" if run.stopped else "done"
-
-    threading.Thread(target=_worker, name="ingest", daemon=True).start()
+    status.source_dir = str(source)
+    if selection is not None:
+        joining = queue.state == "running"
+        detail = f"Added at {datetime.now():%H:%M}" if joining else None
+        queue.add_files(selection, detail)
+    else:
+        queue.add_folder(source, "Library folder · new and changed files")
     return _ingest_status_dict(app_)
 
 
@@ -183,7 +134,7 @@ def _rerun_selection(app_: Any, rerun: RerunScope, paths: list[str] | None) -> l
     """The files ``rerun`` names from the last run, or a 400 saying why there are none."""
     if paths is not None:
         raise HTTPException(status_code=400, detail="send paths or rerun, not both")
-    last: IngestRun | None = app_.state.ingest_run
+    last = ingest_queue(app_).run
     if last is None:
         raise HTTPException(status_code=400, detail="there is no earlier run to take files from")
     selection = last.paths(rerun)
@@ -193,13 +144,12 @@ def _rerun_selection(app_: Any, rerun: RerunScope, paths: list[str] | None) -> l
 
 
 def _live_run(request: Request) -> IngestRun:
-    """The run in flight, or a 409: pause and stop act on a running run only."""
-    status: _IngestStatus = request.app.state.ingest_status
-    with request.app.state.ingest_lock:
-        run: IngestRun | None = request.app.state.ingest_run
-        if status.state != "running" or run is None:
-            raise HTTPException(status_code=409, detail="no indexing run is in progress")
-        return run
+    """The list in flight, or a 409: pause and stop act on a running list only."""
+    queue = ingest_queue(request.app)
+    run = queue.run
+    if queue.state != "running" or run is None:
+        raise HTTPException(status_code=409, detail="no indexing run is in progress")
+    return run
 
 
 @router.post("/api/ingest/pause")
@@ -233,7 +183,7 @@ def ingest_files(
 
     Empty, not 404, before any run: a screen opened on a fresh app has nothing to list.
     """
-    run: IngestRun | None = request.app.state.ingest_run
+    run = ingest_queue(request.app).run
     if run is None:
         return IngestFilesPayload(total=0, offset=offset, files=[])
     rows, total = run.page(offset, limit, group)
@@ -241,10 +191,22 @@ def ingest_files(
         total=total,
         offset=offset,
         files=[
-            IngestFilePayload(path=f.path, name=f.name, state=f.state, detail=f.detail)
+            IngestFilePayload(
+                path=f.path, name=f.name, state=f.state, detail=f.detail, id=f.id, kind=f.kind
+            )
             for f in rows
         ],
     )
+
+
+@router.delete("/api/ingest/items/{item_id}")
+def ingest_remove_item(request: Request, item_id: str) -> dict[str, Any]:
+    """Take a waiting item out of the list (A8″, decision 4). 409 once it has started."""
+    if not ingest_queue(request.app).remove(item_id):
+        raise HTTPException(
+            status_code=409, detail="this item is not waiting, so it cannot be removed"
+        )
+    return _ingest_status_dict(request.app)
 
 
 @router.get("/api/sources")
@@ -374,11 +336,29 @@ def inspect_documents(body: InspectRequest) -> InspectResponse:
     )
 
 
-def _running(request: Request) -> bool:
-    """True while an ingest is in flight. Adding during one would race the registry scan."""
-    status: _IngestStatus = request.app.state.ingest_status
-    with request.app.state.ingest_lock:
-        return bool(status.state == "running")
+def _take_back_from_list(request: Request, keys: list[str]) -> None:
+    """Before an undo: a 409 if any of these files has started indexing (the extractor reads
+    them), else their waiting rows leave the list (A8″, decision 3)."""
+    from doc_assistant.ingest import registry
+
+    run = ingest_queue(request.app).run
+    if run is None:
+        return
+    with session_scope() as session:
+        try:
+            source = app_settings.get_source_dir().resolve()
+            paths = registry.resolve_selection(session, source, keys)
+        except registry.InvalidSelection:
+            return
+    wanted = {registry.pathkey(p) for p in paths}
+    rows, _ = run.page(0, 1_000_000, "all")
+    mine = [r for r in rows if r.kind == "file" and registry.pathkey(r.path) in wanted]
+    if any(r.state != "waiting" for r in mine):
+        raise HTTPException(
+            status_code=409, detail="these files have started indexing, so they cannot be undone"
+        )
+    for r in mine:
+        run.remove(r.id)
 
 
 @router.post("/api/documents/add")
@@ -389,13 +369,10 @@ def add_documents(request: Request, body: AddRequest) -> AddResultPayload:
     with an explicit `paths` list (spec constraint 4): one ingest path in the system, not two.
 
     Both placement modes work since AD3b: ``copy`` copies into the library folder, ``reference``
-    registers the file where it already lives under its own root. 409 while an ingest is running,
-    mirroring `/api/ingest` itself.
+    registers the file where it already lives under its own root. Allowed during a run (A8″):
+    the files are copied now, and their indexing joins the end of the list.
     """
     from doc_assistant.library.add import AddBatchTooLargeError, AddOutcome, apply_add
-
-    if _running(request):
-        raise HTTPException(status_code=409, detail="ingest already running")
 
     try:
         result = apply_add(
@@ -432,8 +409,7 @@ def undo_add_documents(request: Request, body: UndoAddRequest) -> dict[str, int]
     """
     from doc_assistant.library.add import undo_add
 
-    if _running(request):
-        raise HTTPException(status_code=409, detail="ingest already running")
+    _take_back_from_list(request, body.rel_paths)
     controller = request.app.state.controller
     undone = undo_add(
         body.rel_paths, chroma_db=controller.rag.db, forget=controller.forget_document

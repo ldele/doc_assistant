@@ -120,7 +120,7 @@ def test_folder_scope_over_the_wire(client: TestClient) -> None:
 
 
 def test_last_run_failures_come_from_the_session(client: TestClient) -> None:
-    client.app.state.ingest_run = FakeRun(failed=2)  # type: ignore[attr-defined]
+    client.app.state.ingest_queue = type("Q", (), {"run": FakeRun(failed=2)})()  # type: ignore[attr-defined]
     body = client.get("/api/library/summary").json()
     assert body["indexing"]["last_run_failed"] == 2
 

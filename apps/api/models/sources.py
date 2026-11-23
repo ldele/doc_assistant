@@ -51,13 +51,17 @@ class IngestPlanPayload(BaseModel):
 
 
 class IngestFilePayload(BaseModel):
-    """One file of a run, as the indexing screen lists it (``doc_assistant.ingest.run``)."""
+    """One item of the list, as the indexing screen shows it (``doc_assistant.ingest.run``): a
+    file, the library folder before it starts, or a document's re-run (A8″)."""
 
     path: str
     name: str
-    state: Literal["waiting", "reading", "added", "unchanged", "failed", "not_started"]
+    state: Literal["waiting", "reading", "added", "unchanged", "done", "failed", "not_started"]
     #: What happened, in a sentence: a failure's reason, "412 passages", "Already in your library".
     detail: str | None = None
+    #: Stable for the life of the list: what ``DELETE /api/ingest/items/{id}`` takes.
+    id: str = ""
+    kind: Literal["file", "folder", "rerun"] = "file"
 
 
 class IngestFilesPayload(BaseModel):

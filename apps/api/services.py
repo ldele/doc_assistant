@@ -27,7 +27,8 @@ from doc_assistant.config import DATA_PATH
 from doc_assistant.embeddings import get_active_model_name
 
 if TYPE_CHECKING:  # the ingest package pulls the torch chain; the run is only typed here
-    from doc_assistant.ingest.run import IngestRun
+    from doc_assistant.ingest.queue import IngestQueue
+    from doc_assistant.ingest.run import RunSink
 
 log = structlog.get_logger(__name__)
 
@@ -214,42 +215,155 @@ class _GraphRebuildStatus:
     message: str | None = None
 
 
+def ingest_queue(app: FastAPI) -> IngestQueue:
+    """The engine's one list (A8″, `docs/specs/ingestion-queue.md`), made on first use.
+
+    Lazily, because importing anything under `doc_assistant.ingest` pulls the torch chain, which
+    this module keeps out of an import. ``ingest_fn`` and ``reingest_fn`` are read from
+    ``app.state`` at call time, so a test that swaps either after `create_app` is honoured."""
+    queue: IngestQueue | None = getattr(app.state, "ingest_queue", None)
+    if queue is None:
+        from doc_assistant.ingest.queue import IngestQueue
+
+        def drained(superseded: list[str], changed: bool) -> None:
+            # The run's end, once, when the list is empty: forget what the re-runs replaced, at
+            # once, then reload so the new corpus is live (as after an ingest; S18).
+            controller = app.state.controller
+            for doc_hash in superseded:
+                forget = getattr(controller, "forget_document", None)
+                if forget is not None:
+                    forget(doc_hash)
+            if not (changed or superseded):
+                return
+            try:
+                release = getattr(controller, "release_keyword_index", None)
+                if release is not None:
+                    release()  # KI-77: Windows keeps an open file
+                app.state.controller = app.state.controller_factory()
+            except Exception:
+                log.exception("controller_reload_failed_after_ingest")
+
+        queue = IngestQueue(
+            ingest_fn=lambda **kw: app.state.ingest_fn(**kw),
+            rerun_fn=lambda ids, parts: app.state.reingest_fn(ids, parts),
+            on_drained=drained,
+        )
+        app.state.ingest_queue = queue
+    return queue
+
+
 def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
+    """The one list's status (A8″): its state, outcome totals, position and counts.
+
+    The same fields as before the list was one, so the status bar and the indexing screen read it
+    unchanged; ``total`` grows as items are added."""
     st: _IngestStatus = app.state.ingest_status
-    run: IngestRun | None = app.state.ingest_run
-    with app.state.ingest_lock:
+    queue: IngestQueue | None = getattr(app.state, "ingest_queue", None)
+    run = queue.run if queue is not None else None
+    if queue is None or run is None:
         return {
-            "state": st.state,
+            "state": "idle",
             "source_dir": st.source_dir,
-            "added": st.added,
-            "skipped": st.skipped,
-            "errors": st.errors,
-            "message": st.message,
-            "total": st.total,
-            "done": st.done,
-            "current": st.current,
-            # ROADMAP 31: what pause or stop has been asked, and each state's count of files.
-            # Counts only, never the files: at 10,000 documents a poll cannot carry the list, so
-            # the screen reads it a page at a time from GET /api/ingest/files.
-            "control": run.control() if run is not None and st.state == "running" else "none",
-            "counts": run.counts() if run is not None else None,
+            "added": 0,
+            "skipped": 0,
+            "errors": 0,
+            "message": None,
+            "total": 0,
+            "done": 0,
+            "current": None,
+            "control": "none",
+            "counts": None,
         }
+    counts = run.counts()
+    finished = counts["added"] + counts["unchanged"] + counts["done"] + counts["failed"]
+    tally = dict(queue.tally)
+    message: str | None = None
+    if queue.state == "error":
+        message = queue.error
+    elif queue.state in ("done", "stopped"):
+        message = (
+            f"indexed {tally['added']} new, {tally['skipped']} unchanged, {tally['error']} errors"
+        )
+    return {
+        "state": queue.state,
+        "source_dir": st.source_dir,
+        "added": tally["added"],
+        "skipped": tally["skipped"],
+        "errors": tally["error"],
+        "message": message,
+        "total": counts["total"],
+        "done": finished,
+        "current": run.current(),
+        # ROADMAP 31: what pause or stop has been asked, and each state's count of files.
+        # Counts only, never the files: at 10,000 documents a poll cannot carry the list, so
+        # the screen reads it a page at a time from GET /api/ingest/files.
+        "control": run.control() if queue.state == "running" else "none",
+        "counts": counts,
+    }
 
 
 def _reingest_status_dict(app: FastAPI) -> dict[str, Any]:
-    st: _ReingestStatus = app.state.reingest_status
-    with app.state.reingest_lock:
+    """The latest re-run request's status, read from its rows in the one list (A8″).
+
+    The same fields the re-run dialog reads, plus ``waiting_behind``: how many rows wait or run
+    ahead of it, so a re-run asked during a long index says what it is waiting for."""
+    ticket: list[str] = list(getattr(app.state, "reingest_ticket", []) or [])
+    queue: IngestQueue | None = getattr(app.state, "ingest_queue", None)
+    run = queue.run if queue is not None else None
+    if not ticket or queue is None or run is None:
         return {
-            "state": st.state,
-            "total": st.total,
-            "done": st.done,
-            "current": st.current,
-            "ok": st.ok,
-            "skipped": st.skipped,
-            "errors": st.errors,
-            "message": st.message,
-            "outcomes": list(st.outcomes or []),
+            "state": "idle",
+            "total": 0,
+            "done": 0,
+            "current": None,
+            "ok": 0,
+            "skipped": 0,
+            "errors": 0,
+            "message": None,
+            "outcomes": [],
+            "waiting_behind": 0,
         }
+    rows = []
+    for item_id in ticket:
+        try:
+            rows.append(run.item(item_id))
+        except KeyError:
+            continue
+    live = [r for r in rows if r.state in ("waiting", "reading")]
+    outcomes = [o for r in rows for o in queue.outcomes.get(r.id, [])]
+    ok = sum(1 for o in outcomes if o.status == "ok")
+    skipped = sum(1 for o in outcomes if o.status == "skipped")
+    errors = sum(1 for o in outcomes if o.status == "error")
+    state = "running" if live else "done"
+    message = None
+    crashed = [r for r in rows if r.state == "failed" and not queue.outcomes.get(r.id)]
+    if state == "done" and crashed and len(crashed) == len(rows):
+        state, message = "error", crashed[0].detail  # the re-run raised: say why, as before
+    elif state == "done":
+        bits = [f"{ok} re-run"] + ([f"{skipped} skipped"] if skipped else [])
+        message = " · ".join(bits + ([f"{errors} failed"] if errors else []))
+    waiting = [r for r in rows if r.state == "waiting"]
+    return {
+        "state": state,
+        "total": len(rows),
+        "done": len(rows) - len(live),
+        "current": next((r.name for r in rows if r.state == "reading"), None),
+        "ok": ok,
+        "skipped": skipped,
+        "errors": errors,
+        "message": message,
+        "outcomes": [
+            {
+                "document_id": o.document_id,
+                "filename": o.filename,
+                "part": o.part,
+                "status": o.status,
+                "detail": o.detail,
+            }
+            for o in outcomes[:REINGEST_OUTCOME_CAP]
+        ],
+        "waiting_behind": run.ahead_of(waiting[0].id) if waiting else 0,
+    }
 
 
 def _graph_rebuild_status_dict(app: FastAPI) -> dict[str, Any]:
@@ -276,7 +390,7 @@ def _default_ingest(
     scope: str | None = None,
     files: list[Path] | None = None,
     on_progress: Callable[[int, int, str | None], None] | None = None,
-    run: IngestRun | None = None,
+    run: RunSink | None = None,
 ) -> dict[str, int]:
     """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain.
 

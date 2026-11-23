@@ -127,6 +127,8 @@ export interface ReingestStatus {
   errors: number
   message: string | null
   outcomes: ReingestOutcome[]
+  /** Rows waiting or running ahead of this re-run in the one list (A8″); 0 once it runs. */
+  waiting_behind: number
 }
 
 /** Where a cited chunk sits in its source (ROADMAP 19).

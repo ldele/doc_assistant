@@ -10,6 +10,7 @@
   import type { ChatSetup, ConversationTurn } from '../../lib/core/types'
   import { carriedText, chatLineText, continuedFromText, emptyFolders } from '../../lib/chat/setup'
   import { tooltip } from '../../lib/shell/tooltip'
+  import { ingestRun } from '../../lib/core/ingest.svelte'
 
   let {
     setup,
@@ -40,6 +41,9 @@
       <Icon name={setup.scope ? 'folder' : 'library'} size={13} />
       <span>{chatLineText(setup.mode.name, setup.scope)}</span>
       {#if !setup.mode.evaluated}<span class="muted">· not evaluated</span>{/if}
+      <!-- Decision 6 (A8″): retrieval shares the computer with indexing, measured 3 to 15 times
+           slower on the CPU build, so the slower answer is given its reason. Nothing is throttled. -->
+      {#if ingestRun.status?.state === 'running'}<span class="indexing">· Indexing: answers take longer</span>{/if}
     </span>
     <button class="btn continue" onclick={onContinueNew} type="button" use:tooltip={'Change the mode or the folders: open a new chat that can carry this one\'s exchanges; this chat stays as it is'}>
       Continue in a new chat…
@@ -84,6 +88,9 @@
 </div>
 
 <style>
+  .indexing {
+    color: var(--warn-fg, var(--fg-2));
+  }
   .chatline {
     display: flex;
     flex-direction: column;

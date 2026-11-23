@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import {
   basename,
   dedupePaths,
+  pendingAddText,
   previewNames,
   remainderLabel,
   sourceKeyName,
@@ -150,4 +151,12 @@ test('a filename containing a colon does not lose its head', () => {
 
 test('a windows-separated rel_path is handled like a posix one', () => {
   assert.equal(sourceKeyName(String.raw`library:sub\dir\paper.pdf`), 'paper.pdf')
+})
+
+test('papers handed over while the engine starts say they wait, then that they were not added', () => {
+  assert.equal(pendingAddText(0, 'waiting'), null)
+  assert.equal(pendingAddText(1, 'waiting'), 'Waiting for the engine · 1 paper to add')
+  assert.equal(pendingAddText(3, 'waiting'), 'Waiting for the engine · 3 papers to add')
+  assert.equal(pendingAddText(3, 'failed'), '3 papers were not added: the engine did not start')
+  assert.equal(pendingAddText(1, 'failed'), '1 paper was not added: the engine did not start')
 })

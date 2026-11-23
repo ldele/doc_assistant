@@ -331,7 +331,8 @@ def test_ingest_rejects_concurrent_run(settings_file: Path) -> None:
     )
     client = TestClient(app)
     assert client.post("/api/ingest").status_code == 202  # first starts
-    assert client.post("/api/ingest").status_code == 409  # second rejected while running
+    # A8″: a second request is never refused; the folder joins the end of the one list.
+    assert client.post("/api/ingest").status_code == 202
     release.set()
     _poll_until(client, state="done")
 

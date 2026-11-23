@@ -113,7 +113,7 @@ def test_a_run_reports_counts_and_per_part_outcomes(client: TestClient) -> None:
         json={"document_ids": ["doc-1"], "parts": ["metadata", "figures"]},
     )
     assert r.status_code == 202
-    assert r.json() == {"started": True, "total": 2}
+    assert r.json() == {"started": True, "total": 1, "waiting_behind": 0}, "one row per document"
 
     body = _wait_for_done(client)
     assert body["state"] == "done"
@@ -124,59 +124,68 @@ def test_a_run_reports_counts_and_per_part_outcomes(client: TestClient) -> None:
     assert "1 re-run" in body["message"] and "1 skipped" in body["message"]
 
 
-def test_position_is_reported_separately_from_outcome(client: TestClient) -> None:
-    """`total`/`done` are where the run is; ok/skipped/errors are what it produced. A partial
-    outcome reported as a final one is the failure this split exists to prevent."""
-    seen: list[tuple[int, int, int]] = []
-
-    def runner(ids: list[str], parts: list[str], on_progress: Any = None) -> _FakeResult:
-        on_progress(0, 4, "paper.pdf · metadata")
-        body = client.get("/api/library/reingest/status").json()
-        seen.append((body["done"], body["total"], body["ok"]))
-        on_progress(2, 4, "paper.pdf · figures")
-        body = client.get("/api/library/reingest/status").json()
-        seen.append((body["done"], body["total"], body["ok"]))
-        return _FakeResult([_FakeOutcome("metadata", "ok")])
-
-    _install(client, runner)
+def test_a_re_run_is_a_row_of_the_indexing_list(client: TestClient) -> None:
+    """A8″: the re-run joins the engine's one list, so the indexing screen shows it."""
+    _install(
+        client, lambda ids, parts, on_progress=None: _FakeResult([_FakeOutcome("metadata", "ok")])
+    )
     client.post(
-        "/api/library/documents/reingest",
-        json={"document_ids": ["doc-1"], "parts": ["metadata", "figures"]},
+        "/api/library/documents/reingest", json={"document_ids": ["doc-1"], "parts": ["metadata"]}
     )
     _wait_for_done(client)
-    assert seen == [(0, 4, 0), (2, 4, 0)], seen
+    rows = client.get("/api/ingest/files").json()["files"]
+    assert [(r["kind"], r["state"]) for r in rows] == [("rerun", "done")]
+    assert rows[0]["name"].endswith("· Metadata"), rows[0]["name"]
 
 
-def test_a_second_run_is_refused_while_one_is_running(client: TestClient) -> None:
+def test_a_second_re_run_joins_the_list_and_waits_its_turn(client: TestClient) -> None:
     release = threading.Event()
+    calls: list[list[str]] = []
 
     def runner(ids: list[str], parts: list[str], on_progress: Any = None) -> _FakeResult:
+        calls.append(ids)
         release.wait(5.0)
         return _FakeResult([_FakeOutcome("metadata", "ok")])
 
     _install(client, runner)
-    body = {"document_ids": ["doc-1"], "parts": ["metadata"]}
-    assert client.post("/api/library/documents/reingest", json=body).status_code == 202
+    first = {"document_ids": ["doc-1"], "parts": ["metadata"]}
+    second = {"document_ids": ["doc-2"], "parts": ["metadata"]}
+    assert client.post("/api/library/documents/reingest", json=first).status_code == 202
     try:
-        assert client.post("/api/library/documents/reingest", json=body).status_code == 409
+        r = client.post("/api/library/documents/reingest", json=second)
+        assert r.status_code == 202, "never refused because something else runs"
+        assert r.json()["waiting_behind"] == 1
     finally:
         release.set()
     _wait_for_done(client)
+    assert calls == [["doc-1"], ["doc-2"]]
 
 
-def test_a_run_is_refused_while_an_ingest_is_running(client: TestClient) -> None:
-    """Both write the same chunk stores and the same rows; overlapping them races a re-extract
-    against a corpus scan for the same file."""
-    client.app.state.ingest_status.state = "running"  # type: ignore[attr-defined]
-    try:
-        r = client.post(
-            "/api/library/documents/reingest",
-            json={"document_ids": ["doc-1"], "parts": ["metadata"]},
-        )
-        assert r.status_code == 409
-        assert "indexing" in r.json()["detail"]
-    finally:
-        client.app.state.ingest_status.state = "idle"  # type: ignore[attr-defined]
+def test_a_re_run_during_an_ingest_waits_behind_it(client: TestClient) -> None:
+    """Both write the same chunk stores and rows; they run one after the other, never together."""
+    release = threading.Event()
+    order: list[str] = []
+
+    def slow_ingest(
+        *, run: Any, on_progress: Any = None, files: Any = None, scope: Any = None
+    ) -> dict[str, int]:
+        order.append("ingest")
+        run.begin([])
+        release.wait(5.0)
+        return {"added": 0, "skipped": 0, "error": 0}
+
+    client.app.state.ingest_fn = slow_ingest  # type: ignore[attr-defined]
+    _install(
+        client, lambda ids, parts, on_progress=None: (order.append("rerun"), _FakeResult([]))[1]
+    )
+    assert client.post("/api/ingest").status_code == 202
+    r = client.post(
+        "/api/library/documents/reingest", json={"document_ids": ["doc-1"], "parts": ["metadata"]}
+    )
+    assert r.status_code == 202
+    release.set()
+    _wait_for_done(client)
+    assert order == ["ingest", "rerun"]
 
 
 def test_a_crashed_run_leaves_a_readable_status(client: TestClient) -> None:

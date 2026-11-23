@@ -44,6 +44,32 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-23 (7) — Every ingestion is one list in the engine (A8″a, T-007, T-010, T-011)
+
+**What changed.** An add, a selection, the library folder and a document's re-run are rows of one
+list (`ingest/queue.py`, `ingest/run.py`): nothing is refused because something else runs, what
+arrives joins the end, and one thread runs it in order (files in batches through `ingest.main`, a
+re-run one document at a time). The reload happens once, when the list is empty. A waiting row
+can be removed (`DELETE /api/ingest/items/{id}`), even inside the running batch. The window: *Add to
+queue* and *Remove* on the indexing screen, the engine-start chip, the re-run dialog that says what
+it waits behind, and the chat line's *Indexing: answers take longer*.
+
+**Why.** T-007, T-010, T-011 (the owner, 2026-11-19); spec `docs/specs/ingestion-queue.md`,
+revised the same day to one list of items rather than a line of jobs. The trace (spec § Today):
+nothing locked; three job routes refused each other, and retrieval ran 3 to 15 times slower on the
+CPU build during an ingest.
+
+**Measured.** $0. Queue tests 7 (one for the removal bug), run tests 12, the route tests moved to
+the new contract (156 in the affected files); window 457, `svelte-check` 0. Driven over a scratch
+home on the CPU build: one list counted whole, added papers waiting at its end, a removal skipped,
+a re-run waiting behind three others, the chat line's note.
+
+**Rejected.** A line of jobs (the owner: one list); a queue stored in `library.db` (decision 1);
+one `ingest.main` call per file (each call scans both stores for the dedup set).
+
+**What it opens.** *Add to queue* and the engine-start chip are not driven: they need the desktop
+shell, so A9's installed-build walkthrough covers them.
+
 ## 2026-11-23 (6) — No GET route writes or calls out (A8″b, S-17)
 
 **What changed.** The four GETs with a side effect lost it, each to a POST the window calls:

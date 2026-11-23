@@ -1,8 +1,8 @@
 """Library summary: the *Summary* layout's counts, for the library or one folder (ROADMAP 112).
 
 Read-only and thin over `doc_assistant.library.summarise_collection`. The one thing added here is
-what only the API holds: this session's last index run (`app.state.ingest_run`), whose failures
-and their reasons live in memory until the app closes.
+what only the API holds: this session's last index run (the engine's one list,
+`services.ingest_queue`), whose failures and their reasons live in memory until the app closes.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ router = APIRouter()
 
 
 def _last_run_failed(request: Request) -> int | None:
-    run: Any = getattr(request.app.state, "ingest_run", None)
+    queue: Any = getattr(request.app.state, "ingest_queue", None)
+    run: Any = queue.run if queue is not None else None
     if run is None:
         return None
     return int(run.counts().get("failed", 0))

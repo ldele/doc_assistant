@@ -46,6 +46,7 @@ export type IngestFileState =
   | 'reading'
   | 'added'
   | 'unchanged'
+  | 'done'
   | 'failed'
   | 'not_started'
 
@@ -54,6 +55,8 @@ export interface IngestCounts {
   reading: number
   added: number
   unchanged: number
+  /** Re-runs that finished (A8″: a re-run is an item of the same list). */
+  done: number
   failed: number
   not_started: number
   total: number
@@ -68,6 +71,10 @@ export interface IngestFile {
   state: IngestFileState
   /** What happened, in a sentence: a failure's reason, "412 passages", "Already in your library". */
   detail: string | null
+  /** Stable for the life of the list (A8″): what removing a waiting item takes. */
+  id: string
+  /** A file, the library folder before it starts, or a document's re-run. */
+  kind: 'file' | 'folder' | 'rerun'
 }
 
 /**

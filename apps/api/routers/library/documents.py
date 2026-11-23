@@ -9,8 +9,6 @@ handle on ``ChatController.rag.db``.
 
 from __future__ import annotations
 
-import threading
-
 import structlog
 from fastapi import APIRouter, HTTPException, Request, Response
 
@@ -332,96 +330,42 @@ def reingest_options() -> ReingestOptionsPayload:
 
 @router.post("/api/library/documents/reingest", status_code=202)
 def reingest_start(request: Request, body: ReingestRequest) -> dict[str, object]:
-    """Start a per-part re-run in the background. 202 + poll, like every other job here.
+    """Re-run parts of documents: one row per document at the end of the engine's one list (A8″).
 
-    **409 while an ingest is running.** Both write the same chunk stores and the same `Document`
-    rows; letting them overlap would race a re-extract against a corpus scan for the same file.
-    The parts are validated *before* the 202 so a bad body is an error rather than a job that
-    fails a second later out of sight.
+    Never refused because something else runs: the rows wait their turn, and the answer says how
+    many rows are ahead of them. The parts are validated *before* the 202 so a bad body is an error
+    rather than a row that fails later out of sight. An unknown id gets a row named by its id,
+    which the re-run then reports as nothing done.
     """
-    from doc_assistant.reingest import PART_IDS
+    from sqlalchemy import select
+
+    from apps.api.services import ingest_queue
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.reingest import PART_IDS, PARTS
 
     unknown = sorted(set(body.parts) - PART_IDS)
     if unknown:
         raise HTTPException(status_code=400, detail={"error": "unknown parts", "parts": unknown})
 
-    app_ = request.app
-    if app_.state.ingest_status.state == "running":
-        raise HTTPException(status_code=409, detail="an indexing run is already in progress")
-
-    status = app_.state.reingest_status
-    with app_.state.reingest_lock:
-        if status.state == "running":
-            raise HTTPException(status_code=409, detail="a re-run is already in progress")
-        status.state = "running"
-        status.total = len(body.document_ids) * len(set(body.parts))
-        status.done = 0
-        status.current = None
-        status.ok = status.skipped = status.errors = 0
-        status.message = None
-        status.outcomes = None
-
-    def _on_progress(done: int, total: int, current: str | None) -> None:
-        with app_.state.reingest_lock:
-            status.done, status.total, status.current = done, total, current
-
-    def _worker() -> None:
-        from apps.api.services import REINGEST_OUTCOME_CAP
-
-        try:
-            result = app_.state.reingest_fn(
-                list(body.document_ids), list(body.parts), on_progress=_on_progress
-            )
-        except Exception as e:  # a crashed job must still leave a readable status
-            log.warning("reingest_failed", error=str(e))
-            with app_.state.reingest_lock:
-                status.state = "error"
-                status.message = f"{type(e).__name__}: {e}"
-                status.current = None
-            return
-        # A text re-run replaced chunks under the running engine (A8', case 1): its keyword index
-        # still held the old ones, so a search served the superseded passage as current, and it
-        # lacked the new ones. Forget the old hashes at once, then reload as an ingest does.
-        superseded = getattr(result, "superseded", ())
-        if superseded:
-            for doc_hash in superseded:
-                app_.state.controller.forget_document(doc_hash)
-            try:
-                app_.state.controller.release_keyword_index()  # KI-77: Windows keeps an open file
-                app_.state.controller = app_.state.controller_factory()
-            except Exception:
-                log.exception("controller_reload_failed_after_reingest")
-        with app_.state.reingest_lock:
-            status.state = "done"
-            status.current = None
-            status.ok, status.skipped, status.errors = result.ok, result.skipped, result.errors
-            status.outcomes = [
-                {
-                    "document_id": o.document_id,
-                    "filename": o.filename,
-                    "part": o.part,
-                    "status": o.status,
-                    "detail": o.detail,
-                }
-                for o in result.outcomes[:REINGEST_OUTCOME_CAP]
-            ]
-            status.message = _reingest_message(result)
-
-    threading.Thread(target=_worker, daemon=True).start()
-    return {"started": True, "total": status.total}
-
-
-def _reingest_message(result: object) -> str:
-    """One line for the status bar. Counts, not adjectives — the detail is in `outcomes`."""
-    ok = getattr(result, "ok", 0)
-    skipped = getattr(result, "skipped", 0)
-    errors = getattr(result, "errors", 0)
-    parts = [f"{ok} re-run"]
-    if skipped:
-        parts.append(f"{skipped} skipped")
-    if errors:
-        parts.append(f"{errors} failed")
-    return " · ".join(parts)
+    parts = [p.id for p in PARTS if p.id in set(body.parts)]  # the registry's order: text last
+    what = ", ".join(p.label for p in PARTS if p.id in set(parts))
+    with session_scope() as session:
+        names = {
+            str(d.id): d.filename
+            for d in session.execute(
+                select(Document).where(Document.id.in_(body.document_ids))
+            ).scalars()
+        }
+    documents = [(d, f"{names.get(d, d)} · {what}") for d in body.document_ids]
+    queue = ingest_queue(request.app)
+    ids = queue.add_rerun(documents, parts)
+    request.app.state.reingest_ticket = ids
+    return {
+        "started": True,
+        "total": len(ids),
+        "waiting_behind": queue.ahead_of(ids[0]) if ids else 0,
+    }
 
 
 @router.get("/api/library/reingest/status")

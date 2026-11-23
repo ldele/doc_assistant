@@ -82,3 +82,12 @@ export function sourceKeyName(key: string): string {
   const rel = colon === -1 ? key : key.slice(colon + 1)
   return basename(rel) || basename(key) || key
 }
+
+/** The status bar's words for papers handed over while the engine is not ready (T-007, A8″):
+ *  `waiting` while it starts, `failed` once it stalled. `null` when nothing waits. */
+export function pendingAddText(count: number, phase: 'waiting' | 'failed'): string | null {
+  if (count <= 0) return null
+  const papers = count === 1 ? '1 paper' : `${count} papers`
+  if (phase === 'waiting') return `Waiting for the engine · ${papers} to add`
+  return `${papers} ${count === 1 ? 'was' : 'were'} not added: the engine did not start`
+}

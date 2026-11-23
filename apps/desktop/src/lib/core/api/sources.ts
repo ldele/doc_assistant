@@ -87,6 +87,12 @@ export async function controlIngest(action: 'pause' | 'resume' | 'stop'): Promis
   if (!r.ok) throw new Error(await errorDetail(r, `${action} indexing`))
   return (await r.json()) as IngestStatus
 }
+/** Take a waiting item out of the list (A8″). Throws (409) once it has started. */
+export async function removeIngestItem(id: string): Promise<IngestStatus> {
+  const r = await apiFetch(`${API_BASE}/api/ingest/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error(await errorDetail(r, 'remove this item'))
+  return (await r.json()) as IngestStatus
+}
 /** One page of the current or last run's files, in the screen's order. Empty before any run. */
 export async function getIngestFiles(
   group: IngestGroup = 'all',

@@ -186,7 +186,7 @@ export function groupChips(s: IngestStatus | null): GroupChip[] {
   const c = s?.counts
   if (!s || !c) return []
   const all: GroupChip = { group: 'all', label: 'All', count: c.total }
-  const finished: GroupChip = { group: 'finished', label: 'Finished', count: c.added + c.unchanged }
+  const finished: GroupChip = { group: 'finished', label: 'Finished', count: c.added + c.unchanged + (c.done ?? 0) }
   const failed: GroupChip = { group: 'failed', label: 'Failed', count: c.failed }
   if (s.state === 'running') {
     const chips: GroupChip[] = [
@@ -212,6 +212,7 @@ export const FILE_STATE_LABEL: Record<IngestFileState, string> = {
   reading: 'Reading',
   added: 'Added',
   unchanged: 'Unchanged',
+  done: 'Done',
   failed: 'Failed',
   not_started: 'Not started',
 }

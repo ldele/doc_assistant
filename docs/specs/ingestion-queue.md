@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-23 (one list of items, not jobs: decisions 2, 4, 7 revised by the owner); 2026-11-23 (A8″b built: As built added; A8″a waits on its wireframe); 2026-11-23 (accepted by the owner as written: all ten recommendations) · class: living -->
+<!-- status: active · updated: 2026-11-23 (A8″a built: As built added; the spec's two builds done); 2026-11-23 (one list of items, not jobs: decisions 2, 4, 7 revised by the owner); 2026-11-23 (A8″b built: As built added; A8″a waits on its wireframe); 2026-11-23 (accepted by the owner as written: all ten recommendations) · class: living -->
 
 # Spec — One queue for every ingestion, adds while the engine starts, and the letter-spacing block (session A8″)
 
@@ -169,3 +169,34 @@ None beyond *To decide*.
   `GET /api/setup` never probes; `POST /api/setup/probe` does, and `getSetup(probe)` picks one.
   `KNOWN` in `test_get_routes_have_no_side_effects.py` is empty.
 - **Not foreseen.** `GET /api/setup?probe=true` no longer probes: the parameter is gone.
+
+## As built — A8″a (2026-11-23)
+
+- **Engine.** `ingest/queue.py` `IngestQueue` (made on first use by `apps/api/services.ingest_queue`,
+  so importing the API still loads no torch). Rows live in `ingest/run.py` `IngestRun`: each has a
+  stable `id` and a `kind` (`file`, `folder`, `rerun`); `append_files`, `append_folder`,
+  `append_rerun`, `remove`, `next_batch`, `close_if_drained`. `ingest.main` takes a `RunSink`, and
+  `BatchView` maps one batch's indexes to the rows by path, turns a folder row into its files, and
+  ends a batch early when the next file's row was removed (a waiting file in the running batch can
+  still be taken out). New states `done` (a finished re-run) and `removed` (never counted).
+- **The run's end, once.** Forgetting the replaced hashes and the engine's reload happen once, when
+  the list is empty. The text check and the other per-document steps stay inside each
+  `ingest.main` batch, scoped to that batch's new documents, as before.
+- **Routes.** `POST /api/ingest`, the folder index and `POST /api/library/documents/reingest` add
+  rows and answer 202; none answers 409 because something else runs. `DELETE
+  /api/ingest/items/{id}` (409 once started). `/api/documents/add` is allowed during a run; *Undo
+  all* takes back files still waiting and answers 409 once one is being read. The re-run status
+  follows the latest request's rows and adds `waiting_behind`; one row per document (`total`
+  counts documents, no longer document × part).
+- **Window.** The indexing screen: *Add to queue* in the header while the list runs (the usual add
+  flow), *Remove* on every waiting row (decision 4 says any waiting item; the drawing showed it on
+  the added rows only), a `Done` pill. The status bar's *Waiting for the engine · N papers to add*
+  and *… not added: the engine did not start* with *Try again* and *Dismiss*
+  (`PendingAddChip.svelte`, `accept.pendingAddText`); the review sheet opens once the engine is
+  ready. The re-run dialog says how many items run first and is not locked while it waits. The chat
+  line says *Indexing: answers take longer* while the list runs.
+- **Found by driving it.** Removing a waiting file that was already in the running batch did not
+  stop it being read; fixed in `BatchView.checkpoint`, with a test.
+- **Not driven.** *Add to queue* and the engine-start chip need the desktop shell (the file picker,
+  and an engine that is still starting); they are covered by tests here and wait for the installed
+  build at A9.

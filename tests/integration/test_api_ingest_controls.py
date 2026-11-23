@@ -110,7 +110,12 @@ def test_pause_waits_for_the_document_in_flight_then_holds_until_resume() -> Non
         paused = _until(c, lambda b: b["control"] == "paused")
         assert paused["state"] == "running"  # still a run in flight: nothing else may start
         assert paused["counts"]["added"] == 1 and paused["counts"]["waiting"] == 3
-        assert c.post("/api/ingest").status_code == 409
+        # A8″: never refused. The folder joins the end of the list; a waiting item can be removed.
+        assert c.post("/api/ingest").status_code == 202
+        folder = [f for f in c.get("/api/ingest/files").json()["files"] if f["kind"] == "folder"]
+        assert len(folder) == 1 and folder[0]["state"] == "waiting"
+        assert c.delete(f"/api/ingest/items/{folder[0]['id']}").status_code == 200
+        assert c.delete(f"/api/ingest/items/{folder[0]['id']}").status_code == 409
 
         assert c.post("/api/ingest/resume").json()["control"] == "none"
         for _ in range(3):

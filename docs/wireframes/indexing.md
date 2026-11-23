@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-04 · class: living -->
+<!-- status: active · updated: 2026-11-23 (A8″: one list, and the status bar's states, approved) · class: living -->
 
 # Wireframe: the indexing screen
 
@@ -212,4 +212,107 @@ Roles are inferred from geometry, style and wording — a trailing `?` marks a l
   button "Resume" [resume] → screen "Indexing 14 of 30" [s2]   (arrow [f-resume])
   button "Stop" [stop] → screen "Stopped at 15 of 30" [s4]   (arrow [f-stop])
   button "Stop" [stop3] → screen "Stopped at 15 of 30" [s4]   (arrow [f-stop3])
+```
+
+## A8″: one list, and the status bar's states (approved 2026-11-23)
+
+Two screens added below the first row for session A8″ (`docs/specs/ingestion-queue.md`): the run
+in progress as **one list** that grows as papers are added or re-runs asked for, and the status
+bar's chip in each state with the chat line while indexing runs. Approved by the owner in chat on
+2026-11-23 with no markup on the canvas, at rev 6280. The four screens above are unchanged (all 226
+of their elements compared with the committed file). A first version drew a separate *Up next*
+card of jobs, and a stopped screen holding them until *Start*; the owner chose one list instead, so
+those are gone and the approved stopped screen (S4) stands for a Stop.
+
+**What the drawing decides.**
+
+- Papers added during a run join the end of the same list as *Waiting* rows, each with *Remove*;
+  a re-run is a row of its own (`survey-2024.pdf · Text & chunks`). The title and the status bar
+  count the whole list (*Indexing 14 of 33*).
+- *Add to queue* sits in the header of the running screen, before *Pause*.
+- The status bar's chip has three states: indexing (*Indexing… 14/33 done*, opens the screen),
+  *Waiting for the engine · 3 papers to add* while the engine starts (T-007), and *3 papers were not
+  added: the engine did not start* with *Try again* and *Dismiss*.
+- While indexing runs, the chat line says *Indexing: answers take longer* (decision 6).
+
+Score at rev 6280: `fallbacks 0 · inferred 0 · unnamedScreens 0 · orphans 0`, 6 screens, 237
+components; lint clean.
+
+```text
+### Screen 5 "Indexing 14 of 33"  [s5] rectangle 1160x820 · not approved yet
+  1. header  [s5-hdr] rectangle 1160x112 · fill #f8f7f3
+    1.1. heading "Indexing 14 of 33"  [s5-title] text 520x34 · 26px
+    1.2. text "From C:\Users\you\Documents\Papers · 3 added at…"  [s5-sub] text 540x20 · 13px
+    1.3. button "Add to queue"  [s5-add] rectangle 160x44 · fill #ffffff
+    1.4. button "Pause"  [s5-pause] rectangle 112x44 · fill #ffffff
+    1.5. button "Stop"  [s5-stop] rectangle 112x44 · fill #ffffff
+    1.6. button "Close"  [s5-close] rectangle 88x44 · fill #ffffff
+  2. progress "14 of 33 done"  [s5-bar] rectangle 1096x28 · fill #e9ecef
+  3. button "All 33"  [s5-f0] rectangle 96x40 · fill #4a3fa6
+  4. button "In progress 1"  [s5-f1] rectangle 136x40 · fill #ffffff
+  5. button "Waiting 18"  [s5-f2] rectangle 120x40 · fill #ffffff
+  6. button "Finished 12"  [s5-f3] rectangle 124x40 · fill #ffffff
+  7. button "Failed 2"  [s5-f4] rectangle 108x40 · fill #ffffff
+  8. text "Added papers join the end of this list; Pause a…"  [s5-when] text 468x18 · 12px
+  9. text "File"  [s5-col-file] text 400x20 · 12px
+  10. text "Status"  [s5-col-status] text 120x20 · 12px
+  11. text "What happened"  [s5-col-detail] text 460x20 · 12px
+  12. divider  [s5-col-rule] rectangle 1096x2 · fill #e5e1d8
+  13. list-item  [s5-row0] rectangle 1096x52 · fill #ffffff
+    13.1. text "attention-is-all-you-need.pdf"  [s5-row0-name] text 436x20 · 14px
+    13.2. text "Reading"  [s5-row0-st] rectangle 120x30 · fill #e4e1f5
+    13.3. text "Reading the text. Its passages are stored next."  [s5-row0-d] text 476x20 · 13px
+  14. list-item  [s5-row1] rectangle 1096x52 · fill #ffffff
+    14.1. text "scanned-report-1998.pdf"  [s5-row1-name] text 436x20 · 14px
+    14.2. text "Failed"  [s5-row1-st] rectangle 120x30 · fill #fbdcd8
+    14.3. text "No text found: this scan needs OCR."  [s5-row1-d] text 476x20 · 13px
+  15. list-item  [s5-row2] rectangle 1096x52 · fill #ffffff
+    15.1. text "chapter-03.epub"  [s5-row2-name] text 436x20 · 14px
+    15.2. text "Waiting"  [s5-row2-st] rectangle 120x30 · fill #f8f7f3
+  16. list-item  [s5-row3] rectangle 1096x52 · fill #ffffff
+    16.1. text "notes-on-retrieval.md"  [s5-row3-name] text 436x20 · 14px
+    16.2. text "Waiting"  [s5-row3-st] rectangle 120x30 · fill #f8f7f3
+  17. list-item  [s5-row4] rectangle 1096x52 · fill #ffffff
+    17.1. text "new-paper-1.pdf"  [s5-row4-name] text 436x20 · 14px
+    17.2. text "Waiting"  [s5-row4-st] rectangle 120x30 · fill #f8f7f3
+    17.3. text "Added at 14:02"  [s5-row4-d] text 360x20 · 13px
+    17.4. button "Remove"  [s5-row4-remove] rectangle 96x36 · fill #ffffff
+  18. list-item  [s5-row5] rectangle 1096x52 · fill #ffffff
+    18.1. text "new-paper-2.pdf"  [s5-row5-name] text 436x20 · 14px
+    18.2. text "Waiting"  [s5-row5-st] rectangle 120x30 · fill #f8f7f3
+    18.3. text "Added at 14:02"  [s5-row5-d] text 360x20 · 13px
+    18.4. button "Remove"  [s5-row5-remove] rectangle 96x36 · fill #ffffff
+  19. list-item  [s5-row6] rectangle 1096x52 · fill #ffffff
+    19.1. text "survey-2024.pdf · Text & chunks"  [s5-row6-name] text 436x20 · 14px
+    19.2. text "Waiting"  [s5-row6-st] rectangle 120x30 · fill #f8f7f3
+    19.3. text "Re-run, asked at 14:05"  [s5-row6-d] text 360x20 · 13px
+    19.4. button "Remove"  [s5-row6-remove] rectangle 96x36 · fill #ffffff
+  20. footer  [s5-ftr] rectangle 1160x92 · fill #f8f7f3
+    20.1. text "You can close this screen. Indexing keeps runni…"  [s5-ftr-t] text 1096x20 · 13px
+
+### Screen 6 "Status bar and chat line"  [s7] rectangle 1160x820 · not approved yet
+  1. heading "Status bar and chat line"  [s7-title] text 700x34 · 26px
+  2. text "The chip at the right of the status bar, in eac…"  [s7-sub] text 900x20 · 13px
+  3. card  [s7-c0] rectangle 1096x124 · fill #ffffff
+    3.1. text "While indexing runs: the count grows as papers …"  [s7-c0-cap] text 600x18 · 12px
+    3.2. button "Indexing… 14/33 done"  [s7-c0-chip] rectangle 420x40 · fill #e4e1f5
+    3.3. text "Opens the indexing screen, as today."  [s7-c0-note] text 600x20 · 13px
+  4. card  [s7-c1] rectangle 1096x124 · fill #ffffff
+    4.1. text "While the engine is starting (T-007)"  [s7-c1-cap] text 600x18 · 12px
+    4.2. button "Waiting for the engine · 3 papers to add"  [s7-c1-chip] rectangle 420x40 · fill #f8f7f3
+    4.3. text "Sent as soon as the engine is ready; they then …"  [s7-c1-note] text 600x20 · 13px
+  5. card  [s7-c2] rectangle 1096x124 · fill #ffffff
+    5.1. text "If the engine does not come up"  [s7-c2-cap] text 600x18 · 12px
+    5.2. button "3 papers were not added: the engine did not sta…"  [s7-c2-chip] rectangle 420x40 · fill #fbdcd8
+    5.3. text "The files are kept until you try again or dismi…"  [s7-c2-note] text 400x20 · 13px
+    5.4. button "Try again"  [s7-retry] rectangle 104x40 · fill #4a3fa6
+    5.5. button "Dismiss"  [s7-dismiss] rectangle 104x40 · fill #ffffff
+  6. card  [s7-chat] rectangle 1096x164 · fill #ffffff
+    6.1. text "The chat line while a job runs (decision 6)"  [s7-chat-cap] text 600x18 · 12px
+    6.2. card  [s7-chatline] rectangle 1064x44 · fill #f8f7f3
+      6.2.1. text "Research assistant · All documents (98)"  [s7-chatline-t] text 520x20 · 13px
+      6.2.2. text "Indexing: answers take longer"  [s7-chatline-n] text 456x20 · 13px
+    6.3. text "Shown only while a job runs, so the slower answ…"  [s7-chat-why] text 1000x40 · 13px
+### Navigation (the new one; the six above are unchanged)
+  button "Indexing… 14/33 done" [s7-c0-chip] → screen "Indexing 14 of 33" [s5]   (arrow [f-chip-s7])
 ```

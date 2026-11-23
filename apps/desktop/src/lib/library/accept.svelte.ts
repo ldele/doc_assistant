@@ -32,6 +32,11 @@ export const accept = $state({
   /** True while the OS picker is open, so the button can't be double-fired. */
   picking: false,
 
+  /** T-007 (A8″): the engine stalled while papers waited for it. The status bar then says they
+   *  were not added, with *Try again* and *Dismiss*; they are still staged, and still go through
+   *  if the engine answers, since the app keeps retrying it. */
+  engineGaveUp: false,
+
   /**
    * True while the entry dialog is open — the step between "Add documents" and the OS picker.
    *

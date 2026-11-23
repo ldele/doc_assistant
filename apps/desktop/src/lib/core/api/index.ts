@@ -43,6 +43,7 @@ export {
   getIngestStatus,
   rerunIngest,
   controlIngest,
+  removeIngestItem,
   getIngestFiles,
   getIngestPlan,
   startIngestNewOnly,

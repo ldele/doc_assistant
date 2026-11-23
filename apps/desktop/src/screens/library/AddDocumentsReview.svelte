@@ -340,9 +340,9 @@
         <button
           class="btn btn-danger"
           onclick={() => (confirmingUndo = true)}
-          disabled={undoing || indexing}
+          disabled={undoing}
           use:tooltip={indexing
-            ? 'Available when indexing finishes — undoing now would delete a file the indexer is reading.'
+            ? 'Take these files back out while they wait in the indexing list; once one is being read, it is refused'
             : 'Take every file this review added back out of the library, after you confirm'}
           type="button"
         >

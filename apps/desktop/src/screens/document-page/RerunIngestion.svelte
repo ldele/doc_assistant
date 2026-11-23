@@ -56,6 +56,10 @@
   const progress = $derived(fraction(status))
   const grouped = $derived(outcomesByDocument(status?.outcomes ?? []))
   const running = $derived(status?.state === 'running' || polling)
+  // A8″: a re-run asked while the list runs waits its turn there. Waiting, nothing is lost by
+  // closing this dialog, so it is not locked; it locks only while its own rows run.
+  const waitingBehind = $derived(status?.state === 'running' && !status.current ? (status.waiting_behind ?? 0) : 0)
+  const locked = $derived(running && waitingBehind === 0)
   const finished = $derived(status?.state === 'done' || status?.state === 'error')
 
   void load()
@@ -109,7 +113,7 @@
   }
 </script>
 
-<Dialog labelledby="reingest-title" width="36rem" height="86vh" locked={running} {onClose}>
+<Dialog labelledby="reingest-title" width="36rem" height="86vh" {locked} {onClose}>
   <h2 class="dialog-title" id="reingest-title">Re-run ingestion</h2>
   <p class="target" title={label}>{label}</p>
 
@@ -141,7 +145,7 @@
     </div>
   {:else if running}
     <p class="summary" role="status">
-      {#if status?.current}Re-running {status.current}{:else}Starting…{/if}
+      {#if status?.current}Re-running {status.current}{:else if waitingBehind > 0}Waiting in the indexing list: {waitingBehind} {waitingBehind === 1 ? 'item runs' : 'items run'} first. You can close this; it runs on its own.{:else}Starting…{/if}
     </p>
     <!-- `null` draws no bar at all. A bar pinned at zero claims "no progress"; not knowing the
          denominator yet is a different statement, and the ingest bar makes the same distinction. -->

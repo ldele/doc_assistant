@@ -357,15 +357,23 @@ def test_an_unknown_mode_is_a_422(client, tmp_path):
     assert r.status_code == 422
 
 
-def test_add_is_refused_while_an_ingest_is_running(client, tmp_path):
-    """Mirrors /api/ingest's own 409: adding mid-scan would race the registry."""
-    src = str(_write(tmp_path / "a.pdf", b"a"))
-    app = client.app
-    with app.state.ingest_lock:
-        app.state.ingest_status.state = "running"
+def test_add_is_accepted_while_an_ingest_is_running(client, tmp_path):
+    """A8″: an add copies its files now, and their indexing joins the end of the one list."""
+    import threading
+
+    release = threading.Event()
+
+    def slow(*, run, on_progress=None, files=None, scope=None):
+        run.begin([])
+        release.wait(5)
+        return {"added": 0, "skipped": 0, "error": 0}
+
+    client.app.state.ingest_fn = slow
     try:
-        assert client.post("/api/documents/add", json={"paths": [src]}).status_code == 409
-        assert client.post("/api/documents/undo-add", json={"rel_paths": []}).status_code == 409
+        assert client.post("/api/ingest").status_code == 202
+        src = str(_write(tmp_path / "a.pdf", b"a"))
+        r = client.post("/api/documents/add", json={"paths": [src]})
+        assert r.status_code == 200 and r.json()["added"], r.text
+        assert client.post("/api/documents/undo-add", json={"rel_paths": []}).status_code == 200
     finally:
-        with app.state.ingest_lock:
-            app.state.ingest_status.state = "idle"
+        release.set()

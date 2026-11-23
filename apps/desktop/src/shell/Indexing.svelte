@@ -10,7 +10,8 @@
   // numbers); the rows come from the files route, a page at a time, refreshed on each poll while
   // the screen is open.
 
-  import { getIngestFiles } from '../lib/core/api/sources'
+  import { getIngestFiles, removeIngestItem } from '../lib/core/api/sources'
+  import { canAccept, openChooser } from '../lib/library/accept.svelte'
   import {
     controlRun,
     fraction,
@@ -115,6 +116,19 @@
     confirmingStop = false
     void act(() => controlRun('stop'))
   }
+
+  // A8″: a waiting item can be taken out of the list; the next poll lists it gone.
+  function remove(f: IngestFile): void {
+    void act(async () => {
+      ingestRun.status = await removeIngestItem(f.id)
+      rows = rows.filter((r) => r.id !== f.id)
+    })
+  }
+
+  // A8″: papers added while the list runs join its end; the add flow is the usual one.
+  function addToQueue(): void {
+    openChooser()
+  }
 </script>
 
 <!-- A screen on the shared frame (shell/Dialog.svelte): it fades in, Esc closes it, Tab stays
@@ -128,6 +142,11 @@
       {/if}
     </div>
     <div class="actions">
+      {#if running && canAccept()}
+        <button class="btn" onclick={addToQueue} disabled={acting} use:tooltip={'Add papers: they join the end of this list'}>
+          <Icon name="plus" size={14} /> Add to queue
+        </button>
+      {/if}
       {#if running}
         <!-- Action roles (ADR-063): Resume carries the run on, so it is the primary; Pause holds it
              and removes nothing, so it is ordinary (it was amber before the roles). -->
@@ -231,12 +250,15 @@
         <span role="columnheader">Status</span>
         <span role="columnheader">What happened</span>
       </div>
-      {#each rows as f (f.path)}
+      {#each rows as f (f.id || f.path)}
         <div class="row" role="row">
-          <span class="name" role="cell" title={f.path}>{f.name}</span>
+          <span class="name" role="cell" title={f.kind === 'file' ? f.path : f.name}>{f.name}</span>
           <span role="cell"><span class="pill {f.state}">{FILE_STATE_LABEL[f.state]}</span></span>
           <span class="detail" class:err={f.state === 'failed'} role="cell">
-            {f.state === 'reading' ? READING_DETAIL : (f.detail ?? '')}
+            <span>{f.state === 'reading' && f.kind === 'file' ? READING_DETAIL : (f.detail ?? '')}</span>
+            {#if f.state === 'waiting' && running && f.id}
+              <button class="btn remove" onclick={() => remove(f)} disabled={acting} use:tooltip={'Take this out of the list before it starts'}>Remove</button>
+            {/if}
           </span>
         </div>
       {:else}
@@ -430,9 +452,19 @@
     border-color: var(--accent);
     color: var(--accent);
   }
-  .pill.added {
+  .pill.added,
+  .pill.done {
     border-color: var(--ok-border);
     color: var(--ok-fg);
+  }
+  .detail:has(.remove) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .remove {
+    flex: none;
   }
   .pill.failed {
     border-color: var(--danger);

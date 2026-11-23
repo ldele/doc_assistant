@@ -6,6 +6,7 @@
   // App.svelte writes. Ambient status, not navigation.
   import { shell } from '../lib/shell/shell.svelte'
   import IngestChip from './IngestChip.svelte'
+  import PendingAddChip from './PendingAddChip.svelte'
 </script>
 
 <div class="statusbar" role="status" aria-live="polite">
@@ -40,6 +41,7 @@
 
   <!-- Right-hand end of the same bar: a run in flight, when there is one. Renders nothing at all
        when idle, so the bar keeps its quiet resting state. -->
+  <PendingAddChip />
   <IngestChip />
 </div>
 

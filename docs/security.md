@@ -1,260 +1,324 @@
-<!-- status: active · updated: 2026-11-23 (A8′: the MCP path and A6's lookups reviewed against T6, S18-S24; S-10 and S-11 built, S-17 added); 2026-11-19 (S5's residual corrected against T6); 2026-11-17 (A4: the MCP endpoint served; floor check 11) · class: living -->
+<!-- status: active · updated: 2026-11-23 · class: living -->
 
-# Security — the threat model, the plan, the floor, and the periodic check
+# Security
 
-Provenote is a **local-only** desktop app: a Tauri window talking to a FastAPI sidecar on
-`127.0.0.1:8001`, reading the user's own documents, calling either the Anthropic API or a local
-Ollama. No server, no account, no second user. Most of the usual web threat model does not apply;
-a few things that usually do not matter here do. This file is the whole of the project's security
-record: what an attacker can be (§1), what already holds (§2), what is open (§3), **the plan — one
-step per session** (§4), the deterministic floor (§5), the **periodic full check and its log** (§6),
-what is deliberately not done (§7), and the shape cpc could standardise (§8).
+Provenote is a local-only desktop app: a Tauri window talking to its engine (FastAPI) on
+`127.0.0.1:8001`, reading the person's own documents and calling either the Anthropic API or a
+local Ollama. No server, no account, no second user. This file is the project's whole security
+record: who can attack it (§1), what holds (§2), what is open (§3), the order it is fixed in (§4),
+the checks that run without a person (§5), the periodic full check (§6), what is not done on
+purpose (§7), and what was fixed (§8).
 
-## 0 · How this file is worked
+## 0 · At a glance (2026-11-23)
 
-- **One step per session, not all at once** (user, 2026-09-10). §4 is an ordered list; the roadmap
-  row 60 names the current step. A step is sized to ride alongside a feature session: a small code
-  change, its test, one line here moving it to `done`. Nothing in §3 is fixed outside a step.
-- **The findings table (§3) is the backlog, the plan (§4) is the order.** A new finding gets a row
-  in §3 and a step in §4; a step that lands moves its row to `done` in §3 and §2 gains a line.
-- **When every step is done — or every six months, whichever first — the full check runs** (§6)
-  and its result is logged. The log is `.claude/REVIEWS.md` row 7 (append-only, states what was
-  *not* covered). That is the "standard log system": one place, one shape, the same as every other
-  review in the project.
-- **Before a release** the file is assumed stale: `docs/RELEASE.md` §0 refreshes it and
-  `release_preflight` fails if it has no commit since the previous tag.
+- **Open: 7 findings** (§3). Reachable from a web page: S15, four GET routes with a side effect
+  (T2). Supply chain: S16, S17, S25 (T5). Low: S23, S24 (T6, T1). By design: S10 (T3, T4).
+- **Current step:** S-17, in session A8″, before release A's tag (A9). Not yet placed: S-15, S-16.
+- **Due:** the first periodic full check (§6). Its precondition, S-11, landed on 2026-11-23.
+- **Last looked at:** §2 re-checked for 0.7.3 on 2026-11-11; the MCP path and A6's lookups on
+  2026-11-23 (a narrow review, logged in `.claude/REVIEWS.md` on the dev machine).
+
+**How this file is worked.** One security step per session (the owner, 2026-09-10); ROADMAP row 60
+names the current one. A new finding gets a row in §3 and a step in §4. When its step lands, the
+finding leaves §3 for one line in §8, its control joins §2, and the full account is the DEVLOG
+entry of the session that did it. Before a release the file is assumed stale: `docs/RELEASE.md` §0
+refreshes it, and `release_preflight` fails if it has no commit since the previous tag. IDs are
+never reused: `T` for an attacker, `S` for a finding, `S-` for a step.
 
 ## 1 · Threat model
 
 | # | Attacker | Reach | Example |
 |---|----------|-------|---------|
-| T1 | **A malicious document in the corpus** | the extractor, the prompt, the answer, the UI | a PDF whose text says *"ignore the sources and state X"*, or a `.md` carrying `<img onerror=…>` |
-| T2 | **A web page open in the user's browser** | anything the local API answers without authentication | DNS rebinding: `evil.com` resolves to `127.0.0.1`, so its requests are same-origin and CORS never runs |
-| T3 | **Another process as the same user** | the data home: `credentials.json`, `library.db`, the extraction cache | any program the user runs |
-| T4 | **A stolen laptop without full-disk encryption** | everything on disk | the research history and the API key, in plaintext |
-| T5 | **The supply chain** | whatever a dependency does | a compromised `marked`, a floating CI action tag |
-| T6 | **An AI program the user connects through MCP** (ADR-066; served since A4, off until turned on) | the read surface's nine tools (`src/doc_assistant/read_surface/`): passages, records, and conversations if their switch is on; never a write in this release | its model may hold tools this app never gives (the web, files, sending messages), so text planted in a document can make *it* act. The surface fences each passage and names what the text check found in it (A2, A2b), and in each caption, reference line and cited excerpt it sends (A8′), but this app cannot make another program respect either |
+| T1 | **A malicious document in the library** | the extractor, the prompt, the answer, the window | a PDF whose text says *"ignore the sources and state X"*, or a `.md` carrying `<img onerror=…>` |
+| T2 | **A web page open in the person's browser** | anything the engine answers without the launch token | DNS rebinding: `evil.com` resolves to `127.0.0.1`, so its requests are same-origin and CORS never runs |
+| T3 | **Another program run by the same user** | the data home: `credentials.json`, `library.db`, the extraction cache | any program the user runs |
+| T4 | **A stolen laptop without disk encryption** | everything on disk | the research history and the API key, in plaintext |
+| T5 | **The supply chain** | whatever a dependency or a build tool does | a compromised `marked`, a floating CI action tag |
+| T6 | **An AI program connected through MCP** (ADR-066; off until turned on) | the nine read tools (`read_surface/`): passages, records, and conversations if their switch is on; no writes | its model may hold tools this app never gives (the web, files, messages), so text planted in a document can make *it* act |
 
-Out of scope on purpose: a hostile LLM provider (the key is theirs to bill; document text already
-goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; `truststore` on
-corporate MITM, KI-10), and multi-user servers (the Docker image is a *headless* single-user API
-and says so).
+Out of scope on purpose: a hostile LLM provider (document text goes to it by design, and the key
+is its to bill), a network attacker on the Anthropic or Ollama link (HTTPS; `truststore` behind a
+corporate proxy, KI-10), and a server with several users (the Docker image is a headless
+single-user API and says so).
 
-## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20, for 0.7.2 on 2026-11-04 and for 0.7.3 on 2026-11-11 — keep it that way)
+## 2 · What holds
 
-- **Bind is loopback.** `apps/api/__main__.py` defaults `DOC_API_HOST` to `127.0.0.1` with the reason
-  in a comment; the compose file publishes `127.0.0.1:8001:8001`.
-- **No code-execution or deserialisation primitive anywhere.** Zero hits for `pickle`, `torch.load`,
-  `trust_remote_code`, `yaml.load`, `eval`, `exec`, `shell=True`, `os.system` across `src/`, `apps/`,
-  `scripts/`, `tools/`. Every `subprocess` call is list-form argv.
-- **No SQL from user input.** f-string SQL is built only from constants and placeholders: DDL and one
-  `INSERT…SELECT` over hardcoded migration tables (`db/migrations.py`); FTS5 quotes every token as a string literal and parameterises the scope
-  clause (`sparse_index.py`); Chroma filters are structured dicts.
-- **Path validation on the selective-ingest route is the model for the others** —
-  `ingest/registry.py` rejects absolute paths, `..`, unknown suffixes and unknown keys by name,
-  normalises backslashes first, and splits the composite key *before* validating. It has tests.
-- **The Tauri capability set is minimal:** `core:default` and `dialog:allow-open`; since KI-73
-  the window cannot run anything (the shell starts the backend from Rust, by path). Since
-  2026-11-06 also four window commands for the app's own title bar on Windows (ADR-065):
-  `core:window:allow-start-dragging`, `-minimize`, `-toggle-maximize` and `-close`. They move,
-  minimise, maximise or restore, and close the window, and read nothing; injected markup could at
-  worst close or move it, and the CSP and DOMPurify keep injected script from running at all.
-  No `fs`, no `http`, no `shell:allow-open`, no remote IPC, no updater (ADR-044). CSP is set:
-  `default-src 'self'`, network only to the sidecar. **Pinned by
-  `tests/unit/test_desktop_security_config.py`.**
-- **Model output is sanitised before it becomes HTML** (since 2026-09-17, S-3): DOMPurify on the
-  one `{@html}` in `Markdown.svelte`, and the dev server sends the production CSP (plus inline
-  styles, the HMR socket and Tauri IPC — never script). **Pinned by the same test file and
-  `apps/desktop/src/lib/core/devCsp.test.ts`.**
-- **The CSP also closes forms, base URLs and plugins** (S-4, 2026-09-20): `form-action 'none';
-  base-uri 'none'; object-src 'none'` in `tauri.conf.json`, asserted by the same test file.
-- **The API answers only its own host** (S-5, 2026-09-30): `TrustedHostMiddleware` serves
-  `127.0.0.1` and `localhost` unless `DOC_API_ALLOWED_HOSTS` says otherwise, so a page cannot
-  rebind a name to the loopback port and become same-origin (`apps/api/main.py`).
-- **A write needs the token the app was started with** (S-6, 2026-10-17): every method but GET,
-  HEAD and OPTIONS answers 401 without `X-Doc-Api-Token` when the shell has set `DOC_API_TOKEN`
-  (`apps/api/launch_token.py`). It is a rule by method, not a list of routes, so the write routes
-  added since — definitions, taxonomy proposals, keyword forms — are covered without a line each.
-  It holds only while no GET has a side effect, and three have one (S15).
-- **0.7.2's new routes and shell commands, checked 2026-11-04.** The writes (`/api/ingest/pause`,
-  `/resume`, `/stop`; `POST /api/ingest` with `rerun` or `only_new`) are POSTs under S-6, and the
-  re-runs take their files from the server's own record, never from the request. The new GETs
-  (`/api/ingest/files`, `/api/ingest/plan`) read state and stat files; they write nothing and call
-  nothing out (S15 stays at three). `POST /api/libraries/inspect` reads any folder it is given,
-  read-only through SQLite's URI mode, and answers counts and sentences, not file contents. The
-  shell's `library_state` reads its own setting; `open_library` accepts only a folder holding
-  `library.db` and restarts the backend there, which is the point of ADR-061: what the window may
-  ask, the user can click. Every write or served file through a stored path is now confined to the
-  open library (S-7, below). The provider routes (ADR-060, `routers/setup.py`) add no GET: keys,
-  servers, the billing tick and the model list are POSTs or DELETEs under S-6; the model list is a
-  POST because it sends a stored key out, and a key goes only to the address it was saved with.
-- **0.7.3's changes, checked 2026-11-11.** One new route, `GET /api/library/summary`, and an
-  optional `issue` / `folder_id` filter on `GET /api/library/documents`: both read SQLite and the
-  registry as they stand, write nothing and call nothing out (S15 stays at three). An unhandled
-  engine error now answers a 500 from inside CORS (`apps/api/server_errors.py`), so the window can
-  read it: the body is Starlette's fixed text, never a traceback, and only the listed origins can
-  read it, as for every other answer. The shared hover text is set with `textContent`
-  (`lib/shell/tooltip.ts`), so `Markdown.svelte` keeps the one `{@html}`. Index-time metadata is the
-  deterministic extractor over the document's own text, shown as text. No dependency was added to
-  any shipped tree (`oauthlib` 4.0.1 is dev and CI only); the window's four new permissions are the
-  title-bar line above.
-- **The installer's reach outside its own folder is one process name and one folder test** (KI-80,
-  2026-10-31): `src-tauri/nsis/hooks.nsh` ends `doc-assistant-api.exe` and, in `%TEMP%`, deletes a
-  `_MEI*` folder only if it holds our reranker model, since every PyInstaller program uses that
-  name. It takes no input and runs after the app check.
-  `test_the_installer_clears_what_an_older_engine_left` pins the guard.
-- **Secrets.** `.env` is ignored and was never committed; `credentials.py` is the single disk path
-  for an in-app key, masked to four characters in logs and in `/api/setup`; no route echoes a key;
-  `detect-secrets` runs in pre-commit on the staged files, and in CI over every tracked file as a
-  gate that fails on a secret the committed baseline does not record (since 2026-10-01, S-13:
-  `scripts/secret_scan_gate.py` — the CI step before it recorded a new finding and passed). Both
-  run the scanner in Python's UTF-8 mode (S-14, same day): in the Windows default encoding it
-  skipped 47 of 838 tracked files without a message.
-- **The LLM proposes, never writes** — verified in code: every site that parses LLM JSON coerces
-  into a validated structure; no LLM output becomes a path, a URL, a shell argument or SQL.
-- **Logs go to stderr only**, never to a file; no query, answer or document text is logged.
-- **Pins:** `uv.lock` + `uv sync --locked`, `package-lock.json` + `npm ci`, `Cargo.lock`; Docker base
-  tags pinned with a reason; the frozen build runs with `HF_HUB_OFFLINE=1` and bundled weights.
-- **The gates cover the boundary, except `scripts/`** (since 2026-09-10; corrected 2026-11-02). In CI,
-  ruff runs on `src/`, `tests/`, `apps/` and `scripts/`, and mypy and bandit on `src/` and `apps/`. In
-  pre-commit, ruff runs on the same four only when a `src/` or `tests/` file is staged, and mypy and
-  bandit on `src/` only. `scripts/` is not type-checked or SAST-scanned (297 mypy errors and one
-  Medium bandit finding on 2026-11-02; S-10). `npm audit --audit-level=high` runs in CI.
-- **An unreviewed advisory fails CI** (S-8, 2026-09-30): `scripts/pip_audit_gate.py`, every ignore
-  in `pip-audit-ignore.toml` with its reason. It fires on advisories published between pushes —
-  twice on 2026-10-20 alone (`aiohttp`, then `certifi`), each fixed by a lock bump the same day.
-- **CI's actions are pinned to commits** (S-12, 2026-10-18): each `uses:` names a SHA with its
-  release in a comment, Dependabot proposes updates for actions only, and
-  `tests/unit/test_ci_actions_pinned.py` fails on a tag.
+Each line is a control as it stands, with the test that pins it where one exists.
 
-## 3 · Findings — the backlog, ranked by reach under this model
+**The engine's API (T2)**
 
-| # | Finding | Where | Why it matters here | Step |
-|---|---------|-------|---------------------|------|
-| S1 | **No request authentication on the local API** — CORS is the only origin control, and DNS rebinding (T2) bypasses CORS entirely | `apps/api/main.py` | chained with S3, a web page can copy any readable file into the library, index it, and read the chunks back | S-5 (**rebinding closed 2026-09-30**), S-6 (**writes need the launch token, 2026-10-17**) |
-| S2 | **LLM output is rendered as raw HTML** — `marked.parse` → `{@html}`, no sanitiser; `marked` ≥ 14 no longer filters `javascript:` | `apps/desktop/src/screens/chat/Markdown.svelte` | T1: a quoted passage carries markup into the DOM. The CSP contains it in the packaged app; the dev loop had **no CSP** — Tauri injects it only into assets it serves, and `tauri dev` loads the Vite server directly (**fixed 2026-09-17**, S-3: the dev server sends it). Residual after S-3 was `<form action>` / `<a href>` exfil and UI spoofing, since `form-action`, `base-uri` and `object-src` do not inherit from `default-src` — all three now `'none'` (**S-4, 2026-09-20**). What is left is `<a href>`: DOMPurify keeps links, and a click is the user's. Since 2026-11-16 (A2) an answer's web link stays a link only when an unmarked passage carries its address; any other shows as text | S-3 **done 2026-09-17**, S-4 **done 2026-09-20** |
-| S3 | **`POST /api/documents/inspect` and `/add` accept arbitrary absolute paths** (by design — the picker sends them), and `inspect` walks a directory with no count/size cap | `apps/api/routers/sources.py` · `library/add.py` | with S1 this is the exfil path; alone it is an unbounded walk + hash of `C:\` on a request thread | walk cap **done 2026-09-16** (S-2: 50,000 files, 400 with a sentence, `/add` too); the arbitrary-path half closed by S-6 (2026-10-17): both are POSTs, so a page cannot call them without the launch token |
-| S4 | ~~**No size / page / archive-entry cap on ingest**~~ — EPUB, DOCX, ODT are zip archives opened with no decompressed-size accounting | `extractors.py` | T1: a zip bomb in the corpus is unbounded memory; the cheapest local DoS | **done 2026-09-16** (S-1) — residual: no page cap, and a central directory of millions of entries is bounded only by the 1 GB file cap |
-| S5 | ~~**Document text enters the prompt with no data/instruction boundary**~~ | `prompts.py` · `pipeline.py` · `source_checks.py` | T1: *"ignore prior instructions"* inside a passage reads like evidence. The fence (S-9) is in, but it does not stop small local models obeying planted text (A2: 18 and 19 of 24 hostile runs held, as before it). So the defence is checks that hold on any model: a passage written to an AI is marked in the answer, and an answer's web link is clickable only when an unmarked passage carries it. Since A2b the same check runs once per document after extraction, so the Library's Summary and the document page show a marked document before any question. Residual: an obeyed instruction can still change what the answer *says* (a language switch, a false claim repeated from its source); on the MCP path (T6) the read surface fences each passage and names what the text check found in it, as the chat does (A3), but another app's model, maybe with tools, is free to ignore both | S-9 **done 2026-11-16** |
-| S6 | ~~**`pip-audit` cannot fail CI** (`continue-on-error`); 66 advisories / 16 packages on 2026-09-07~~ | `.github/workflows/ci.yml` | — | **done 2026-09-30** (S-8): 59 across 18 → 5 across 2, each reviewed in `pip-audit-ignore.toml` |
-| S7 | ~~`apps/` outside every gate~~ | `ci.yml`, `.pre-commit-config.yaml` | — | **done 2026-09-10** |
-| S8 | **No Dependabot, no CodeQL; CI actions float on major tags**; `npm audit` was missing | `.github/` | T5 | `npm audit` **done 2026-09-10**; the rest S-12 (done 2026-10-18; CodeQL not part of it) |
-| S9 | **The source viewer opens whatever `source_original` says**, no root containment; so do *reveal* and *delete* through `resolve_source_path`, and two siblings act on stored paths unchecked: `purge_document_record` unlinks the stored `source_cache`, and `/api/figures/{id}` serves a stored image path (widened 2026-11-02) | `library/documents.py` · `source_view.py` · `routers/chat.py` | composes with S3: any row is a readable file. A reference-mode add registers the file's folder as a root (`library/add.py`), so a root check alone does not stop a row added that way; the launch token is what closes S3. Opening a library indexed elsewhere (0.7.2 piece 5) makes foreign paths the normal case | S-7, widened |
-| S10 | **Plaintext at rest** — `credentials.json` (best-effort `chmod`, a no-op on Windows), the conversation store, the extraction cache | data home | T3/T4 — a design choice for a local-first app | ADR-011 v2 (ROADMAP 64); README says "use disk encryption" |
-| S11 | Small: history export to a fixed temp name · `explorer` via `PATH` · `withGlobalTauri: true` · absolute paths logged at INFO · model downloads not pinned to a `revision` | various | low | S-10 |
-| S12 | **Nothing in the app log says "a security control fired"** — a refused host, a rejected path, a cap hit are silent (a refused launch token is the one exception: `security_token_refused`, S-6), so the periodic check (§6) cannot read them | `logging_config.py` + each control | the check has nothing to look at except the code | S-11 |
-| S13 | ~~**CI's secret scan cannot fail**~~ (found 2026-09-30, with S-8): `detect-secrets scan --baseline .secrets.baseline` rescans and **writes the new finding into the baseline, exiting 0** — reproduced on a scratch repository with a planted AWS key (3 findings absorbed, exit 0), where the pre-commit `detect-secrets-hook` exits 1. Only the local hook gated, so a secret that arrived without it (`--no-verify`, the web editor, a box without hooks) passed CI | `.github/workflows/ci.yml` | T1/T5: the one control that keeps a key out of a public repository, present in CI in name only — S6's shape | **done 2026-10-01** (S-13): `scripts/secret_scan_gate.py` fails on a secret the baseline does not record |
-| S14 | ~~**On Windows the secret scanner skipped every file it could not decode as cp1252**~~ (found 2026-10-01 by S-13's first CI run): `detect-secrets` opens a file in the platform's default encoding and treats a decode error as "binary, skip". A UTF-8 file with one byte cp1252 does not define — a curly closing quote is enough — was skipped whole, with no message: 47 of 838 tracked files, 28 of them code or tests (`App.svelte`, three files under `src/`). The local hook and a local run of the gate were blind to them; CI on Linux read them and reported three findings the Windows scan had never seen, all false positives | `.pre-commit-config.yaml` · `scripts/secret_scan_gate.py` | T1/T5: a key in one of those files passed the only check that runs before a push, and CI sees it after it is public | **done 2026-10-01** (S-14): both run the scanner with `python -X utf8` |
-| S15 | **A GET with a side effect escapes the launch token** (found 2026-11-02): S-6 is a rule by method, so it holds only while no GET writes or calls out. Three do, none billing: `GET /api/sources` commits registry upserts and walks every root; `GET /api/updates` calls GitHub and writes `settings.json` when the user opted in and a check is due; `GET /api/setup` probes `OLLAMA_HOST`. The model-list call, which sends a stored key out, was made a POST before it shipped (ADR-060) | `routers/sources.py` · `routers/updates.py` · `routers/setup.py` | T2: a web page can trigger a GET, for example with an image tag, without reading the answer | S-11's floor test (2026-11-23) holds every other GET to no writes and no call-outs, and found a fourth: `GET /api/ingest/plan` commits registry rows as `/api/sources` does. The four are listed in `tests/integration/test_get_routes_have_no_side_effects.py`, a list that can only shrink: S-17 |
-| S16 | **Two shipped trees are audited by nothing** (found 2026-11-02): `Cargo.lock` (445 crates) and the `packaging` extra that builds the sidecar exe (PyInstaller, its hooks, `pefile`, `altgraph`, `pywin32-ctypes`), outside CI's `--extra cpu --extra dev` | `.github/workflows/ci.yml` | T5: the bootloader and hooks go into the installer | S-16 |
-| S17 | **CI's uv floats, and the workflow has no `permissions:` block** (found 2026-11-02): `setup-uv` is pinned to a commit but installs `version: "latest"`, while the Docker image pins its uv | `.github/workflows/ci.yml` | T5, small | S-15 |
+- **It binds to loopback.** `DOC_API_HOST` defaults to `127.0.0.1` (`apps/api/__main__.py`); the
+  compose file publishes `127.0.0.1:8001:8001`.
+- **It answers only its own host names** (S-5). A foreign `Host` gets 400 and logs
+  `security_host_refused` (`apps/api/host_guard.py`); a blank `DOC_API_ALLOWED_HOSTS` means
+  loopback, never any host. `test_api_host_guard.py`.
+- **A write needs the launch token** (S-6). The shell mints 32 random bytes per launch and hands them
+  to the engine and the window; every POST, PUT, PATCH and DELETE without `X-Doc-Api-Token` gets
+  401, logged as `security_token_refused`. A rule by method, so a new write route is covered
+  without a line of its own. Unset (the suite, `just api`, the headless image), nothing is checked;
+  a token already in the shell's environment is used, so the RG-012 harness can send one.
+  `test_api_launch_token.py`. It holds only while no GET has a side effect, and four have one (S15).
+- **Routes that reach outside data stay narrow.** `POST /api/libraries/inspect` opens a folder's
+  database read-only (SQLite URI mode) and answers counts, never contents. A re-run takes its files
+  from the engine's own record, never from the request. The model-list call is a POST because it
+  sends a stored key, and a key goes only to the address it was saved with (ADR-060).
+- **An unhandled error is a fixed sentence.** The 500 is answered inside CORS
+  (`apps/api/server_errors.py`) with Starlette's fixed text, never a traceback.
 
-| S18 | ~~**A text re-run left the old passages in the running engine's keyword index**~~ (A8′, 2026-11-23): the stores dropped the superseded chunks, but the index the engine opened at launch kept them and lacked the new ones until a relaunch, so a search, in the chat or over MCP, could serve the old passage as current | `apps/api/routers/library/documents.py` · `reingest.py` | T6 and every answer: a corrected document went on being quoted as it was | **done 2026-11-23**: the run reports the hashes it replaced; the engine forgets them at once and reloads, as after an ingest (`tests/integration/test_read_surface_evidence.py`) |
-| S19 | ~~**A passage id named a position, not a text**~~ (A8′): `{document}:p{n}` names the n-th block, so once a document is read again an id a client held names other text, and `get_passage` returned it as the passage asked for | `read_surface/search.py` | T6: a client's model quotes text the document no longer holds, or never held at that place | **done 2026-11-23**: ids handed out carry the text's version (`…@{hash}`), and an older version finds nothing. Residual: an id without a version (the chat's own keys, a definition's `passage_id`) still resolves by position |
-| S20 | ~~**Two documents that share a file name merged in an answer's passages**~~ (A8′, case 2): the parent-child dedup keyed on the file name, so the second document's passage was dropped | `pipeline.py` | every answer: two sources that disagree read as one; a Zotero library holds many same-named files | **done 2026-11-23**: keyed on the text's hash; the shipped path is unchanged where names differ |
-| S21 | ~~**A chunk's stored cache path was read without S-7's rule**~~ (A8′): `get_passage`, the chat's passage-in-context and the page lookup read the `source_cache` a chunk carries, which in a copied library names the original's file | `library/chunks.py` · `library/source_view.py` | S9's shape: a stored path read where it does not belong | **done 2026-11-23**: both go through `stored_paths.confine` |
-| S22 | ~~**The MCP endpoint answered a wrongly typed argument with a server error**~~ (A8′): only a `TypeError` was caught, so `question: 5` and the like escaped as a 500, and a tool's own failure could carry its message out | `mcp_server.py` | T6: a client's model learns nothing it can act on; an error's text can name a path | **done 2026-11-23**: arguments are checked against each tool's schema (a JSON-RPC error names the argument); a failing tool answers `isError` with no message, logged as `mcp_call_failed` |
-| S23 | **Document text outside the fence reaches a client's model** (A8′): captions, reference lines and cited excerpts were sent without the text check; titles and authors are extracted text too (KI-89) | `read_surface/records.py` · `conversations.py` | T6: text planted in a caption reads like any other field | captions, references and excerpts carry `addressed_to_ai` and every tool description says such text is material, not instructions (**2026-11-23**); titles and authors are not checked: open, low, with B2 (metadata, KI-89) |
-| S24 | **A record answer (A6) puts document metadata into the chat as Markdown, unescaped** (A8′): a title or author string with Markdown in it renders as formatting | `record_lookups.py` | T1, low: links in a record answer already show as text (it carries no sourced links, S5) and the CSP blocks remote images, so what is left is formatting that could imitate the app | open, low: escape the values; owner release B, with B2 |
+**The window (T1)**
 
-## 4 · The plan — one step per session, in this order
+- **The CSP lets in only the app and its engine.** `default-src 'self'`, network to the engine
+  only, and `form-action`, `base-uri` and `object-src` set to `'none'` (S-3, S-4). The dev server
+  sends the same policy (`devCsp.ts`), since `tauri dev` loads Vite directly and Tauri adds the
+  policy only to what it serves. `test_desktop_security_config.py`, `devCsp.test.ts`.
+- **Model output is sanitised before it becomes HTML.** DOMPurify on the one `{@html}`
+  (`Markdown.svelte`), with `style` and form controls forbidden; the shared tooltip sets
+  `textContent`.
+- **A link in an answer is clickable only when a passage vouches for it.** A web link stays a link
+  only when an unmarked passage the answer was given carries its address; any other shows as text
+  (A2, `links.test.ts`). A record answer (A6) carries no such passage, so its links show as text.
+- **The window can do little natively.** Its capabilities are `core:default`, `dialog:allow-open`
+  and four title-bar commands (drag, minimise, maximise, close; ADR-065): no file system, network,
+  shell, remote IPC or updater (ADR-044). The engine is started from Rust by path, so the window
+  runs nothing (KI-73). The app's own commands are `api_token` (the launch token, which the window
+  needs), `library_state` (reads its setting) and `open_library` (only a folder holding
+  `library.db`, ADR-061). Pinned by `test_desktop_security_config.py`.
 
-Each step is one session's security slot. `Done when` is the test that lands with it. The roadmap
-row 60 names the current step; the DEVLOG entry of the session that does it is the record.
+**Documents and stored paths (T1, T3)**
 
-| Step | What | Size | Done when | Status |
-|------|------|------|-----------|--------|
-| **S-1** | **Ingest size caps** (S4): a byte cap in `get_format_status`; a compressed/uncompressed ratio check before EPUB/DOCX/ODT are opened; the refusal is a sentence in the add review sheet, not a crash | small | a file over the cap and a synthetic zip bomb are each refused by name in a test; the walkthrough §1 gains the row | **done 2026-09-16** — `extractors.ingest_refusal`, checked in `get_format_status` and before extraction in `load_or_extract`; `tests/unit/test_ingest_size_caps.py` (12, incl. the zipfile truncation the cap relies on) |
-| S-2 | **Walk cap on `inspect`** (S3): `expand_paths` stops at N files / M bytes and returns 400 naming the cap | small | a test with N+1 files gets the 400 and the message names N | **done 2026-09-16** — N = `MAX_ADD_FILES` 50,000 (5× the 10k contract; `DOC_MAX_ADD_FILES`), counted while walking; `/add` refuses a longer path list. **No M:** `inspect` barely reads contents and S-1 caps each file. `GET /api/documents/accepts` serves the limits so the uploader states them |
-| S-3 | **Sanitise the one `{@html}`** (S2): `DOMPurify.sanitize` before `{@html}` in `Markdown.svelte`; give the dev loop the production CSP | small (one dep, one line) | a `.md` document carrying `<img onerror>` and `[x](javascript:…)` renders as inert text in dev **and** in the installed build; walkthrough §3 gains the row | **done 2026-09-17** — DOMPurify with `style`/form controls forbidden; verified live in dev (all five payloads removed, the policy alone blocks an inline handler). **The plan's `devCsp` was a no-op:** on desktop Tauri injects the policy only into assets it serves, and `tauri dev` loads `devUrl` directly (Tauri 2.11.3 `manager/mod.rs`), so the Vite server sends a header built from the production string (`src/lib/core/devCsp.ts`). The installed build and the Tauri dev window are walkthrough rows |
-| S-4 | **CSP residual** (S2): append `form-action 'none'; base-uri 'none'; object-src 'none'`; extend `test_desktop_security_config.py` | small | the test asserts the three directives; the installed build still loads pages and figures | **done 2026-09-20** — the three directives are in `tauri.conf.json`, so the dev server derives them too (`devCsp` copies every production directive); `test_csp_closes_the_directives_that_do_not_inherit`. The app has no `<form>`, `<base>` or `<object>`/`<embed>` to lose. Checked live in the dev window: the library and a document detail render, a figure still loads from the sidecar (`img-src` untouched), and each new directive bites — a form submit is refused (`securitypolicyviolation: form-action`, the page stays), an injected `<base href>` leaves `document.baseURI` at the app origin, an `<object>` renders nothing. The installed build is a walkthrough row |
-| S-5 | **Host guard** (S1a): `TrustedHostMiddleware` with `DOC_API_ALLOWED_HOSTS` defaulting to `127.0.0.1,localhost`; Docker sets its own | small | `create_app` returns 400 to a foreign `Host` in a test; the desktop still works | **done 2026-09-30** — `TrustedHostMiddleware`, added last so it runs first; a blank setting means loopback, never "any host" (`tests/integration/test_api_host_guard.py`); the suite's `TestClient` is allowed its `testserver` host by a `tests/conftest.py` fixture. Checked live: the running API answers a foreign `Host` with 400 ("Invalid host header") and `127.0.0.1` / `localhost` with 200, and the desktop dev app loads through it. Docker's healthcheck (`localhost`) and compose (`127.0.0.1`, now set explicitly) are on the list |
-| S-6 | **Launch token** (S1b): the Tauri shell mints a random token, passes it to the sidecar via env, the frontend sends it in a header; mutating routes require it | medium — touches `lib.rs`, `__main__.py`, `core/api`, one dependency | a request without the header gets 401 on `/add`, `/ingest`, `DELETE`; the walkthrough still passes | **done 2026-10-17** — the shell mints 32 random bytes per launch (`getrandom`, already in the lock), passes them as `DOC_API_TOKEN` to the sidecar and through the `api_token` command to the window; every POST, PUT, PATCH and DELETE without `X-Doc-Api-Token` gets 401, reads stay open, and the 401 carries CORS headers so the window can read it (`apps/api/launch_token.py`, `tests/integration/test_api_launch_token.py`; the domain clients call `apiFetch`). Unset, nothing is checked (`just api`, the suite, the headless image). A token already in the shell's environment is used instead, so the RG-012 harness sets one and sends it. Checked live in `tauri dev`: with no token the app runs as before; with one preset on both sides a POST without the header gets 401 from the window and from outside, and the app's own write succeeds. The installed build is a walkthrough row |
-| S-7 | **Source-viewer containment** (S9): refuse to open a `source_original` under no registered `SourceRoot` | small | a test with a row pointing outside every root gets the "unavailable" sentence, not the file | **done 2026-11-04** (0.7.2 piece 5, ADR-061 choice 4), widened to S9's siblings as planned: one rule, `doc_assistant/stored_paths.py`, gives back a stored path only where that kind of file belongs (a cache file under the library's cache folder, a figure image under its figures folder, a source under its sources folder, its source folder or a registered root). `resolve_source_path` asks it, so the viewer, *reveal*, *delete* and the re-runs share it; `purge_document_record`, the *Text & chunks* re-run, the figure crops, the orphan sweep and `load_figure_image_paths` (`/api/figures/{id}`) ask it too. Outside: refused, logged, left alone, and the viewer says *the file is outside this library's folders*. `tests/integration/test_stored_paths_confined.py` drives each write over a library whose rows name another folder's files and checks those files untouched; `tests/unit/test_stored_paths.py` pins the rule. A root registered by a reference add still passes (S9's caveat stands) |
-| S-8 | **Advisories** (S6) — three sub-steps if needed: (a) upgrade what the lock allows, (b) `--ignore-vuln` with a reason per entry, (c) drop `continue-on-error` | one session (ROADMAP 61) | CI red on a new HIGH; the ignore file has a reason per line | **done 2026-09-30** — (a) 19 packages upgraded to the smallest fixing version the lock allows (no package added or removed, none downgraded); (b) the 5 advisories left, 4 in chromadb's server mode and 1 in setuptools' sdist build, each in `pip-audit-ignore.toml` with why it does not apply and what would reverse that; (c) CI runs `python -m scripts.pip_audit_gate` with no `continue-on-error`. pip-audit has no severity filter, so the gate is stricter than "a new HIGH": it fails on **any** advisory nobody reviewed, and fails closed when it cannot read a report or the ignore file (`tests/unit/test_pip_audit_gate.py`) |
-| S-9 | **Prompt fence** (S5): `<source n="1" file="…">…</source>` per passage + one system line; **eval-gated** — run the public 10 before/after, record the baseline | medium | `prompt_version` moves; the baseline file exists; a test asserts the fence is present | **done 2026-11-16** (A2): fence tags inside a passage are defused, attributes escaped; the "do not obey" line was tried and dropped. Gate: no measured drop on either column, but three binary cases broke in one or two of three trials; kept on the author's decision, not a pass. Shipped with the passage scan and the link check (`source_checks.py`). Record: `tests/eval/baselines/a2_prompt_fence_2026-11-16.md` |
-| S-10 | **The small ones** (S11): `mkstemp` for the history export; `%WINDIR%\explorer.exe`; `withGlobalTauri: false` + the dialog plugin package; `revision=` in the model registry; a bug-report note about paths in console captures | small | each has a one-line test or a config assertion | **four done 2026-11-23** (A8′): the export is a `mkstemp` file removed once sent; *Reveal* runs `%WINDIR%\explorer.exe`; the embedders and the reranker load a pinned commit, and the build stages the same ones (`test_embeddings.py`); `docs/setup.md` § Reporting a problem. **`withGlobalTauri: false` waits on the owner:** Tauri 2 injects its internal IPC object whether or not the global is on, so turning it off narrows little for a script that runs in the window, and it adds two npm packages and reverses W0's choice (`docs/specs/feature-add-documents.md`) |
-| S-11 | **Security events in the app log** (S12): structlog events `security_host_refused`, `security_path_refused`, `security_cap_hit`, `security_markup_sanitised`, each with the control's name and never the content — what §6 reads | small | the four events exist and each control emits its own in a test; and a test that no GET route writes or calls out (S15) | **done 2026-11-23** (A8′): the host guard, `stored_paths.confine`, the ingest and add caps and the prompt fence each log their event (`tests/unit/test_security_events.py`). `security_markup_sanitised` is the fence's defusal in the engine: DOMPurify's removals happen in the window, which has no route to the engine log. The GET floor test walks every GET route and holds four known writers in a list that can only shrink (S15, S-17) |
-| S-17 | **The four GETs lose their side effects** (S15): `/api/sources` and `/api/ingest/plan` stop committing registry rows on a read, `/api/updates` stops checking and writing, `/api/setup` stops probing — each by a POST the window calls, or by reading what is stored | medium — routes, the window's clients and their types | the floor test's `KNOWN` list is empty | planned (A8′, 2026-11-23): before A9, as A8″'s security slot (the owner, 2026-11-23) |
-| S-12 | **Dependabot (pip · npm · cargo · actions) + SHA-pinned actions** (S8) | config only | bot PRs arrive; `uses:` lines are SHAs | **decided 2026-10-18** (user, release checkpoint): every `uses:` pinned to a SHA with its version in a comment, and `.github/dependabot.yml` for `github-actions` only, monthly, so the pins stay current — before 0.7.0. No pip / npm / cargo update PRs: upgrades stay in sessions and the audit gate catches advisories. Dependabot **alerts** are turned on by the user in the GitHub settings (no PRs); read back with `gh api repos/{owner}/{repo}/vulnerability-alerts` (204 = on). **Done 2026-10-18** (`71b3903`): the 7 `uses:` lines pinned, each to the commit its major tag pointed at that day (nothing CI ran changed); `tests/unit/test_ci_actions_pinned.py` fails on a tag. Bot PRs arrived within a minute of the push — five, one per action, each a new major (PRs 13–17), the user's to review. **Alerts:** off when read back the same day (404) |
-| S-13 | **A secret scan CI can fail** (S13): run `detect-secrets-hook --baseline .secrets.baseline` over the tracked files (or fail on `git diff --exit-code .secrets.baseline` after the scan) | small | a planted fake key in a scratch repository fails the CI command; the real tree still passes | **done 2026-10-01** — CI runs `python -m scripts.secret_scan_gate`: the hook over every tracked file, against a temporary copy of the baseline, so it fails on a secret the baseline does not record and never rewrites the tracked file. It runs with `--no-verify` (no network call; a candidate key is kept, not dropped as "not live"), prints a finding's type and location and never its value, and exits 2 when it could not look (no baseline, no file list, a hook that broke). In a scratch repository a planted example key fails it and the command CI ran before passes the same key (`tests/unit/test_secret_scan_gate.py`, 24 — one reads the hook's own parser to pin that `--no-verify` removes the network check even though the baseline lists it); the real tree passes, 834 files in about 19 s. A baseline that is only out of date (a recorded line moved) is reported and passes. **Its first CI run failed, and was right to**: it reported three findings that the same gate did not report on Windows (finding S14, step S-14) |
-| S-14 | **The scanner reads every file as UTF-8** (S14): `python -X utf8` for the hook in `.pre-commit-config.yaml` (same repository and rev, `entry` overridden) and for the scanner process the gate starts; the three findings CI reported — a fake id in a test, two fake keys quoted in an archived DEVLOG entry — recorded in `.secrets.baseline` by a scan run in UTF-8 mode | small | a file holding a curly closing quote and a planted example key fails the gate on Windows; the gate gives the same verdict on Windows and on Linux | **done 2026-10-01** — `test_a_file_the_windows_default_encoding_cannot_decode_is_still_scanned`; the gate passes on this tree on Windows and in a Linux run (WSL), 838 files each; the reconfigured hook fails on a scratch file with a curly quote and the example key, and passes over every tracked file. Not a session's planned step: S-13 turned `main` red and this is what made it red |
-| S-15 | **Pin CI's uv and its permissions** (S17): a `version:` under `setup-uv`, and `permissions: contents: read` on the workflow | config only | `test_ci_actions_pinned.py` fails on `version: latest` or a missing `version:` under a `setup-*` action | planned |
-| S-16 | **Audit the two unaudited trees** (S16): `cargo audit` in CI, and `--extra packaging` in CI's sync so `pip_audit_gate` sees it | small | CI fails on an unreviewed advisory in either tree | planned |
-| **Full** | **The periodic full check** (§6), first run when S-1 … S-11 are done | one session | a dated entry in `.claude/REVIEWS.md` row 7 | after S-11 |
+- **Ingest has caps** (S-1). A file over 1 GB, an archive that would expand past 1 GB, or an entry
+  compressed 1000:1 or more is refused by name before it is opened, and logs `security_cap_hit`
+  (`extractors.ingest_refusal`). `test_ingest_size_caps.py`.
+- **One add names at most 50,000 files** (S-2, `MAX_ADD_FILES`), counted while walking a folder;
+  `GET /api/documents/accepts` serves the limits so the add sheet can state them.
+- **A stored path is used only where its kind of file belongs** (S-7, S21). A cache file under the
+  cache folder, a figure under the figures folder, a source under the sources folder, its source
+  folder or a registered root. Anything else is refused, logged as `security_path_refused`, and
+  left alone (`stored_paths.py`). `test_stored_paths_confined.py`, `test_stored_paths.py`,
+  `test_chunk_context.py`.
+- **The selective-ingest route validates its keys.** `ingest/registry.py` rejects absolute paths,
+  `..`, unknown suffixes and unknown keys by name, after normalising backslashes.
 
-## 5 · The floor — deterministic, runs without a person
+**What reaches a model (T1, T6)**
 
-| # | Check | Command | Status |
-|---|-------|---------|--------|
-| 1 | Gates cover the boundary, not just the library | `ruff check src/ tests/ apps/ scripts/` · `mypy src/ apps/` · `bandit -r src/ apps/ -c pyproject.toml` (CI; pre-commit runs mypy and bandit on `src/` only, and ruff only when a `src/` or `tests/` file is staged) | done 2026-09-10 |
-| 2 | Tauri config guard | `pytest tests/unit/test_desktop_security_config.py` | done 2026-09-10 |
-| 3 | JS tree audited | `npm audit --audit-level=high` (CI, after `npm ci`) | done 2026-09-10 |
-| 4 | Secrets, **blocking** | `detect-secrets-hook` in pre-commit (staged files) · `python -m scripts.secret_scan_gate` (CI · `just secret-scan`) over every tracked file; recorded findings in `.secrets.baseline`; both in UTF-8 mode, so Windows and Linux scan the same text | pre-commit since 2026-07; CI done 2026-10-01 (S-13); UTF-8 mode 2026-10-01 (S-14) |
-| 5 | Python tree audited, **blocking** | `python -m scripts.pip_audit_gate` (CI · `just audit` · the sprint-close keypoint); reviewed ignores in `pip-audit-ignore.toml` | done 2026-09-30 |
-| 6 | Host guard test | `pytest tests/integration/test_api_host_guard.py` — a foreign `Host` gets 400; `DOC_API_HOST` defaults to loopback | done 2026-09-30 |
-| 7 | Path-confinement tests on every route that opens a file | `pytest tests/integration/test_stored_paths_confined.py tests/unit/test_stored_paths.py` | S-2, S-7 — done 2026-11-04 |
-| 8 | Prompt fence present; planted text marked; unsourced links listed | `pytest tests/unit/test_pipeline_helpers.py tests/unit/test_source_checks.py` · `npm test` (`links.test.ts`) | done 2026-11-16 (S-9) |
-| 9 | Security events exist and fire | a unit test per control | S-11 |
-| 11 | The MCP endpoint is off until turned on, needs its own token, refuses a web page, and hides the conversation tools while their switch is off | `pytest tests/integration/test_api_mcp.py` | done 2026-11-17 (A4) |
-| 10 | Release: this file and the walkthrough were touched since the last tag | `release_preflight` (`checklists`) | done 2026-09-10 |
+- **Each passage is fenced.** It sits inside `<source n="…">`; a fence tag inside a passage is
+  defused and logged as `security_markup_sanitised` (S-9). `test_pipeline_helpers.py`,
+  `test_security_events.py`. The fence does not stop a small model obeying planted text (§7).
+- **Text written to an AI is marked.** In each passage an answer is given, and once per document
+  after extraction, so the Library shows a marked document before any question (A2, A2b).
+  `test_source_checks.py`.
+- **The LLM proposes, never writes.** Every site that parses LLM JSON coerces it into a validated
+  structure; no LLM output becomes a path, a URL, a shell argument or SQL.
+- **MCP** (A3, A4). Off until the person turns it on; its own bearer token; a request carrying an
+  `Origin` is refused; the conversation tools are hidden while their switch is off. Arguments are
+  checked against each tool's schema, and a failing tool answers without its error text (S22).
+  Passages are fenced and checked, and so are captions, reference lines and cited excerpts (S23).
+  A passage id carries its text's version, and an older one finds nothing (S19). The call log keeps
+  the tool, a count and a time, never the arguments. `test_api_mcp.py`,
+  `test_read_surface_evidence.py`.
 
-The `sprint-close` keypoint (`scripts/conventions.toml`) names rows 1–5 as its checklist; when the
-planned rows land, the whole table becomes the `run` list of a `cpc-security-check` gate (§8).
+**Secrets**
 
-## 6 · The periodic full check — and its log
+- `.env` is ignored and was never committed. `credentials.py` is the one disk path for an in-app
+  key, masked to four characters in logs and in `/api/setup`; no route echoes a key.
+- `detect-secrets` runs in pre-commit on staged files and in CI over every tracked file, and fails
+  on a secret `.secrets.baseline` does not record (S-13). The CI gate makes no network call and
+  prints a finding's type and place, never its value. Both run in Python's UTF-8 mode (S-14).
 
-**When.** After S-11 lands, then every six months (`.claude/REVIEWS.md` row 7 cadence), and after
-any change that adds a route, a `{@html}`, a capability, a parser, or a network call.
+**Code and the supply chain (T5)**
 
-**How** — read-only, one session, the same eleven lenses the 2026-09-10 review used, each with the
-command that answers it. Write the answer down even when it is "clean":
+- **No code-execution or deserialisation primitive.** No `pickle`, `torch.load`,
+  `trust_remote_code`, `yaml.load`, `eval`, `exec`, `shell=True` or `os.system` in `src/`, `apps/`,
+  `scripts/` or `tools/`; every `subprocess` call is list-form, and Explorer is run by its full path.
+- **No SQL from input.** f-string SQL is built from constants and placeholders only; FTS5 quotes
+  every token and parameterises the scope; Chroma filters are dicts.
+- **Everything is pinned.** `uv.lock` with `uv sync --locked`, `package-lock.json` with `npm ci`,
+  `Cargo.lock`, Docker base tags. The embedders and the reranker load a pinned commit, and the
+  frozen build runs offline (`HF_HUB_OFFLINE=1`) on those same snapshots, bundled (S-10).
+- **An unreviewed advisory fails CI.** `scripts/pip_audit_gate.py` fails on any Python advisory not
+  reviewed in `pip-audit-ignore.toml`, and fails closed when it cannot read either (S-8);
+  `npm audit --audit-level=high` runs in CI. The Rust tree and the packaging extra are audited by
+  nothing (S16).
+- **CI's actions are pinned to commits** (S-12). Dependabot proposes updates for actions only;
+  Python, npm and Rust upgrades stay in sessions, where the audits catch an advisory (the owner,
+  2026-10-18). `test_ci_actions_pinned.py` fails on a tag. Dependabot *alerts* are the owner's GitHub setting:
+  off (404) when read on 2026-10-18 and on 2026-11-23.
+- **The gates cover the boundary but `scripts/`.** In CI, ruff runs on `src/`, `tests/`, `apps/` and
+  `scripts/`, mypy and bandit on `src/` and `apps/` only (S25).
 
-Each lens is a question, then the command that answers it:
+**Logs and the installer**
+
+- **Logs go to stderr, never to a file.** No query, answer or document text is logged (read
+  2026-09-10); absolute paths are (§7). Each control above logs a `security_*` event with its name
+  and never the content (S-11).
+- **The installer reaches outside its folder twice.** It ends `doc-assistant-api.exe`, and in
+  `%TEMP%` it deletes a `_MEI*` folder only if it holds our reranker model (KI-80).
+  `test_the_installer_clears_what_an_older_engine_left`.
+
+## 3 · Open findings
+
+| # | Finding | Threat | Step | Placed |
+|---|---------|--------|------|--------|
+| S15 | Four GET routes write or call out, out of the launch token's reach | T2 | S-17 | A8″, before A9 |
+| S16 | `Cargo.lock` and the packaging extra are audited by nothing | T5 | S-16 | not placed |
+| S17 | CI installs the latest uv, and the workflow has no `permissions:` | T5 | S-15 | not placed |
+| S25 | `scripts/` is not type-checked or scanned by bandit | T5 | none yet | not placed |
+| S23 | Titles and authors reach a client's model without the text check | T6 | none yet | release B, with B2 |
+| S24 | A record answer renders document metadata as Markdown, unescaped | T1 | none yet | release B, with B2 |
+| S10 | The key, the conversations and the extraction cache are plaintext on disk | T3, T4 | ROADMAP 64 | by design (§7) |
+
+- **S15** (2026-11-02; a fourth found 2026-11-23). `GET /api/sources` and `GET /api/ingest/plan`
+  commit the registry rows their walk finds; `GET /api/updates` calls GitHub and writes
+  `settings.json` when the person opted in and a check is due; `GET /api/setup` probes
+  `OLLAMA_HOST`. None bills. A page can trigger a GET (an image tag is enough) without reading the
+  answer. `test_get_routes_have_no_side_effects.py` holds every other GET to no write and no
+  call-out, and lists these four in a list that can only shrink.
+- **S16** (2026-11-02). 445 crates, and PyInstaller with its hooks, `pefile`, `altgraph` and
+  `pywin32-ctypes`, outside CI's `--extra cpu --extra dev`. The bootloader and hooks go into the
+  installer. Audited once by hand on 2026-11-23 (`cargo audit`, RustSec copy of 2026-11-15): two
+  advisories in `quick-xml` 0.39.4 (RUSTSEC-2026-0194, -0195: slow or unbounded parsing of hostile
+  XML), which reaches the app through `plist` and `tauri-utils` and parses Tauri's own
+  configuration, never a document; and nine warnings (six crates unmaintained, three unsound:
+  `anyhow`, `glib` on Linux only, `tokio`'s Unix `AsyncFd`). S-16's CI gate needs a reviewed list
+  for these, as `pip-audit-ignore.toml` is for Python.
+- **S17** (2026-11-02). `setup-uv` is pinned to a commit but installs `version: "latest"`; the
+  Docker image pins its uv.
+- **S25** (2026-11-02, given a number 2026-11-23). 297 mypy errors and one Medium bandit finding in
+  `scripts/` that day. The scripts run on the dev machine and in CI, not in the installer.
+- **S23** (2026-11-23). Captions, reference lines and excerpts carry the check since A8′. Titles and
+  authors are extracted text too, and the author scan can store a sentence of body text (KI-89).
+- **S24** (2026-11-23). Links already show as text and the CSP blocks remote images, so what is left
+  is formatting that could imitate the app.
+- **S10**. `credentials.json` gets a best-effort `chmod`, a no-op on Windows. The README asks for
+  disk encryption; an OS keychain for the key is ROADMAP 64, parked on the keyring decision.
+
+## 4 · The plan
+
+Each step is one session's security slot; its `Done when` is the test that lands with it. In order:
+
+| Step | What | Done when | Rides in |
+|------|------|-----------|----------|
+| S-17 | The four GETs lose their side effects (S15): a POST the window calls, or a read of what is stored | the floor test's `KNOWN` list is empty | A8″, before A9 (the owner, 2026-11-23) |
+| Full | The periodic full check (§6), the first since S-1 to S-11 | a dated entry in `.claude/REVIEWS.md` row 7 | due, not placed |
+| S-15 | Pin CI's uv and its permissions (S17): a `version:` under `setup-uv`; `permissions: contents: read` | `test_ci_actions_pinned.py` fails on `latest` or a missing `version:` | not placed |
+| S-16 | Audit the two trees (S16): `cargo audit` in CI; `--extra packaging` in CI's sync | CI fails on an unreviewed advisory in either | not placed |
+
+## 5 · The floor: checks that run without a person
+
+| # | Check | Command | Since |
+|---|-------|---------|-------|
+| 1 | Gates cover the boundary (CI) | `ruff check src/ tests/ apps/ scripts/` · `mypy src/ apps/` · `bandit -r src/ apps/ -c pyproject.toml`; pre-commit runs mypy and bandit on `src/` only | 2026-09-10 |
+| 2 | The window's configuration | `pytest tests/unit/test_desktop_security_config.py` | 2026-09-10 |
+| 3 | JavaScript tree audited | `npm audit --audit-level=high` (CI, after `npm ci`) | 2026-09-10 |
+| 4 | Secrets, blocking | `detect-secrets-hook` (pre-commit) · `python -m scripts.secret_scan_gate` (CI, `just secret-scan`) | 2026-10-01 |
+| 5 | Python tree audited, blocking | `python -m scripts.pip_audit_gate` (CI, `just audit`, the sprint-close keypoint) | 2026-09-30 |
+| 6 | Host guard | `pytest tests/integration/test_api_host_guard.py` | 2026-09-30 |
+| 7 | Stored paths confined | `pytest tests/integration/test_stored_paths_confined.py tests/unit/test_stored_paths.py tests/unit/test_chunk_context.py` | 2026-11-04 |
+| 8 | Fence present, planted text marked, unsourced links shown as text | `pytest tests/unit/test_pipeline_helpers.py tests/unit/test_source_checks.py` · `npm test` (`links.test.ts`) | 2026-11-16 |
+| 9 | Release: this file and the walkthrough touched since the last tag | `release_preflight` (`checklists`) | 2026-09-10 |
+| 10 | MCP: off until on, its own token, no web page, arguments checked | `pytest tests/integration/test_api_mcp.py` | 2026-11-17 |
+| 11 | Passages served are current, separate, honestly placed, gone once removed, stable | `pytest tests/integration/test_read_surface_evidence.py` | 2026-11-23 |
+| 12 | Each control logs its event | `pytest tests/unit/test_security_events.py` | 2026-11-23 |
+| 13 | No GET writes or calls out, but the four listed (S15) | `pytest tests/integration/test_get_routes_have_no_side_effects.py` | 2026-11-23 |
+
+The sprint-close keypoint (`scripts/conventions.toml`) names rows 1 to 5 as its checklist. cpc
+ticket T-012 proposes one gate that runs the whole table.
+
+## 6 · The periodic full check
+
+**When.** Due now (S-11 landed 2026-11-23), then every six months (`.claude/REVIEWS.md` row 7), and
+after any change that adds a route, a `{@html}`, a capability, a parser or a network call.
+
+**How.** Read-only, one session. Each lens is a question and the command that answers it; write the
+answer down even when it is "clean":
 
 - **A · Where does the API bind, and who can call it?**
   `rg -n "DOC_API_HOST|allow_origins|TrustedHost|Depends\(" apps/api`; compose `ports:`.
-- **B · Which routes take a path or serve a file, and is each confined to a root?**
+- **B · Which routes take a path or serve a file, and is each confined?**
   `rg -n "FileResponse|Path\(|rglob|open\(" apps/api src/doc_assistant/library`, one line per route.
 - **C · Where is untrusted text rendered as HTML?**
-  `rg -n "@html|innerHTML" apps/desktop/src`: it must be exactly the sanitised path.
+  `rg -n "@html|innerHTML" apps/desktop/src`: exactly the sanitised path.
 - **D · Tauri: CSP, capabilities, remote IPC, updater.**
   `pytest tests/unit/test_desktop_security_config.py -q`; read `capabilities/*.json`.
-- **E · Secrets: loaded where, logged where, echoed where?**
+- **E · Secrets: loaded, logged and echoed where?**
   `rg -n "ANTHROPIC_API_KEY|api_key|key_hint" src apps`; `git log --all -- .env` is empty.
 - **F · Any exec or deserialisation primitive?** Expect zero from
   `rg -n "pickle|torch.load|trust_remote_code|yaml.load\(|eval\(|exec\(|shell=True|os.system" src apps scripts tools`.
 - **G · Any SQL built from input?**
-  `rg -n "execute\(f|\.format\(|% " src/doc_assistant --glob "*.py"`, read near each `execute`.
+  `rg -n "execute\(f|\.format\(|% " src/doc_assistant --glob "*.py"`, reading near each `execute`.
 - **H · Parsers and caps.** The cap constants exist and have tests;
   `bandit -r src apps -c pyproject.toml -q`.
-- **I · Prompt injection and every LLM-output sink.** `rg -n "json.loads" src/doc_assistant`:
-  each result is validated, and none becomes a path, a URL or an argument.
-- **J · Supply chain.** `pip-audit`; `npm audit`; `uses:` pinned; Docker base tags;
-  `HF_HUB_OFFLINE` in the frozen build.
-- **K · Logging and PII.** `rg -n "log\.(info|warning|error)\(" src`, looking for `path=`,
-  `query=` and `text=`; the `security_*` events are present.
+- **I · Prompt injection and every LLM-output sink.** `rg -n "json.loads" src/doc_assistant`: each
+  result is validated, and none becomes a path, a URL or an argument.
+- **J · Supply chain.** `pip-audit`; `npm audit`; `uses:` pinned; Docker base tags; model commits
+  pinned; `HF_HUB_OFFLINE` in the frozen build.
+- **K · Logging and personal data.** `rg -n "log\.(info|warning|error)\(" src`, looking for
+  `path=`, `query=` and `text=`; the `security_*` events are present.
+- **L · What an outside program gets (T6).** Read `mcp_server.TOOL_SPECS` and each tool's result
+  shape; `pytest tests/integration/test_api_mcp.py tests/integration/test_read_surface_evidence.py`.
 
-**The log.** One dated entry in `.claude/REVIEWS.md` under row 7, in the file's standard shape:
-**Covered** (the lenses, with the commands as run) · **Found** (new §3 rows, or "none") · **NOT
-covered** (which lens was skipped and why). The ledger row's `Last full review` and `Next due`
-move. A check whose omissions are not written down is not a check.
+**The log.** One dated entry in `.claude/REVIEWS.md` under row 7: **Covered** (the lenses, with the
+commands as run), **Found** (new §3 rows, or "none"), **NOT covered** (what was skipped, and why).
+The ledger row's `Last full review` and `Next due` move. A check that does not say what it skipped
+is not a check.
 
-## 7 · Deliberately not done (say it, do not hide it)
+## 7 · Not done on purpose, and what closed findings left
 
-- **No encryption at rest.** Local-first, single user; the OS's disk encryption is the control.
-- **No sandboxing of extractors.** PyMuPDF/lxml/python-docx run in-process; a crash is a sidecar
-  restart on next launch, not a session loss.
-- **No auth between the app and Ollama.** Same machine, same user, by Ollama's own design.
+**Not done, on purpose:**
+
+- **No encryption at rest** (S10). Local-first and single-user: the operating system's disk
+  encryption is the control.
+- **No sandboxing of extractors.** PyMuPDF, lxml and python-docx run in the engine's process; a
+  crash costs a restart of the engine at the next launch, not the person's work.
+- **No authentication between the app and Ollama.** Same machine, same user, by Ollama's design.
 - **No rate limiting.** One user, one window.
+- **No CodeQL.** Left out of S-12 (2026-10-18), and not planned.
+- **`withGlobalTauri` stays on** (S11; the owner, 2026-11-23). Turning it off removes
+  `window.__TAURI__`, but Tauri 2 injects its IPC object, `window.__TAURI_INTERNALS__`, in every
+  window either way (read in Tauri 2.12.4's `manager/webview.rs` and `tauri-codegen`'s
+  `context.rs`), so a script in the window keeps the same commands. What stops such a script is the
+  CSP, DOMPurify and the capability list (§2). Turning it off would add two runtime npm packages
+  and reverse W0's choice (`docs/specs/feature-add-documents.md`). If the window ever loads remote
+  content, Tauri's isolation pattern is the control to weigh.
 
-## 8 · Lifting this into cpc (proposal, 2026-09-10 · cpc ticket T-012)
+**What closed findings left, accepted:**
 
-Three tables a project fills in and one gate that reads them: a **threat model** (attacker · reach ·
-example, with an explicit out-of-scope list), a **findings backlog** with a step column (a finding
-that is not a step is a wish), and a **floor** with a status column (the gate is only as good as
-its file list). The gate, `cpc-security-check`, runs `[security] run = […]` from
-`scripts/conventions.toml` (the same shape as keypoint extras), fails on non-zero, and prints the
-open steps as the judgment checklist. It lives at `sprint-close` and a future `release-close`
-keypoint, never in a commit hook — the 2026-08-19 decision stands. The periodic check's log is the
-project's `REVIEWS.md` ledger, not a new file.
+- **S2.** DOMPurify keeps links in model output; only a link a passage vouches for stays clickable,
+  and clicking it is the person's act.
+- **S4.** No page cap; an archive's central directory of millions of entries is bounded only by the
+  1 GB file cap.
+- **S5.** A planted instruction a model obeys can still change what the answer *says* (a language
+  switch, a false claim repeated from its source): with and without the fence, 18 and 19 of 24
+  hostile runs held on small local models (A2). Another program's model, maybe with tools, is free
+  to ignore the fence and the marks (T6).
+- **S9.** A folder registered by a reference add becomes a root, so its files pass the stored-path
+  rule; the launch token is what stops a page from adding one.
+- **S11.** Absolute paths are logged at INFO; `docs/setup.md` § Reporting a problem asks a person to
+  replace them before posting a log.
+- **S19.** An id without a version (the chat's own keys, a definition's `passage_id`) still resolves
+  by position.
+
+## 8 · Closed
+
+One line per finding; the account is the DEVLOG entry of that date.
+
+| # | What it was | Closed by | DEVLOG |
+|---|-------------|-----------|--------|
+| S1 | The engine had no request authentication, and DNS rebinding bypasses CORS | S-5, S-6 | 2026-09-30, 2026-10-17 |
+| S2 | Model output was rendered as raw HTML, and the dev loop had no CSP | S-3, S-4 | 2026-09-17, 2026-09-20 |
+| S3 | `inspect` and `/add` took any path, and `inspect` walked with no cap | S-2, S-6 | 2026-09-16, 2026-10-17 |
+| S4 | Ingest had no size or archive cap | S-1 | 2026-09-16 |
+| S5 | Document text entered the prompt with no boundary | S-9 (A2) | 2026-11-16 |
+| S6 | `pip-audit` could not fail CI | S-8 | 2026-09-30 |
+| S7 | `apps/` was outside every gate | floor row 1 | 2026-09-10 |
+| S8 | No Dependabot, no `npm audit`, CI actions on floating tags | S-12, `npm audit` | 2026-10-18, 2026-09-10 |
+| S9 | Stored paths were opened, deleted and served unchecked | S-7 | 2026-11-04 |
+| S11 | Five small ones: export file, Explorer by PATH, unpinned models, paths in logs, the Tauri global | S-10 (A8′) | 2026-11-23 |
+| S12 | No log line said a security control fired | S-11 (A8′) | 2026-11-23 |
+| S13 | CI's secret scan could not fail | S-13 | 2026-10-01 |
+| S14 | On Windows the secret scanner skipped 47 files it could not decode | S-14 | 2026-10-01 |
+| S18 | A text re-run left the old passages in the running engine's keyword index | A8′ | 2026-11-23 |
+| S19 | A passage id named a position, not a text | A8′ | 2026-11-23 |
+| S20 | Two documents with the same file name merged in an answer's passages | A8′ | 2026-11-23 |
+| S21 | A chunk's stored cache path was read outside the library | A8′ | 2026-11-23 |
+| S22 | MCP answered a wrongly typed argument with a server error | A8′ | 2026-11-23 |

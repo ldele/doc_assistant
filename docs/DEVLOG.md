@@ -44,6 +44,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-23 (4) — `docs/security.md` rewritten around the questions a reader brings
+
+**What changed.** The file keeps its section numbers, so every citation of §1 to §7 still holds, but
+each section now answers one question. §0 is a status (open findings by reach, the current step,
+what is due). §2 states each control in the present tense with its test, grouped by boundary,
+instead of a log by release. §3 and §4 hold open findings and steps only, in short cells; a closed
+finding is one line in §8 naming its step and DEVLOG date, and what it left accepted moves to §7.
+`withGlobalTauri` is recorded as not done on purpose (the owner, 2026-11-23). The gap in `scripts/`
+gating, stated in §2 since 2026-11-02 with no step, is now finding S25. The cpc proposal that was §8
+goes to the cpc ticket.
+
+**Why.** The owner, 2026-11-23: the file was practically unreadable. T-004 had named the cause.
+
+**Measured.** 43,501 → 23,198 characters, 6,933 → 3,740 words; table rows median 537 → 112
+characters, longest 1,316 → 314. Every file, test and function the file names exists.
+
+**Rejected.** Splitting the file: at this length one file reads in one sitting, and a split would
+put the open findings and the plan in different places again.
+
+**What it opens.** The cpc template update, once the owner approves this shape.
+
 ## 2026-11-23 (3) — Security controls say when they fire, and GETs are held to no side effects (A8′, S-11)
 
 **What changed.** Four structlog events, each with its control's name and never the content:

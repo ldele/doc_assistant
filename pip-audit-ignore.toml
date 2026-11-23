@@ -1,4 +1,4 @@
-# Reviewed pip-audit ignores — security step S-8 (docs/security.md §4), since 2026-09-30.
+# Reviewed pip-audit ignores — security step S-8 (docs/security.md §2, §8), since 2026-09-30.
 #
 # `python -m scripts.pip_audit_gate` (CI, and `just audit`) fails on any advisory that is NOT
 # listed here, and refuses an entry that lacks any of the fields below. An entry whose advisory no

@@ -5,6 +5,7 @@ ADR-014 safe delete (source file to the Recycle Bin, then row/meta/chunks)."""
 
 from __future__ import annotations
 
+import os
 import subprocess  # nosec B404
 import sys
 from collections.abc import Callable
@@ -385,11 +386,19 @@ def reveal_document_source(document_id: str) -> bool:
     return True
 
 
+def _explorer() -> Path:
+    """Windows' own file manager, by its full path in ``%WINDIR%`` (S-10)."""
+    return Path(os.environ.get("WINDIR") or os.environ.get("SYSTEMROOT") or r"C:\Windows") / (
+        "explorer.exe"
+    )
+
+
 def _reveal_in_file_manager(path: Path) -> None:
     """Reveal ``path`` in the OS file manager, file selected. List-form args, never a shell."""
     if sys.platform == "win32":
-        # explorer selects the file inside its folder; it exits non-zero even on success.
-        subprocess.run(["explorer", f"/select,{path}"], check=False)  # nosec B603 B607
+        # explorer selects the file inside its folder; it exits non-zero even on success. Named
+        # by its full path (S-10), so a program called `explorer` earlier on PATH is not run.
+        subprocess.run([str(_explorer()), f"/select,{path}"], check=False)  # nosec B603
     elif sys.platform == "darwin":
         subprocess.run(["open", "-R", str(path)], check=False)  # nosec B603 B607
     else:

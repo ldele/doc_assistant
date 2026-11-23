@@ -40,6 +40,7 @@ from doc_assistant.read_surface.shapes import (
     FolderList,
     ReferenceItem,
 )
+from doc_assistant.source_checks import addressed_to_ai
 
 #: The most documents one `list_documents` call returns. A wire-size bound, not tuned to a corpus.
 MAX_PAGE = 100
@@ -117,7 +118,11 @@ def list_documents(
             counter = counter.where(Document.id.in_(member))
         total = int(session.execute(counter).scalar() or 0)
         docs = list(
-            session.execute(query.order_by(Document.filename).offset(offset).limit(limit))
+            # Name, then id: two documents may share a file name, and a page must not move
+            # between calls (A8', case 5).
+            session.execute(
+                query.order_by(Document.filename, Document.id).offset(offset).limit(limit)
+            )
             .scalars()
             .all()
         )
@@ -145,11 +150,16 @@ def get_document(document_id: str) -> DocumentRecord | None:
             or 0
         )
         figures = [
-            FigureItem(page=int(page), kind=str(kind), caption=caption)
+            FigureItem(
+                page=int(page),
+                kind=str(kind),
+                caption=caption,
+                addressed_to_ai=addressed_to_ai(caption) if caption else [],
+            )
             for page, kind, caption in session.execute(
                 select(Figure.page, Figure.kind, Figure.caption)
                 .where(Figure.document_id == document_id)
-                .order_by(Figure.page)
+                .order_by(Figure.page, Figure.id)  # one order on every call (A8', case 5)
                 .limit(LIST_CAP)
             ).all()
         ]
@@ -162,6 +172,7 @@ def get_document(document_id: str) -> DocumentRecord | None:
             year=r.year,
             doi=r.doi,
             in_library_document_id=r.target_document_id,
+            addressed_to_ai=addressed_to_ai(r.raw_text) if r.raw_text else [],
         )
         for r in (refs.references if refs is not None else [])
     ]

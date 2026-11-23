@@ -191,6 +191,9 @@ class ChunkContext:
     #: True when the window was cut at the start/end of the document rather than at `window`.
     at_document_start: bool
     at_document_end: bool
+    #: The hash of the document text the span was read from (ADR-042): what tells a caller holding
+    #: an older reference that the text has been re-read since (A8', case 1).
+    doc_hash: str | None = None
 
 
 def _trim_to_word(text: str, *, from_start: bool) -> str:
@@ -241,7 +244,6 @@ def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> Chun
     file that is gone — and the caller reports it as "we cannot show where this sits" rather than
     guessing at a position.
     """
-    from pathlib import Path
 
     found = _chunk_metadata(chunk_key, chroma)
     if found is None:
@@ -257,11 +259,15 @@ def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> Chun
     if start is None or end is None:
         return None
 
-    cache = meta.get("source_cache")
-    if not cache or not Path(str(cache)).exists():
+    from doc_assistant.stored_paths import confine
+
+    # Only a cache file of this library (S-7): a copied library's chunks name the original's
+    # file, which may hold other text than the one this library indexed (A8').
+    cache = confine(meta.get("source_cache"), "cache")
+    if cache is None or not cache.exists():
         return None
     try:
-        text = Path(str(cache)).read_text(encoding="utf-8")
+        text = cache.read_text(encoding="utf-8")
     except OSError as e:
         log.warning("chunk_context_unreadable", file=str(cache), error=str(e))
         return None
@@ -291,4 +297,5 @@ def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> Chun
         page=page,
         at_document_start=before_at == 0,
         at_document_end=after_to == len(text),
+        doc_hash=str(meta["doc_hash"]) if meta.get("doc_hash") else None,
     )

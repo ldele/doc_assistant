@@ -379,6 +379,18 @@ def reingest_start(request: Request, body: ReingestRequest) -> dict[str, object]
                 status.message = f"{type(e).__name__}: {e}"
                 status.current = None
             return
+        # A text re-run replaced chunks under the running engine (A8', case 1): its keyword index
+        # still held the old ones, so a search served the superseded passage as current, and it
+        # lacked the new ones. Forget the old hashes at once, then reload as an ingest does.
+        superseded = getattr(result, "superseded", ())
+        if superseded:
+            for doc_hash in superseded:
+                app_.state.controller.forget_document(doc_hash)
+            try:
+                app_.state.controller.release_keyword_index()  # KI-77: Windows keeps an open file
+                app_.state.controller = app_.state.controller_factory()
+            except Exception:
+                log.exception("controller_reload_failed_after_reingest")
         with app_.state.reingest_lock:
             status.state = "done"
             status.current = None

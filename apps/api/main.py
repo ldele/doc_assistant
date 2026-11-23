@@ -33,8 +33,8 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from apps.api.host_guard import LoggedTrustedHostMiddleware
 from apps.api.launch_token import LaunchTokenMiddleware, configured_token
 from apps.api.routers import (
     chat,
@@ -191,7 +191,8 @@ def create_app(
         allow_headers=["*"],
     )
     # Added last, so it runs first: a foreign Host gets 400 before CORS or any route sees it (S-5).
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
+    # S-11: the same guard, logging each refusal as `security_host_refused`.
+    app.add_middleware(LoggedTrustedHostMiddleware, allowed_hosts=allowed_hosts())
 
     # Domain routers (APIRouter split). Include order is preserved from the pre-split file;
     # route-matching order that matters (e.g. `/api/concepts/gaps` before the parameterised

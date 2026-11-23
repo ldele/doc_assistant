@@ -170,8 +170,10 @@ def _page_from_meta(meta: dict[str, Any]) -> int | None:
     cache, start = _chunk_span(meta)
     if not cache or start is None:
         return None
-    path = Path(str(cache))
-    if not path.exists():
+    from doc_assistant.stored_paths import confine
+
+    path = confine(cache, "cache")  # S-7: only this library's own cache files (A8')
+    if path is None or not path.exists():
         return None
     try:
         text = path.read_text(encoding="utf-8")

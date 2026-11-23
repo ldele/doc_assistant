@@ -482,7 +482,11 @@ class RAGPipeline:
         """
         if self._reranker is None:
             log.info("loading_reranker")
-            self._reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
+            from doc_assistant.embeddings import RERANKER_ID, RERANKER_REVISION
+
+            self._reranker = CrossEncoder(
+                RERANKER_ID, revision=RERANKER_REVISION, **_sigmoid_activation_kwarg()
+            )
         return self._reranker
 
     @reranker.setter
@@ -680,8 +684,11 @@ class RAGPipeline:
                 # being read off the candidate. Only the parents that actually win are touched —
                 # <= TOP_K dict lookups per turn against ~5x the corpus held in RAM.
                 parent_text = self._parent_text_for(doc)
+                # A parent is one block of one document's text, so its key is the text's hash.
+                # The file name alone merged two documents that share one (two `notes.md` in
+                # two folders): the second's passage vanished from the answer (A8', case 2).
                 parent_key = (
-                    doc.metadata.get("filename"),
+                    doc.metadata.get("doc_hash") or doc.metadata.get("filename"),
                     doc.metadata.get("parent_index"),
                 )
 
@@ -843,8 +850,14 @@ _FENCE_TAG_RE = re.compile(r"<(/?)(source\b)", re.IGNORECASE)
 
 
 def _defuse_fence(text: str) -> str:
-    """The passage with the fence's own tags written as text, so it cannot close its fence."""
-    return _FENCE_TAG_RE.sub(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
+    """The passage with the fence's own tags written as text, so it cannot close its fence.
+
+    Each time it has something to defuse it logs ``security_markup_sanitised`` (S-11): how many
+    tags, never the passage."""
+    defused, count = _FENCE_TAG_RE.subn(lambda m: f"&lt;{m.group(1)}{m.group(2)}", text)
+    if count:
+        log.warning("security_markup_sanitised", control="prompt_fence", tags=count)
+    return defused
 
 
 def _fence_attr(value: str) -> str:

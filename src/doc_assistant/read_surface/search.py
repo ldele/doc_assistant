@@ -6,6 +6,12 @@ the engine that holds it, so this module loads no model of its own.
 
 Each passage carries its document, page and a stable id, its text, the same text inside the
 chat's fence (`pipeline.fence_passage`), and what the text check found in it (`source_checks`).
+
+A passage id names a passage *of one version of its document's text*: ``{key}@{version}``, the
+chat's join key (`chat_controller._chunk_key`) and the head of the text's hash. A key alone is a
+position (the n-th block), so once a document is re-read the same key names other text; with the
+version, `get_passage` answers an id from before the change with nothing rather than with that
+other text (A8', case 1). An id without a version is still read, as the chat's own keys are.
 """
 
 from __future__ import annotations
@@ -86,8 +92,27 @@ def _records(document_ids: set[str]) -> dict[str, tuple[str, str | None, int | N
         return out
 
 
-def _passage(n: int, chunk: Chunk, score: float, records: dict[str, Any]) -> Passage:
+#: Hex characters of the text's hash an id carries: enough to tell two versions apart.
+_VERSION_CHARS = 12
+
+
+def passage_id_for(meta: dict[str, Any]) -> str | None:
+    """The id a passage is handed out under: its key and its text's version (module doc)."""
     from doc_assistant.chat_controller import _chunk_key
+
+    key = _chunk_key(meta)
+    doc_hash = str(meta.get("doc_hash") or "")
+    if key is None or not doc_hash:
+        return key
+    return f"{key}@{doc_hash[:_VERSION_CHARS]}"
+
+
+def _split_id(passage_id: str) -> tuple[str, str | None]:
+    key, sep, version = passage_id.partition("@")
+    return key, (version or None) if sep else None
+
+
+def _passage(n: int, chunk: Chunk, score: float, records: dict[str, Any]) -> Passage:
     from doc_assistant.pipeline import fence_passage
 
     meta = chunk.metadata
@@ -99,7 +124,7 @@ def _passage(n: int, chunk: Chunk, score: float, records: dict[str, Any]) -> Pas
 
     page = page_from_meta(meta)
     return Passage(
-        passage_id=_chunk_key(meta),
+        passage_id=passage_id_for(meta),
         document_id=str(doc_id) if doc_id is not None else None,
         title=title,
         authors=authors,
@@ -168,12 +193,16 @@ def get_passage(
     ``store`` is the engine's chunk store (`RAGPipeline.db`), which knows where each passage sits;
     the text itself is read from the cached document. ``None`` when the passage cannot be placed
     (an unknown id, or a passage whose position was never recorded): the caller says so rather
-    than guessing at a position (`library.chunks.get_chunk_context`)."""
+    than guessing at a position (`library.chunks.get_chunk_context`). ``None`` too for an id of an
+    older version of the document's text, which would otherwise name other text (module doc)."""
     from doc_assistant.library.chunks import get_chunk_context
     from doc_assistant.pipeline import fence_passage
 
-    ctx = get_chunk_context(passage_id, store, window=max(0, min(around, MAX_AROUND)))
+    key, version = _split_id(passage_id)
+    ctx = get_chunk_context(key, store, window=max(0, min(around, MAX_AROUND)))
     if ctx is None:
+        return None
+    if version is not None and not (ctx.doc_hash or "").startswith(version):
         return None
     title = _records({ctx.document_id}).get(ctx.document_id, (ctx.filename, None, None))[0]
 

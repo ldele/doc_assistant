@@ -56,6 +56,10 @@ class EmbeddingModelConfig:
     dimension: int
     normalize: bool
     description: str
+    #: The model repository's commit, so every machine loads the same weights and a change
+    #: upstream reaches nobody unasked (S-10). The release build stages this snapshot. A public
+    #: commit id, which the secret scanner reads as a hex key: hence its pragma on each line.
+    revision: str
 
 
 MODELS: dict[str, EmbeddingModelConfig] = {
@@ -65,6 +69,7 @@ MODELS: dict[str, EmbeddingModelConfig] = {
         dimension=768,
         normalize=True,
         description="General-purpose English embedder. Current default.",
+        revision="a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",  # pragma: allowlist secret
     ),
     "specter2": EmbeddingModelConfig(
         name="specter2",
@@ -72,8 +77,13 @@ MODELS: dict[str, EmbeddingModelConfig] = {
         dimension=768,
         normalize=True,
         description="Academic-paper embedder trained on citation graphs.",
+        revision="3447645e1def9117997203454fa4495937bfbd83",  # pragma: allowlist secret
     ),
 }
+
+#: The cross-encoder that reranks every answer's candidates, pinned like the embedders (S-10).
+RERANKER_ID = "BAAI/bge-reranker-base"
+RERANKER_REVISION = "2cfc18c9415c912f9d8155881c133215df768a70"  # pragma: allowlist secret
 
 DEFAULT_MODEL = "bge-base"
 
@@ -131,5 +141,6 @@ def get_embeddings(name: str | None = None) -> Any:
     config = get_model_config(name)
     return HuggingFaceEmbeddings(
         model_name=config.hf_id,
+        model_kwargs={"revision": config.revision},
         encode_kwargs={"batch_size": 32, "normalize_embeddings": config.normalize},
     )

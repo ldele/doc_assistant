@@ -130,6 +130,28 @@ def test_export_history_endpoint_returns_a_markdown_file(temp_db: None) -> None:
     assert "first question" in body and "second question" in body
 
 
+def test_each_export_is_its_own_temp_file_and_is_removed_once_sent(
+    temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S-10: no fixed name in the shared temp folder, and nothing left behind."""
+    import tempfile
+
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    planted = temp / "provenote-chat-history.md"
+    planted.write_text("planted by another program", encoding="utf-8")
+    _seed("s1", "first question", datetime(2026, 7, 13, 10, 0, 0))
+    client = _client()
+    first = client.post("/api/conversations/export")
+    second = client.post("/api/conversations/export")
+    assert "first question" in first.text and "planted" not in first.text
+    assert first.text == second.text
+    assert "provenote-chat-history.md" in first.headers.get("content-disposition", "")
+    assert [f.name for f in temp.iterdir()] == [planted.name], "the exports were removed"
+    assert planted.read_text(encoding="utf-8") == "planted by another program"
+
+
 def test_export_history_on_empty_history_is_200_not_400(temp_db: None) -> None:
     # A first-run backup should be a file that says there is nothing yet, not an error.
     r = _client().post("/api/conversations/export")

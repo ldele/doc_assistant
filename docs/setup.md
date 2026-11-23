@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 (keys and models live in Provider & model; 2026-10-01: Windows text encoding: a third-party tool has the same default — the secret scanner skipped 47 files) · class: living -->
+<!-- status: active · updated: 2026-11-23 (reporting a problem: paths in a console capture, S-10); 2026-11-01 (keys and models live in Provider & model; 2026-10-01: Windows text encoding: a third-party tool has the same default — the secret scanner skipped 47 files) · class: living -->
 
 # Setup
 
@@ -166,3 +166,11 @@ uv sync --all-extras
 
 Behind a TLS-inspecting proxy, prefix uv commands with `UV_NATIVE_TLS=1` so uv trusts the Windows
 certificate store. Offline work (ingest, embeddings, retrieval) is unaffected either way.
+
+## Reporting a problem
+
+A console capture or an engine log shows full file paths: your user folder's name, the folders
+your documents sit in, and the file names. Before you paste one into a public issue, replace those
+parts with a placeholder such as `<home>` or `<docs>`, and read the rest through for anything
+else private, such as words you searched for. If a log shows an API key or a passage of a
+document, say so in the issue without pasting it: that is a bug of its own.

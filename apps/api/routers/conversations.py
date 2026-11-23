@@ -6,11 +6,13 @@ Route-order note: the literal paths (``/export``, ``/bulk``) are declared **befo
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from apps.api.models.chat import ScopePayload
 from apps.api.models.conversations import (
@@ -67,9 +69,17 @@ def export_history_route() -> FileResponse:
     result = export_all_conversations()
     # A temp file, not EXPORT_DIR: this is a download, and writing every "export history" click
     # into the user's export folder would litter it with near-duplicates they never asked to keep.
-    tmp = Path(tempfile.gettempdir()) / "provenote-chat-history.md"
-    tmp.write_text(result.markdown, encoding="utf-8")
-    return FileResponse(str(tmp), media_type="text/markdown", filename=tmp.name)
+    # A file of its own, made by mkstemp (S-10): a fixed name in the shared temp folder could be
+    # planted or read by another program between the write and the send. Removed once sent.
+    fd, name = tempfile.mkstemp(prefix="provenote-chat-history-", suffix=".md")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(result.markdown)
+    return FileResponse(
+        name,
+        media_type="text/markdown",
+        filename="provenote-chat-history.md",
+        background=BackgroundTask(Path(name).unlink, missing_ok=True),
+    )
 
 
 @router.post("/api/conversations/bulk")

@@ -106,5 +106,6 @@ def confine(stored: str | Path | None, purpose: Purpose) -> Path | None:
     path = Path(stored)
     if is_confined(path, purpose):
         return path
-    log.warning("stored_path_outside_library", purpose=purpose, file=path.name)
+    # S-11: a security control fired. The file's name, never its folder or its content.
+    log.warning("security_path_refused", control="stored_paths", purpose=purpose, file=path.name)
     return None

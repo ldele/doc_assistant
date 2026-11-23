@@ -201,6 +201,51 @@ def test_bad_calls_get_json_rpc_errors(env: dict[str, Any]) -> None:
     assert result["isError"] is True
 
 
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("search_library", {"question": 5}),
+        ("search_library", {"question": "bm25", "top_k": "five"}),
+        ("search_library", {"question": "bm25", "top_k": True}),
+        ("search_library", {"question": "bm25", "document_ids": "a.pdf"}),
+        ("search_library", {"question": "bm25", "folder_id": 3}),
+        ("search_library", {}),
+        ("get_passage", {"passage_id": 7}),
+        ("get_passage", {"passage_id": "x:1", "around": [1]}),
+        ("list_documents", {"limit": "all"}),
+        ("get_concept", {"concept": None}),
+    ],
+)
+def test_an_argument_of_the_wrong_type_is_a_json_rpc_error(
+    env: dict[str, Any], tool: str, arguments: dict[str, Any]
+) -> None:
+    """A client's model gets the schema wrong; the endpoint says so, it never fails (A8')."""
+    client = env["client"]
+    token = _turn_on(client)
+    r = _call(client, token, _rpc("tools/call", {"name": tool, "arguments": arguments}))
+    assert r.status_code == 200
+    assert r.json()["error"]["code"] == mcp_server.INVALID_PARAMS
+    assert env["controller"].rag.asked == [], "a bad call reaches no tool"
+
+
+def test_a_tool_that_fails_answers_with_an_error_not_a_crash(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = env["client"]
+    token = _turn_on(client)
+
+    def broken(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("the store is locked: C:/private/path")
+
+    monkeypatch.setattr(mcp_server.read_surface, "list_folders", broken)
+    body = _rpc("tools/call", {"name": "list_folders", "arguments": {}})
+    r = _call(client, token, body)
+    assert r.status_code == 200
+    result = r.json()["result"]
+    assert result["isError"] is True
+    assert "private" not in json.dumps(result), "the error's text stays in the engine"
+
+
 def test_the_launch_token_neither_guards_nor_opens_the_endpoint(
     env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

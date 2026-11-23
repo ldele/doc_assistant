@@ -149,6 +149,9 @@ class PartOutcome:
 @dataclass(frozen=True)
 class ReingestResult:
     outcomes: tuple[PartOutcome, ...]
+    #: The ``doc_hash`` values a *text* re-run replaced. Their chunks are gone from the stores,
+    #: but a running engine's keyword index still holds them until it is told (A8', case 1).
+    superseded: tuple[str, ...] = ()
 
     @property
     def ok(self) -> int:
@@ -691,6 +694,7 @@ def rerun(
     docs = _load_docs(document_ids)
     total = len(docs) * len(ordered)
     outcomes: list[PartOutcome] = []
+    superseded: list[str] = []
     done = 0
 
     for doc in docs:
@@ -702,6 +706,8 @@ def rerun(
             except Exception as e:
                 log.warning("reingest_part_failed", document_id=doc.id, part=part, error=str(e))
                 status, detail = "error", f"{type(e).__name__}: {e}"
+            if part == "text" and _current_hash(doc.id) not in (None, doc.doc_hash):
+                superseded.append(doc.doc_hash)
             outcomes.append(
                 PartOutcome(
                     document_id=doc.id,
@@ -715,4 +721,4 @@ def rerun(
             if on_progress is not None:
                 on_progress(done, total, f"{doc.filename} · {part}")
 
-    return ReingestResult(outcomes=tuple(outcomes))
+    return ReingestResult(outcomes=tuple(outcomes), superseded=tuple(superseded))

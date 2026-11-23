@@ -76,14 +76,19 @@ from pathlib import Path as _Path  # noqa: E402
 
 from huggingface_hub import snapshot_download  # noqa: E402
 
-_HF_MODELS = ("BAAI/bge-base-en-v1.5", "BAAI/bge-reranker-base")
+# The pinned commits of `doc_assistant.embeddings` (S-10); a test holds the two lists equal.
+# Public commit ids, which the secret scanner reads as hex keys: hence the pragmas.
+_HF_MODELS = (
+    ("BAAI/bge-base-en-v1.5", "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"),  # pragma: allowlist secret
+    ("BAAI/bge-reranker-base", "2cfc18c9415c912f9d8155881c133215df768a70"),  # pragma: allowlist secret
+)
 _STAGE = _Path(REPO) / "build" / "hf_stage"
 _HUB = _STAGE / "hf_cache" / "hub"
 if _HUB.exists():
     shutil.rmtree(_HUB)
-for _repo in _HF_MODELS:
+for _repo, _rev in _HF_MODELS:
     try:
-        _snap = _Path(snapshot_download(_repo, local_files_only=True))
+        _snap = _Path(snapshot_download(_repo, revision=_rev, local_files_only=True))
     except Exception as _e:  # noqa: BLE001
         raise SystemExit(
             f"KI-9: '{_repo}' is not in the local HF cache ({_e}). Warm it first by running "

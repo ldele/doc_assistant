@@ -64,7 +64,8 @@ class FolderList:
 class ReferenceItem:
     """One entry of a document's reference list, as extraction parsed it (not vouched for).
 
-    ``in_library_document_id`` is set when the reference is a document in this library."""
+    ``in_library_document_id`` is set when the reference is a document in this library.
+    ``addressed_to_ai`` is what the text check found in ``text`` (A8'), as on a passage."""
 
     text: str | None
     title: str | None
@@ -72,15 +73,18 @@ class ReferenceItem:
     year: int | None
     doi: str | None
     in_library_document_id: str | None
+    addressed_to_ai: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class FigureItem:
-    """A figure or table found in a document: its page, its kind and its caption, if any."""
+    """A figure or table found in a document: its page, its kind and its caption, if any.
+    ``addressed_to_ai`` is what the text check found in the caption (A8')."""
 
     page: int
     kind: str
     caption: str | None
+    addressed_to_ai: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -216,7 +220,8 @@ class ConversationList:
 
 @dataclass(frozen=True)
 class CitedPassage:
-    """A passage an answer was given, in the order its ``[n]`` markers number them."""
+    """A passage an answer was given, in the order its ``[n]`` markers number them.
+    ``addressed_to_ai`` is what the text check finds in the excerpt today (A8')."""
 
     n: int
     document_id: str | None
@@ -224,6 +229,7 @@ class CitedPassage:
     page: int | None
     section: str | None
     excerpt: str
+    addressed_to_ai: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

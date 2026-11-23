@@ -143,6 +143,7 @@ class AddBatchTooLargeError(ValueError):
 
 
 def _too_many(limit: int) -> AddBatchTooLargeError:
+    log.warning("security_cap_hit", control="add_files", cap="files_per_add", limit=limit)
     return AddBatchTooLargeError(
         f"This selection holds more than {limit:,} files — the most one add can check. "
         "Add its folders a few at a time."

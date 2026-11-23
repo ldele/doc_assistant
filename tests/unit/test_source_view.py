@@ -106,7 +106,9 @@ def test_resolution_is_on_the_passage_start_not_its_end() -> None:
 
 
 @pytest.fixture
-def cache(tmp_path: Path) -> Path:
+def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # The library's cache folder: a chunk's stored path is read only inside it (S-7, A8').
+    monkeypatch.setattr("doc_assistant.config.CACHE_PATH", tmp_path)
     p = tmp_path / "doc.md"
     p.write_text(_CACHE, encoding="utf-8")
     return p

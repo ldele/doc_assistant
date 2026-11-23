@@ -841,6 +841,7 @@ def ingest_refusal(
     except OSError:
         return None  # unreadable is reported by whoever opens the file, in its own terms
     if size > max_bytes:
+        log.warning("security_cap_hit", control="ingest_caps", cap="file_bytes", limit=max_bytes)
         return (
             f"This file is {_size_label(size)}, over the {_size_label(max_bytes)} limit for one "
             "document, so it was not opened."
@@ -858,6 +859,9 @@ def ingest_refusal(
         )
     expanded = sum(e.file_size for e in entries)
     if expanded > max_expanded:
+        log.warning(
+            "security_cap_hit", control="ingest_caps", cap="archive_bytes", limit=max_expanded
+        )
         return (
             f"This {kind} would expand to {_size_label(expanded)} when opened, over the "
             f"{_size_label(max_expanded)} limit, so it was not opened."
@@ -866,6 +870,9 @@ def ingest_refusal(
         if entry.file_size == 0:
             continue
         if entry.compress_size == 0 or entry.file_size / entry.compress_size >= max_ratio:
+            log.warning(
+                "security_cap_hit", control="ingest_caps", cap="entry_ratio", limit=max_ratio
+            )
             factor = (
                 "without limit"
                 if entry.compress_size == 0

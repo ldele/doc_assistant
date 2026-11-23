@@ -43,7 +43,9 @@ class _FakeStore:
 
 
 @pytest.fixture
-def cache(tmp_path: Path) -> Path:
+def cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # The library's cache folder: a chunk's stored path is read only inside it (S-7, A8').
+    monkeypatch.setattr("doc_assistant.config.CACHE_PATH", tmp_path)
     p = tmp_path / "doc.md"
     p.write_text(_DOC, encoding="utf-8")
     return p
@@ -131,6 +133,20 @@ def test_a_span_the_cache_no_longer_supports_is_refused(cache: Path) -> None:
 
 def test_a_missing_cache_file_has_no_context(tmp_path: Path) -> None:
     store = _FakeStore([_parent_row(tmp_path / "gone.md")])
+    assert get_chunk_context("doc-1:p2", store) is None
+
+
+def test_a_cache_file_outside_the_library_is_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copied library's chunks name the original's cache file; it is not read (S-7, A8')."""
+    own = tmp_path / "this-library-cache"
+    own.mkdir()
+    monkeypatch.setattr("doc_assistant.config.CACHE_PATH", own)
+    elsewhere = tmp_path / "other-library" / "doc.md"
+    elsewhere.parent.mkdir()
+    elsewhere.write_text(_DOC, encoding="utf-8")
+    store = _FakeStore([_parent_row(elsewhere)])
     assert get_chunk_context("doc-1:p2", store) is None
 
 

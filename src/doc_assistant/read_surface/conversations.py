@@ -44,6 +44,7 @@ from doc_assistant.read_surface.shapes import (
     TurnScope,
 )
 from doc_assistant.retrieval_scope import read_scope
+from doc_assistant.source_checks import addressed_to_ai
 
 MAX_PAGE = 100
 DEFAULT_PAGE = 20
@@ -347,6 +348,7 @@ def get_conversation(conversation_id: str) -> ConversationRecord | None:
                             page=pager.page(c),
                             section=c.get("section"),
                             excerpt=str(c.get("chunk_excerpt") or ""),
+                            addressed_to_ai=addressed_to_ai(str(c.get("chunk_excerpt") or "")),
                         )
                         for i, c in enumerate(chunks)
                     ],

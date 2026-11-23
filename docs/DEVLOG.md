@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 · class: append-only -->
+<!-- status: active · updated: 2026-11-23 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,71 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-23 (3) — Security controls say when they fire, and GETs are held to no side effects (A8′, S-11)
+
+**What changed.** Four structlog events, each with its control's name and never the content:
+`security_host_refused` (a subclass of the host guard, `apps/api/host_guard.py`),
+`security_path_refused` (`stored_paths.confine`, replacing `stored_path_outside_library`),
+`security_cap_hit` (the three ingest caps in `extractors.ingest_refusal` and the add cap),
+`security_markup_sanitised` (the prompt fence's defusal). A floor test walks every GET route over a
+library where a write or a call-out would show (SQL writes, files under the data home, outbound
+connections refused) and holds the known writers in a list that can only shrink.
+
+**Why.** `docs/security.md` S-11 (findings S12, S15), in A8′.
+
+**Measured.** $0, no model. `test_security_events.py` 5; the floor test 49 routes. It found a
+fourth GET with a side effect that S15 had not named: `GET /api/ingest/plan` commits registry rows.
+
+**Rejected.** A window-to-engine log route for DOMPurify's removals: a new write route for a log
+line. Fixing the four GETs here: they need the window's clients changed too (S-17).
+
+**What it opens.** S-17, the four GETs. §6's periodic check can now read its events.
+
+## 2026-11-23 (2) — The small security ones: export file, Explorer, pinned models (A8′, S-10)
+
+**What changed.** The history export writes a `mkstemp` file and removes it once sent, so a fixed
+name in the shared temp folder can be neither planted nor left behind. *Reveal in folder* runs
+`%WINDIR%\explorer.exe` by full path. The embedders and the reranker load a pinned commit
+(`EmbeddingModelConfig.revision`, `RERANKER_REVISION`), the commits this machine's cache already
+held, and the release build stages those same snapshots. `docs/setup.md` § Reporting a problem.
+
+**Why.** `docs/security.md` S-10 (finding S11), in A8′.
+
+**Measured.** $0. Tests: the export (a planted file untouched, nothing left), Explorer's path,
+each model pinned to a 40-character commit and loaded at it, and the spec staging the same pairs.
+The installed build was not built or run: the pinned snapshot is the one the bundle already holds.
+
+**Rejected.** `withGlobalTauri: false` here: Tauri 2 injects its internal IPC object either way,
+so it narrows little, and it adds two npm packages and reverses W0's choice. Left to the owner.
+
+**What it opens.** The A9 walkthrough loads models offline from the pinned snapshot (RG-012).
+
+## 2026-11-23 (1) — The MCP path and A6's lookups read against T6: six fixes, two logged (A8′)
+
+**What changed.** An end-to-end test over a real ingest and a real retrieval pipeline (fake
+embedder, word-overlap reranker) runs the plan's five evidence cases. Two failed and are fixed. A
+text re-run left the superseded passages in the running engine's keyword index until a relaunch:
+the run now reports the hashes it replaced, and the engine forgets them and reloads, as after an
+ingest (S18). The parent-child dedup keyed on the file name, so two documents named the same
+merged (S20): it keys on the text's hash. Read in the code and fixed: passage ids carry the
+text's version, `{key}@{hash}`, and `get_passage` finds nothing for an older one (S19); a chunk's
+stored cache path is read only inside the library's cache folder (S21); MCP arguments are checked
+against each tool's schema and a failing tool answers `isError` with no message (S22); captions,
+reference lines and cited excerpts carry the text check (S23, additive fields, version 1 kept).
+List orders get a tie-break. An answer record's references survive a per-part and a full
+re-ingest: the id is kept (ADR-047), the excerpt is its own copy, the page is re-placed or said
+to be unknown.
+
+**Why.** The plan's A8′ line; `docs/security.md` T6.
+
+**Measured.** $0, no model. `test_read_surface_evidence.py` 6 (cases 1 and 2 red before the fixes),
+MCP wire tests +11, read-surface +1, chunk context +1.
+
+**Rejected.** Refusing unversioned passage ids: the chat's own keys and a definition's
+`passage_id` use them. A tie-break in the keyword index's SQL: a repeat call is stable (case 5).
+
+**What it opens.** S23's titles and authors and S24 (record answers' Markdown), both low, with B2.
 
 ## 2026-11-20 (4) — Claims coloured in the answer, and what a turn looked up and carried (A8b)
 

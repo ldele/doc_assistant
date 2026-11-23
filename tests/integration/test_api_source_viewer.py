@@ -245,11 +245,12 @@ def test_an_unknown_chunk_key_is_a_404(client):
     assert r.status_code == 404
 
 
-def test_a_located_chunk_returns_its_document_and_page(client, tmp_path):
+def test_a_located_chunk_returns_its_document_and_page(client, tmp_path, monkeypatch):
     """The shape the chat card depends on: a document id it never had, plus a page.
 
     Goes the whole way — cache markers on disk, offset in the metadata, page derived.
     """
+    monkeypatch.setattr("doc_assistant.config.CACHE_PATH", tmp_path)  # S-7: the cache folder
     cache = tmp_path / "doc.md"
     cache.write_text(_MARKED_CACHE, encoding="utf-8")
     _seed_chunk(

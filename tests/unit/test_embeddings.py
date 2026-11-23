@@ -130,3 +130,61 @@ def test_collection_name_raises_on_unknown_model():
 def test_module_exposes_registry_and_default():
     assert hasattr(emb_mod, "MODELS")
     assert hasattr(emb_mod, "DEFAULT_MODEL")
+
+
+# --------------------------------------------------------------------------- S-10: pinned models
+
+
+def test_every_model_is_pinned_to_a_commit() -> None:
+    import re
+
+    pins = [(c.hf_id, c.revision) for c in emb_mod.MODELS.values()]
+    pins.append((emb_mod.RERANKER_ID, emb_mod.RERANKER_REVISION))
+    for hf_id, revision in pins:
+        assert re.fullmatch(r"[0-9a-f]{40}", revision), f"{hf_id} is not pinned to a commit"
+
+
+def test_the_embedder_is_loaded_at_its_pinned_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    import langchain_huggingface
+
+    seen: dict[str, object] = {}
+
+    def fake(**kw: object) -> object:
+        seen.update(kw)
+        return object()
+
+    monkeypatch.setattr(langchain_huggingface, "HuggingFaceEmbeddings", fake)
+    emb_mod.get_embeddings("bge-base")
+    assert seen["model_kwargs"] == {"revision": emb_mod.MODELS["bge-base"].revision}
+
+
+def test_the_reranker_is_loaded_at_its_pinned_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from doc_assistant import pipeline
+
+    seen: dict[str, object] = {}
+
+    def fake(model: str, **kw: object) -> object:
+        seen.update(kw, model=model)
+        return object()
+
+    monkeypatch.setattr(pipeline, "CrossEncoder", fake)
+    rag = pipeline.RAGPipeline.__new__(pipeline.RAGPipeline)
+    rag._reranker = None
+    _ = rag.reranker
+    assert (seen["model"], seen["revision"]) == (
+        emb_mod.RERANKER_ID,
+        emb_mod.RERANKER_REVISION,
+    )
+
+
+def test_the_release_build_stages_the_pinned_commits() -> None:
+    from pathlib import Path
+
+    spec = (Path(__file__).resolve().parents[2] / "scripts" / "doc_assistant_api.spec").read_text(
+        encoding="utf-8"
+    )
+    for hf_id, revision in (
+        (emb_mod.MODELS["bge-base"].hf_id, emb_mod.MODELS["bge-base"].revision),
+        (emb_mod.RERANKER_ID, emb_mod.RERANKER_REVISION),
+    ):
+        assert f'("{hf_id}", "{revision}")' in spec, f"the build stages another {hf_id}"

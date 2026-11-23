@@ -44,6 +44,40 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-23 (10) — The Rust tree is audited in CI, and Tauri is 2.12 (S-16)
+
+**What changed.** `scripts/cargo_audit_gate.py` runs `cargo audit --json` over
+`apps/desktop/src-tauri/Cargo.lock` and fails on any vulnerability or warning (unmaintained,
+unsound, yanked) not reviewed in the new `cargo-audit-ignore.toml`. It reuses the pip-audit gate's
+ignore parser and fields, and fails closed with no report or a broken list. A new CI job,
+`rust-audit`, builds `cargo-audit` 0.22.2 with `--locked` and runs it; `just audit-rust` does the
+same locally. CI's sync adds `--extra packaging`, so `pip_audit_gate` sees PyInstaller and its
+hooks. Tauri 2.11.3 → 2.12.7 with its plugins and `@tauri-apps/cli` 2.12.6; `plist`, `cookie`,
+`url`, `tokio`, `anyhow` updated. `rust-version` 1.90 (Tauri's MSRV). `nsis/installer.nsi`
+re-taken from the CLI 2.12.6 source with the one KI-73 line.
+
+**Why.** S16: ~450 crates and the packaging extra went into every installer with nothing auditing
+them. The update cleared both `quick-xml` advisories and two found today (RUSTSEC-2026-0594 in
+`cookie`, -0592 in `url`), and the `anyhow` and `tokio` warnings. 2.12.0 also fixes
+GHSA-w28w-mhc8-qvjv (channel IPC payloads readable across webviews). The template's header asks
+for a re-take on every CLI upgrade: 2.12.3 and 2.12.5 changed downgrade blocking and a language
+string in Tauri's own copy, and the old copy would have kept the 2.11.4 behaviour.
+
+**Measured.** $0. Gate: 453 crates, 3 reviewed warnings (`chrono` unmaintained, in the lock only
+as an unused optional dependency; `glib` unsound and `proc-macro-error` unmaintained, both in the
+Linux GTK stack, absent from `--target x86_64-pc-windows-msvc`), 0 unreviewed. The packaging set,
+Windows-only parts included, has no known pip-audit advisory. `tauri dev` builds with no warning;
+the dev window polled the scratch API at `C:\Projects\pv-a8pp-cpu`. 13 new gate tests.
+
+**Rejected.** `.cargo/audit.toml`'s own ignore list (no field for why or what reverses it, and it
+lets warnings pass); a third-party install action (one more thing to trust and pin); a full
+`cargo update` (229 crates, past what the release notes were read for).
+
+**What it opens.** The installed build of this tree, driven at A9 with A8 and A8″ (the owner,
+2026-11-23). `pefile` and `pywin32-ctypes` are not installed on the Linux runner, so CI's pip
+audit does not see them. In dev mode the shell starts the stale frozen sidecar in `binaries/`
+against the real `data/`; with the dev API already on 8001 it exits at the bind.
+
 ## 2026-11-23 (9) — The commit hook type-checks `apps/` as CI does
 
 **What changed.** The mypy hook runs `mypy src apps` and triggers on a staged `src/` or `apps/`

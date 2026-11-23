@@ -11,10 +11,10 @@ purpose (§7), and what was fixed (§8).
 
 ## 0 · At a glance (2026-11-23)
 
-- **Open: 6 findings** (§3). Supply chain: S16, S17, S25 (T5). Low: S23, S24 (T6, T1). By design:
+- **Open: 5 findings** (§3). Supply chain: S17, S25 (T5). Low: S23, S24 (T6, T1). By design:
   S10 (T3, T4). Nothing reachable from a web page is open since S-17 (2026-11-23).
-- **Current step:** S-16 with a Tauri update, in its own session before release A's tag (A9). Not
-  yet placed: S-15.
+- **Current step:** none placed. S-16 landed on 2026-11-23 (the Rust tree and the packaging extra
+  audited in CI, Tauri 2.12); its installed build is driven at A9. Not yet placed: S-15.
 - **Due:** the first periodic full check (§6). Its precondition, S-11, landed on 2026-11-23.
 - **Last looked at:** §2 re-checked for 0.7.3 on 2026-11-11; the MCP path and A6's lookups on
   2026-11-23 (a narrow review, logged in `.claude/REVIEWS.md` on the dev machine).
@@ -140,8 +140,12 @@ Each line is a control as it stands, with the test that pins it where one exists
   frozen build runs offline (`HF_HUB_OFFLINE=1`) on those same snapshots, bundled (S-10).
 - **An unreviewed advisory fails CI.** `scripts/pip_audit_gate.py` fails on any Python advisory not
   reviewed in `pip-audit-ignore.toml`, and fails closed when it cannot read either (S-8);
-  `npm audit --audit-level=high` runs in CI. The Rust tree and the packaging extra are audited by
-  nothing (S16).
+  `npm audit --audit-level=high` runs in CI. Since S-16 (2026-11-23) CI's sync carries the
+  packaging extra, so the same gate sees PyInstaller and its hooks; their Windows-only dependencies
+  (`pefile`, `pywin32-ctypes`) are not installed on the Linux runner and are audited by hand. The
+  Rust tree is audited by `scripts/cargo_audit_gate.py`, which fails on any advisory **or warning**
+  (unmaintained, unsound, yanked) not reviewed in `cargo-audit-ignore.toml`, on a pinned
+  `cargo-audit` (S-16).
 - **CI's actions are pinned to commits** (S-12). Dependabot proposes updates for actions only;
   Python, npm and Rust upgrades stay in sessions, where the audits catch an advisory (the owner,
   2026-10-18). `test_ci_actions_pinned.py` fails on a tag. Dependabot *alerts* are the owner's GitHub setting:
@@ -162,21 +166,12 @@ Each line is a control as it stands, with the test that pins it where one exists
 
 | # | Finding | Threat | Step | Placed |
 |---|---------|--------|------|--------|
-| S16 | `Cargo.lock` and the packaging extra are audited by nothing | T5 | S-16 | after A8″, before A9 |
 | S17 | CI installs the latest uv, and the workflow has no `permissions:` | T5 | S-15 | not placed |
 | S25 | `scripts/` is not type-checked or scanned by bandit | T5 | none yet | not placed |
 | S23 | Titles and authors reach a client's model without the text check | T6 | none yet | release B, with B2 |
 | S24 | A record answer renders document metadata as Markdown, unescaped | T1 | none yet | release B, with B2 |
 | S10 | The key, the conversations and the extraction cache are plaintext on disk | T3, T4 | ROADMAP 64 | by design (§7) |
 
-- **S16** (2026-11-02). 445 crates, and PyInstaller with its hooks, `pefile`, `altgraph` and
-  `pywin32-ctypes`, outside CI's `--extra cpu --extra dev`. The bootloader and hooks go into the
-  installer. Audited once by hand on 2026-11-23 (`cargo audit`, RustSec copy of 2026-11-15): two
-  advisories in `quick-xml` 0.39.4 (RUSTSEC-2026-0194, -0195: slow or unbounded parsing of hostile
-  XML), which reaches the app through `plist` and `tauri-utils` and parses Tauri's own
-  configuration, never a document; and nine warnings (six crates unmaintained, three unsound:
-  `anyhow`, `glib` on Linux only, `tokio`'s Unix `AsyncFd`). S-16's CI gate needs a reviewed list
-  for these, as `pip-audit-ignore.toml` is for Python.
 - **S17** (2026-11-02). `setup-uv` is pinned to a commit but installs `version: "latest"`; the
   Docker image pins its uv.
 - **S25** (2026-11-02, given a number 2026-11-23). 297 mypy errors and one Medium bandit finding in
@@ -194,7 +189,6 @@ Each step is one session's security slot; its `Done when` is the test that lands
 
 | Step | What | Done when | Rides in |
 |------|------|-----------|----------|
-| S-16 | Audit the two trees (S16): `cargo audit` in CI; `--extra packaging` in CI's sync; with it, Tauri updated | CI fails on an unreviewed advisory in either | its own session after A8″, before A9 (the owner, 2026-11-23) |
 | Full | The periodic full check (§6), the first since S-1 to S-11 | a dated entry in `.claude/REVIEWS.md` row 7 | due, not placed |
 | S-15 | Pin CI's uv and its permissions (S17): a `version:` under `setup-uv`; `permissions: contents: read` | `test_ci_actions_pinned.py` fails on `latest` or a missing `version:` | not placed |
 
@@ -215,6 +209,7 @@ Each step is one session's security slot; its `Done when` is the test that lands
 | 11 | Passages served are current, separate, honestly placed, gone once removed, stable | `pytest tests/integration/test_read_surface_evidence.py` | 2026-11-23 |
 | 12 | Each control logs its event | `pytest tests/unit/test_security_events.py` | 2026-11-23 |
 | 13 | No GET route writes or calls out | `pytest tests/integration/test_get_routes_have_no_side_effects.py` | 2026-11-23 |
+| 14 | Rust tree audited, blocking, warnings included | `python -m scripts.cargo_audit_gate` (CI's `rust-audit` job, `just audit-rust`) | 2026-11-23 |
 
 The sprint-close keypoint (`scripts/conventions.toml`) names rows 1 to 5 as its checklist. cpc
 ticket T-012 proposes one gate that runs the whole table.
@@ -313,6 +308,7 @@ One line per finding; the account is the DEVLOG entry of that date.
 | S13 | CI's secret scan could not fail | S-13 | 2026-10-01 |
 | S14 | On Windows the secret scanner skipped 47 files it could not decode | S-14 | 2026-10-01 |
 | S15 | Four GET routes wrote or called out, out of the launch token's reach | S-17 (A8″) | 2026-11-23 |
+| S16 | `Cargo.lock` and the packaging extra were audited by nothing | S-16 | 2026-11-23 |
 | S18 | A text re-run left the old passages in the running engine's keyword index | A8′ | 2026-11-23 |
 | S19 | A passage id named a position, not a text | A8′ | 2026-11-23 |
 | S20 | Two documents with the same file name merged in an answer's passages | A8′ | 2026-11-23 |

@@ -93,6 +93,11 @@ test:
 audit:
     uv run --no-sync python -m scripts.pip_audit_gate
 
+# The desktop shell's Rust tree, blocking — the CI gate (reviewed list in cargo-audit-ignore.toml).
+# Needs `cargo install cargo-audit --locked`.
+audit-rust:
+    uv run --no-sync python -m scripts.cargo_audit_gate
+
 # Not named `secrets`: the scanner would read that recipe name as a key and flag this file.
 # Secret scan over the tracked files, blocking — the CI gate.
 secret-scan:

@@ -1,0 +1,41 @@
+# Reviewed cargo-audit findings — security step S-16 (docs/security.md S16), since 2026-11-23.
+#
+# `python -m scripts.cargo_audit_gate` (CI's Rust job, and `just audit-rust`) runs `cargo audit` over
+# apps/desktop/src-tauri/Cargo.lock and fails on any finding NOT listed here: a vulnerability, or a
+# warning (unmaintained, unsound, yanked). It refuses an entry that lacks any of the fields below,
+# and reports an entry whose finding no longer appears as stale: delete it. A yanked crate has no
+# advisory id; use id = "yanked". Same fields and parser as pip-audit-ignore.toml.
+#
+# To add one: read the advisory, check how the crate reaches THIS app (`cargo tree -i <crate>
+# --target x86_64-pc-windows-msvc`, the installer's target), and write down why it does not apply
+# and what would make it apply. "Upgrade later" is not a reason: try `cargo update -p <crate>` first.
+
+[[ignore]]
+id = "RUSTSEC-2026-0543"
+package = "chrono"
+reviewed = "2026-11-23"
+why = """Unmaintained, not a vulnerability. chrono is in Cargo.lock only as an optional dependency \
+of serde_with (through tauri-utils), and no crate turns that feature on: `cargo tree -i chrono \
+--target all` finds nothing, so it is never compiled into the app. cargo audit reads the lockfile, \
+not the build, which is why it is reported."""
+reverse_if = "`cargo tree -i chrono --target all` lists it (a feature turned it on), or an advisory reports a vulnerability in it."
+
+[[ignore]]
+id = "RUSTSEC-2024-0429"
+package = "glib"
+reviewed = "2026-11-23"
+why = """Linux only: glib 0.18 is part of the GTK3 stack Tauri 2 uses on Linux (gtk, through muda \
+and wry). The installer is built for Windows, where `cargo tree -i glib --target \
+x86_64-pc-windows-msvc` finds nothing. The unsound code is VariantStrIter, which this app never \
+calls. The fix (glib 0.20) needs Tauri off GTK3, which no 2.x release has done."""
+reverse_if = "The app is built or shipped for Linux, or a Tauri 2.x release moves to glib >= 0.20 (then update)."
+
+[[ignore]]
+id = "RUSTSEC-2024-0370"
+package = "proc-macro-error"
+reviewed = "2026-11-23"
+why = """Unmaintained, not a vulnerability, and build-time only: a procedural-macro helper used by \
+glib-macros in the Linux GTK3 stack. No code from it runs in the app, and it is not in the Windows \
+build (`cargo tree -i proc-macro-error --target x86_64-pc-windows-msvc` finds nothing). No fixed \
+release exists."""
+reverse_if = "The app is built for Linux and a vulnerability (not unmaintained) is reported, or it appears in the Windows tree."

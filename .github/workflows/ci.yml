@@ -38,7 +38,10 @@ jobs:
       - name: Install dependencies
         # --extra cpu → the lean +cpu torch wheel from the pytorch-cpu index (never cu130).
         # --locked → fail if uv.lock is stale vs pyproject (no silent re-resolve in CI).
-        run: uv sync --locked --extra cpu --extra dev
+        # --extra packaging → PyInstaller and its hooks, whose bootloader and hooks go into the
+        # installer, so pip-audit below sees them (docs/security.md S-16). Its Windows-only
+        # dependencies (pefile, pywin32-ctypes) are not installed on this Linux runner.
+        run: uv sync --locked --extra cpu --extra dev --extra packaging
 
       # --- Lint --- (scope: src/ tests/ apps/ scripts/ — apps/api is the HTTP boundary and was
       # outside every gate until 2026-09-10; all four commands passed on the whole tree that day)
@@ -115,6 +118,23 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  # The desktop shell's Rust tree (~450 crates) went into every installer with no check until
+  # 2026-11-23 (docs/security.md S-16). The gate fails on any advisory or warning not reviewed in
+  # cargo-audit-ignore.toml. cargo-audit is built from crates.io at a pinned version with its own
+  # lockfile, so no third-party install action is trusted. The gate is standard library only.
+  rust-audit:
+    name: Rust — cargo audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.2
+
+      - name: cargo audit (blocking — reviewed ignores in cargo-audit-ignore.toml)
+        run: python3 -m scripts.cargo_audit_gate
 
   # The container is the third way this project ships (desktop installer · source checkout ·
   # headless image) and it was the only one nothing verified: no job here referenced the Dockerfile

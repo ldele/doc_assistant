@@ -13,7 +13,8 @@ purpose (§7), and what was fixed (§8).
 
 - **Open: 7 findings** (§3). Reachable from a web page: S15, four GET routes with a side effect
   (T2). Supply chain: S16, S17, S25 (T5). Low: S23, S24 (T6, T1). By design: S10 (T3, T4).
-- **Current step:** S-17, in session A8″, before release A's tag (A9). Not yet placed: S-15, S-16.
+- **Current step:** S-17, in session A8″; then S-16 with a Tauri update; both before release A's
+  tag (A9). Not yet placed: S-15.
 - **Due:** the first periodic full check (§6). Its precondition, S-11, landed on 2026-11-23.
 - **Last looked at:** §2 re-checked for 0.7.3 on 2026-11-11; the MCP path and A6's lookups on
   2026-11-23 (a narrow review, logged in `.claude/REVIEWS.md` on the dev machine).
@@ -160,7 +161,7 @@ Each line is a control as it stands, with the test that pins it where one exists
 | # | Finding | Threat | Step | Placed |
 |---|---------|--------|------|--------|
 | S15 | Four GET routes write or call out, out of the launch token's reach | T2 | S-17 | A8″, before A9 |
-| S16 | `Cargo.lock` and the packaging extra are audited by nothing | T5 | S-16 | not placed |
+| S16 | `Cargo.lock` and the packaging extra are audited by nothing | T5 | S-16 | after A8″, before A9 |
 | S17 | CI installs the latest uv, and the workflow has no `permissions:` | T5 | S-15 | not placed |
 | S25 | `scripts/` is not type-checked or scanned by bandit | T5 | none yet | not placed |
 | S23 | Titles and authors reach a client's model without the text check | T6 | none yet | release B, with B2 |
@@ -199,9 +200,9 @@ Each step is one session's security slot; its `Done when` is the test that lands
 | Step | What | Done when | Rides in |
 |------|------|-----------|----------|
 | S-17 | The four GETs lose their side effects (S15): a POST the window calls, or a read of what is stored | the floor test's `KNOWN` list is empty | A8″, before A9 (the owner, 2026-11-23) |
+| S-16 | Audit the two trees (S16): `cargo audit` in CI; `--extra packaging` in CI's sync; with it, Tauri updated | CI fails on an unreviewed advisory in either | its own session after A8″, before A9 (the owner, 2026-11-23) |
 | Full | The periodic full check (§6), the first since S-1 to S-11 | a dated entry in `.claude/REVIEWS.md` row 7 | due, not placed |
 | S-15 | Pin CI's uv and its permissions (S17): a `version:` under `setup-uv`; `permissions: contents: read` | `test_ci_actions_pinned.py` fails on `latest` or a missing `version:` | not placed |
-| S-16 | Audit the two trees (S16): `cargo audit` in CI; `--extra packaging` in CI's sync | CI fails on an unreviewed advisory in either | not placed |
 
 ## 5 · The floor: checks that run without a person
 

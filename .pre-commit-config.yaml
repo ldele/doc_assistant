@@ -24,7 +24,7 @@ repos:
         pass_filenames: false
         files: ^(src|tests)/
 
-  # mypy: type checking — runs CI's effective command (`uv run mypy src/`) in the PROJECT venv so
+  # mypy: type checking — runs CI's effective command (`uv run mypy src/ apps/`) in the PROJECT venv so
   # the local pre-check matches CI exactly. Why not the isolated mirrors-mypy hook:
   #   - The old hook (additional_dependencies: []) ran mypy in pre-commit's own env WITHOUT project
   #     deps, so it false-failed `import-not-found` on every third-party import not in pyproject's
@@ -38,9 +38,10 @@ repos:
   #     docs/specs/torch-backend-per-machine.md.
   #   - Strictness comes from [tool.mypy] strict=true, NOT a `--strict` arg — the old arg also
   #     re-enabled warn_unused_ignores (the config turns it off), another divergence from CI.
-  #   - `files: ^src/` keeps the trigger scoped (runs only when an src file is staged); with
-  #     pass_filenames:false it checks the whole src/ tree like CI. src/-only is intended — the
-  #     eval harness + other non-src .py are outside the strict gate (architecture.md).
+  #   - `files: ^(src|apps)/` keeps the trigger scoped (runs only when an src/ or apps/ file is
+  #     staged); with pass_filenames:false it checks both trees whole, like CI. CI has checked
+  #     apps/ since 2026-09-10 while this hook checked src/ only, so an apps/ type error first
+  #     showed on main (A8″a, 2026-11-23). The eval harness + other .py stay outside the gate.
   # CONSTRAINT: needs `uv` on PATH and the env synced at commit time (true on any dev box; run
   # `uv sync` first on a fresh clone). CI (.github/workflows/ci.yml) remains the authoritative gate.
   - repo: local
@@ -49,9 +50,9 @@ repos:
         name: mypy (strict, project venv via uv — mirrors CI)
         entry: uv run --no-sync mypy
         language: system
-        args: [src]
+        args: [src, apps]
         pass_filenames: false
-        files: ^src/
+        files: ^(src|apps)/
 
   # bandit: security SAST
   - repo: https://github.com/PyCQA/bandit

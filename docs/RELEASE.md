@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
+<!-- status: active · updated: 2026-11-23 (§2, §3: `mypy src apps`, as CI); 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -31,7 +31,7 @@ uv run --no-sync python -m scripts.release_preflight
 
 # 2. gates
 uv run --no-sync pytest -q
-uv run --no-sync mypy src
+uv run --no-sync mypy src apps
 npm --prefix apps/desktop test && npm --prefix apps/desktop run check
 uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
 uv run --no-sync python -m scripts.pip_audit_gate           # security floor, blocking (S-8)
@@ -157,7 +157,7 @@ Write for someone deciding whether to install it, not for the commit log:
 | Gate | Command | Notes |
 |---|---|---|
 | Python tests | `uv run --no-sync pytest -q` | |
-| Types | `uv run --no-sync mypy src` | **never** `mypy --strict src` — different option set, wipes the cache both ways (`.claude/CONTEXT.md` §8) |
+| Types | `uv run --no-sync mypy src apps` | **never** `mypy --strict src` — different option set, wipes the cache both ways (`.claude/CONTEXT.md` §8) |
 | Frontend tests | `npm --prefix apps/desktop test` | `node:test`, pure `lib/**/*.ts` only |
 | Frontend types | `npm --prefix apps/desktop run check` | `svelte-check` |
 | Docs | `rungate.py docs_check --root . --strict` | |

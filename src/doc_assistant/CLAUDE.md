@@ -27,7 +27,7 @@
   `credentials.resolve_key` (ADR-034), else an in-app key is silently missed. Never log key material.
 - **Robustness contract:** handle an empty corpus (0 docs) without crashing; no corpus-tuned
   constants — derive thresholds from data, or name them structural.
-- Type-check with **`uv run --no-sync mypy src`**, never `--strict` (`.claude/CONTEXT.md` §8);
+- Type-check with **`uv run --no-sync mypy src apps`**, never `--strict` (`.claude/CONTEXT.md` §8);
   exceptions chain (`raise X from e`).
 - **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is a
   *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the

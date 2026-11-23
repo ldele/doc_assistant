@@ -99,9 +99,9 @@ secret-scan:
     uv run --no-sync python -m scripts.secret_scan_gate
 
 # Never `mypy --strict src`: it is a different option set and wipes the cache (CONTEXT.md §8).
-# Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/`).
+# Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/ apps/`).
 typecheck:
-    uv run --no-sync mypy src
+    uv run --no-sync mypy src apps
 
 # Own cache dir, so it cannot cold-start `typecheck`; stricter than CI (unused ignores).
 # Escape hatch for the divergent `--strict` flag set — prefer `just typecheck`.

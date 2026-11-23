@@ -195,6 +195,8 @@ def ingest_files(
                 path=f.path, name=f.name, state=f.state, detail=f.detail, id=f.id, kind=f.kind
             )
             for f in rows
+            # `page` never lists a removed item; the check says so to the type checker.
+            if f.state != "removed"
         ],
     )
 

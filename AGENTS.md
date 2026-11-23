@@ -79,7 +79,7 @@ module, read that module's file and stay inside its boundary:
   eval-harness experiment (`--repeat`, beat the control, record a baseline). Table: `.claude/CONTEXT.md`.
 - `structlog` only, no `print()` in `src/` (ADR-003); exceptions chain (`raise X from e`); no
   secrets in code (`.env` gitignored).
-- **Type-check with `uv run --no-sync mypy src`** (`just typecheck` if you have `just`) —
+- **Type-check with `uv run --no-sync mypy src apps`**, as CI does (`just typecheck` if you have `just`) —
   **never `mypy --strict src`**. The flag is redundant (`strict=true` is in `pyproject.toml`) and it
   changes the option set, so it wipes mypy's incremental cache both ways: the next commit's hook then
   takes ~40 s instead of ~2 s. Full note: `.claude/CONTEXT.md` §8.

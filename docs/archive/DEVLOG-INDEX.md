@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-20 · class: living -->
+<!-- status: archived · updated: 2026-11-23 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-010.md
 
+- **2026-11-20** (2) — Questions within several folders or a concept, and the chat list's labels (A7b)
+- **2026-11-20** — Chat modes, and evidence only calls no model (A7)
+- **2026-11-19** (5) — The chat-modes spec, accepted (A7)
+- **2026-11-19** (4) — Record questions answered from the records, by rule and command (A6)
+- **2026-11-19** (3) — cpc's deny rules laid for the agent's git commands
+- **2026-11-19** (2) — The chat-eval baseline re-recorded on 391ea0e
+- **2026-11-19** (1) — The record-lookups spec, accepted (A6)
+- **2026-11-17** (4) — Each turn fitted to the model's window, and said (A5)
+- **2026-11-17** (3) — The context-handling spec, drafted (A5)
+- **2026-11-17** (2) — The MCP endpoint and its bridge (A4)
+- **2026-11-17** — The read surface after a stand-in client trial: nine tools (A3)
 - **2026-11-16** (4) — The read surface: ADR-066's seven tools as functions (A3)
 - **2026-11-16** (3) — The text check once per document, after extraction (A2b)
 - **2026-11-16** (2) — The prompt fence, and checks that hold on any model (A2, S-9)

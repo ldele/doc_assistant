@@ -9,6 +9,56 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+The chat does more with your library. It answers questions about the library from its own records,
+asks within the folders or the concept you choose, answers in one of two modes,
+keeps a long conversation in view, and shows which sentences of an answer rest on which passage.
+Another AI program on your computer can now read your library, if you turn that on. Every add and
+re-run goes through one list that keeps working while it runs. After this update every PDF is
+listed as *changed* one last time (see *Known limits*).
+
+### Added
+
+- **Questions about your library are answered from its records.** "How many documents are in
+  folder X?", "Which documents have no year?", "What is the chosen definition of concept Y?" and
+  similar questions are answered by the app itself, from what the library records, and the answer
+  says so: no passage is read and no model is asked.
+- **Ask within folders or a concept.** A new chat can search the folders you tick, several at once,
+  each document counted once. In any chat, `/folder Name: question` asks within one folder for that
+  question, and `/concept name: question` within the documents where the concept is present. The
+  answer names what it searched; a folder that holds nothing never widens the search.
+- **Two ways of answering.** *Research assistant* answers as before. *Critical reading* also says
+  where the sources agree, disagree or are limited, only where they show it. The rules about
+  citing apply to both.
+- **A start screen for each new chat.** Choose the mode and where it searches, see sample
+  questions, and make the choice your default. A chat keeps its setup when you reopen it, and
+  *Continue in a new chat* carries a conversation into a fresh one. The chat list groups chats by
+  mode or folder and can show only the chats that cited a folder or a document.
+- **What an answer rests on, in the answer.** Each claim is coloured by how well its citation
+  supports it, and clicking it opens its passage. An answer from the records shows *What it looked
+  up*; *How this answer was made* (formerly *Provenance & usage*) shows what the answer carried
+  from the conversation. A reopened chat shows the same, with the review that was recorded.
+- **Text written to an AI is marked.** A passage that addresses an AI assistant (a request to
+  ignore instructions, a fake system message) is marked on the source card of the answer that cites
+  it and on its document's page, and the library summary counts such documents. Nothing is removed
+  or changed, and a paper that only quotes such text is marked too.
+- **Other AI programs can read your library, if you allow it.** Settings > *AI programs* is off
+  until you turn it on. A program that speaks MCP can then search your documents and read their
+  records through read-only tools, with its own access token. Provenote calls no model for it and
+  changes nothing; each passage it receives carries its source and its mark.
+- **One list for every add and re-run.** Files you add, folders you index and documents you re-run
+  wait in one list on the indexing screen and run in order. Add more with *Add to queue* while it
+  runs, take a waiting item out with *Remove*, and keep searching and chatting meanwhile. Files you
+  add while the engine is still starting are kept and added once it is ready.
+
+### Changed
+
+- **A long conversation keeps its thread.** Each turn is fitted to the model's window, and when
+  anything had to be left out, the answer says what.
+- **The letter-spacing block sits at the foot of a document's page**, folded once you have set a
+  rule for the document.
+- **Plainer wording across the app**, and the lines under an answer lost their emoji.
+- **The desktop shell runs on Tauri 2.12**, with the framework's security and installer fixes.
+
 ### Fixed
 
 - **An update no longer lists every PDF as *changed*.** The app's own version number was part of
@@ -19,6 +69,48 @@ The engineering record is finer-grained than this file: per-change entries live 
   dies early.** These read several files at once in helper processes (the installed app reads one
   at a time); if a helper stopped while files were still being handed out, the whole run stopped
   with an error. It now carries on and reads the rest one at a time.
+- **Settings opens while the engine is still starting.** It showed *Loading…* or *Failed to fetch*
+  in place of the whole drawer and stayed that way after the engine answered. The sections that need
+  the engine now say they are waiting for it and fill in when it is ready.
+- **A folder count reads the folder.** "How many documents are in folder X?" was answered with the
+  whole library's count.
+- **A re-read document's old text leaves keyword search at once.** After *Re-run… > Text*, its old
+  passages could still be found by keyword until the app restarted.
+- **Two documents with the same file name stay apart in an answer's sources**; they could be shown
+  as one.
+
+### Security
+
+- **Each passage reaches the model inside a marked boundary**, so text in a document is given to the
+  model as material to answer from, not as instructions (see *Known limits* for what that does not
+  stop).
+- **No request that only reads can change anything.** Four that wrote or called out now need the
+  same per-launch token as every change.
+- **The desktop shell's own dependencies are audited**: the Rust crates and the packaging tools are
+  checked for advisories on every change, as the Python and JavaScript ones already were.
+
+### Known limits
+
+- **After this update, Settings > Documents lists every PDF as *changed* one last time**, and
+  *Re-index* counts them as changed. This update is the fix: the app's version number is no longer
+  part of how it tells whether a PDF's stored text is current. Your documents stay searchable as
+  they are, and *Only index new files* leaves them alone. The next update will not do this.
+- **A small local model still follows planted text about one time in five.** On the public test
+  documents, `llama3.1:8b` and `qwen2.5:7b` ignored an instruction planted in a passage 79% and 83%
+  of the time over three trials. The marks above are there so you can see such text; the boundary
+  alone does not stop a small model from obeying it.
+- **`llama3.1:8b` sometimes answers a question your library cannot answer with citation numbers
+  alone**, such as `[8][7]`, and no sentence. Rare: 4 answers in about 2,900 test answers.
+- **Continuing a long chat carries the whole conversation into memory, but each answer is written
+  from at most the last three exchanges**, fewer on a model with a small window.
+- **Your own Ollama added as an OpenAI-compatible server cuts long prompts**, and answers then cite
+  nothing; use the Ollama provider instead. A server that reports no token counts still shows
+  *0 tokens* under the answer.
+- **The installed engine keeps no log**, so an error it hit once cannot be read afterwards.
+- **If the engine stops while the window is open, panels still say *Failed to fetch***, and the
+  status bar stays green until you restart the app.
+- **Everything under *Known limits* for 0.7.3, 0.7.2, 0.7.1 and 0.7.0 still applies**, except the
+  PDF line above, which replaces 0.7.3's.
 
 ## [0.7.3] — 2026-11-11
 

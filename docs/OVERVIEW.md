@@ -4,7 +4,7 @@
 
 What the project is, what it has measured and where it stands, on one page. Every figure links to
 the file it comes from; when a release ships or a baseline changes a figure, update it here too.
-Figures as of 2026-10-20, state as of 2026-10-31.
+Figures as of 2026-11-24 (§4's chat benchmark; the other rows keep their own dates), state as of 2026-10-31.
 
 ## 1. What it is, and for whom
 

@@ -224,7 +224,7 @@
         <div class="writeractions">
           <button class="btn btn-primary" onclick={save} disabled={busy || !draft.trim()} type="button" use:tooltip={!draft.trim() ? 'Write something first' : 'Keep your definition and make it the chosen one'}>Save and use</button>
           <button class="btn" onclick={() => (writing = false)} type="button" use:tooltip={'Stop writing; nothing is saved'}>Cancel</button>
-          <span class="muted hint">Saving keeps every other option — nothing is replaced.</span>
+          <span class="muted hint">Saving keeps every other option; nothing is replaced.</span>
         </div>
       </div>
     {/if}
@@ -294,7 +294,7 @@
       {/if}
     {:else if view && view.thin && isConcept}
       <p class="muted thin">
-        Your library has little to go on for this concept — no sentence that reads as a definition.
+        Your library has little to go on for this concept: no sentence in it reads as a definition.
         Writing your own is a good option here.
       </p>
     {/if}

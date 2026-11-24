@@ -104,7 +104,7 @@ class FakeController:
         self.adjudicated.append((claim_id, decision, edited_text))
 
     def export_conversation(self, session: object, *, dev: bool) -> tuple[str, object]:
-        return ("Nothing to export yet — ask a question first.", None)
+        return ("Nothing to export yet. Ask a question first.", None)
 
 
 def _client(controller: FakeController | None = None) -> TestClient:

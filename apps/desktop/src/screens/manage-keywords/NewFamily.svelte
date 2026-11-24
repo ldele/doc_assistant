@@ -101,7 +101,7 @@
       “{canonicalMatch.canonical}” already exists ({canonicalMatch.doc_count} doc{canonicalMatch.doc_count ===
       1
         ? ''
-        : 's'}) — creating it again would split the same keyword across two families.
+        : 's'}). Creating it again would split the same keyword across two families.
     </p>
   {:else if canonicalSuggestions.length > 0}
     <div class="suggest" role="group" aria-label="Existing families matching what you typed">

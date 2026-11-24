@@ -141,7 +141,7 @@
         </div>
       {:else}
         <span class="nomembers">
-          Nothing left to review — every proposal has been accepted or rejected.
+          Nothing left to review. Every proposal has been accepted or rejected.
         </span>
       {/each}
     </div>
@@ -164,7 +164,7 @@
       <div class="chips">
         {#each detail.concepts as c (c.id)}
           {#if c.origin === 'proposed'}
-            <span class="chip proposed" title="Proposed, not yours yet — accept or reject">
+            <span class="chip proposed" title="Proposed, not yours yet. Accept or reject it.">
               <span>{shownLabel(c)}</span>
               <button
                 class="chipbtn"
@@ -221,7 +221,7 @@
       <div class="doclist">
         {#each detail.documents as d (d.id)}
           {#if d.origin === 'proposed'}
-            <span class="docrow proposed" title="Proposed, not yours yet — accept or reject">
+            <span class="docrow proposed" title="Proposed, not yours yet. Accept or reject it.">
               <span class="dlabel">{d.label}</span>
               <button
                 class="chipbtn"

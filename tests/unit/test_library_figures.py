@@ -97,7 +97,7 @@ def test_known_skip_reasons_are_translated_for_a_user() -> None:
     # The enum is an audit value; shown raw in a UI it reads as a defect rather than the
     # deliberate cost gate it is.
     assert _reason(None, "caption_sufficient", True) == (
-        "Caption already describes it — no description needed"
+        "Caption already describes it; no description needed"
     )
     assert _reason(None, "budget_exhausted", True) == "Per-document description budget reached"
 
@@ -116,7 +116,7 @@ def test_a_failed_call_is_summarised_not_dumped_into_the_panel() -> None:
         "Input should be a valid list [type=list_type, input_value='100 mV, 40 m.mho/cm2']"
     )
     assert _reason(None, recorded, True) == (
-        "Description attempt failed — it is retried by the next description pass"
+        "Description failed. The next description pass retries it"
     )
 
 

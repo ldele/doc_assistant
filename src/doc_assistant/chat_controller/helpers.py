@@ -187,7 +187,7 @@ def _overrides_note(
         )
     if not diffs:
         return ""
-    return "\n\n🧪 **Session override (this answer only):** " + " · ".join(diffs)
+    return "\n\n**Session override (this answer only):** " + " · ".join(diffs)
 
 
 def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
@@ -326,7 +326,7 @@ def _scope_note(scope: ScopeView | None) -> str:
     stays byte-identical (the turn-parity test pins this)."""
     if scope is None:
         return ""
-    return "\n\n🔎 **Retrieval scope (this answer only):** " + scope_summary(scope)
+    return "\n\n**Retrieval scope (this answer only):** " + scope_summary(scope)
 
 
 def _no_sources_answer(scope: ScopeView | None, *, corpus_empty: bool) -> str:
@@ -462,7 +462,7 @@ def _format_provenance_card(
         )
         return (
             f"\n\n---\n"
-            f"🔍 **Provenance** — `{id8}` · {latency_s:.1f}s"
+            f"**Provenance:** `{id8}` · {latency_s:.1f}s"
             f"{_token_suffix(prov, is_local=is_local)}{top}  \n"
             f"{meta}  \n"
             f"{hint}"
@@ -492,7 +492,7 @@ def _format_provenance_card(
     review_block = _format_review_block(review)
     return (
         f"\n\n---\n"
-        f"⚠ **Low confidence: {', '.join(signals.reasons)}** — "
+        f"⚠ **Low confidence: {', '.join(signals.reasons)}** · "
         f"`{id8}` · {latency_s:.1f}s{_token_suffix(prov, is_local=is_local)}  \n"
         f"{meta}  \n"
         f"**Prompt version** `{prov.prompt_version or '?'}`\n\n"

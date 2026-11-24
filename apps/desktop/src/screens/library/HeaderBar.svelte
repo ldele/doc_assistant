@@ -231,7 +231,7 @@
               use:tooltip={'Open Manage folders to make your first folder'}
             >
               <span class="tick"><Icon name="plus" size={13} /></span>
-              No folders yet — create one…
+              No folders yet. Create one…
             </button>
           {/each}
         </div>

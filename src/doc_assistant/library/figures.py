@@ -65,18 +65,18 @@ class DocumentFigureView:
 # is a user surface, so each value is translated once, here — a raw `caption_sufficient` in the
 # UI reads as a defect rather than the deliberate cost gate it is.
 _SKIP_REASONS = {
-    "caption_sufficient": "Caption already describes it — no description needed",
+    "caption_sufficient": "Caption already describes it; no description needed",
     "budget_exhausted": "Per-document description budget reached",
     "image_missing": "Rendered image is missing on disk",
 }
-_NO_IMAGE = "Caption only — no image region was detected to describe"
-_NOT_DESCRIBED = "Not described yet — run the figure description pass"
+_NO_IMAGE = "Caption only: no image region was found to describe"
+_NOT_DESCRIBED = "Not described yet. Run the figure description pass"
 # A failed call records `error: <Type>: <message>` (`ingest.figures.describe_error_reason`).
 # That string is an *audit* record — up to 400 characters of pydantic — so the panel says what
 # the user can act on and leaves the diagnosis in the DB. An unknown enum still passes through
 # verbatim: a new reason should be visible, not swallowed.
 _ERROR_PREFIX = "error:"
-_FAILED = "Description attempt failed — it is retried by the next description pass"
+_FAILED = "Description failed. The next description pass retries it"
 
 
 def _reason(description: str | None, skipped: str | None, has_image: bool) -> str | None:

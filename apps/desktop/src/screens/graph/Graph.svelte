@@ -165,7 +165,7 @@
       <span class="state-mark"><Icon name="waypoints" size={28} /></span>
       <strong>No concepts in the graph yet</strong>
       <p class="muted">
-        The graph maps a <em>curated</em> vocabulary — concepts you have chosen — rather than every
+        The graph maps the concepts you have chosen, not every
         keyword in your library, which is why it starts empty instead of full of noise.
       </p>
       <p class="muted">

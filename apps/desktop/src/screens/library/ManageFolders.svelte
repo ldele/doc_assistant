@@ -194,7 +194,7 @@
             </div>
           {/each}
         </div>
-        <p class="hint deletehint">Deleting a folder never deletes documents — only the grouping.</p>
+        <p class="hint deletehint">Deleting a folder removes the grouping and never deletes documents.</p>
       {/if}
     </section>
 

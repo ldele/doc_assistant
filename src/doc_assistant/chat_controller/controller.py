@@ -315,7 +315,7 @@ class ChatController:
         durable = conversations.conversation_export_turns(session.session_id)
         turns = in_memory if (dev and in_memory) else (durable or in_memory)
         if not turns:
-            return ("Nothing to export yet — ask a question first.", None)
+            return ("Nothing to export yet. Ask a question first.", None)
         flavour = "debug" if dev else "transcript"
         subtitle = (
             f"Exported {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC} · session "
@@ -325,7 +325,7 @@ class ChatController:
             turns, title="Provenote conversation", subtitle=subtitle, dev=dev
         )
         path = export.write_markdown(f"{session.session_id}-{flavour}.md", md)
-        return (f"📄 Exported {len(turns)} turn(s) — {flavour}. Saved to `{path}`.", path)
+        return (f"Exported {len(turns)} turn(s) ({flavour}). Saved to `{path}`.", path)
 
     def handle_message(
         self,
@@ -1094,7 +1094,7 @@ class ChatController:
         return TurnResult(
             route="evidence",
             answer=(
-                "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
+                "**Human synthesis mode.** Evidence only; the interpretation is yours.\n\n"
                 + render_evidence_markdown(retrieved_chunks)
                 + (f"\n\n{EVIDENCE_AS_TYPED_NOTE}" if had_history else "")
                 + overrides_note
@@ -1173,7 +1173,7 @@ class ChatController:
             usage=UsageView(0, 0, session.counter.total(), 0.0, False),
             standalone_query=standalone,
             record_id=None,
-            provenance_card_md="🔍 **Provenance** — nothing was retrieved, so no model was asked.",
+            provenance_card_md="**Provenance.** Nothing was retrieved, so no model was asked.",
             claim_review_md="",
             sources_md="",
             usage_md="",
@@ -1205,8 +1205,7 @@ class ChatController:
                 else f"provider reports no usage. (~{est_out:,} output tokens, estimated.)"
             )
             return (
-                f"\n\n---\n"
-                f"🖥 **Local model** (`{provider}/{model}`) — no metered token cost; {counts}"
+                f"\n\n---\n**Local model** (`{provider}/{model}`): no metered token cost; {counts}"
             )
         if provider != "anthropic":
             # ADR-060: where the text went and who bills, never a price Provenote does not know.
@@ -1218,13 +1217,13 @@ class ChatController:
             )
             return (
                 f"\n\n---\n"
-                f"📡 **{facts.route.short}.** {facts.billing.chip} (`{provider}/{model}`; "
+                f"**{facts.route.short}.** {facts.billing.chip} (`{provider}/{model}`; "
                 f"{counts}.)"
             )
         turn_total = turn_in + turn_out
         return (
             f"\n\n---\n"
-            f"📊 **This turn:** {turn_in:,} in + {turn_out:,} out "
+            f"**This turn:** {turn_in:,} in + {turn_out:,} out "
             f"= {turn_total:,} tokens "
             f"(~${(turn_in * 1.0 + turn_out * 5.0) / 1_000_000:.4f})  \n"
             f"**Session total:** {counter.total():,} tokens "

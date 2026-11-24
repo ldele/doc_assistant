@@ -160,7 +160,7 @@
     {/if}
   </div>
   <p class="hint">
-    Where Provenote keeps the documents you add — anything already in it can be indexed here
+    Where Provenote keeps the documents you add. Anything already in it can be indexed here
     too. Supported: {settings.supported_formats}.
   </p>
   {#if settings.source_dir && !settings.source_dir_exists}

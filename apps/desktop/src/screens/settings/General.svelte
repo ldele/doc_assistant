@@ -121,7 +121,7 @@
 <section>
   <h3>Chat history</h3>
   <p class="hint">
-    Every conversation in one markdown file — uncapped, unlike the sidebar list. Delete chats
+    Every conversation in one Markdown file, with no cap, unlike the sidebar list. Delete chats
     from the sidebar’s select mode (✓).
   </p>
   <button class="btn below" onclick={exportHistory} disabled={exporting} type="button" use:tooltip={'Save every conversation to one file'}>
@@ -138,8 +138,7 @@
   <h3>Updates</h3>
   <p class="hint">
     Provenote can check whether a newer version has been published, and link you to it.
-    It never downloads or installs anything — you stay in control of what runs on your
-    machine.
+    It never downloads or installs anything itself.
   </p>
   <label class="switch-row">
     <input

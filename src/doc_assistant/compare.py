@@ -113,14 +113,14 @@ def compare_note(eff_a: EffKnobs, eff_b: EffKnobs) -> str:
     """
     if eff_a == eff_b:
         return (
-            "This override doesn't change retrieval — its knobs affect the answer, "
+            "This override doesn't change retrieval. Its settings affect the answer, "
             "not which sources are retrieved."
         )
     if eff_a["use_multi_query"] == eff_b["use_multi_query"]:
         delta = int(eff_b["top_k"]) - int(eff_a["top_k"])
         more = "more" if delta > 0 else "fewer"
         return (
-            f"Same ranking, {abs(delta)} {more} source(s) — top_k changes depth only "
+            f"Same ranking, {abs(delta)} {more} source(s): top_k changes depth only "
             "(one set includes the other)."
         )
     return ""

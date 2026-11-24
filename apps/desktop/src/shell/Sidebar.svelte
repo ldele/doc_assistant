@@ -116,7 +116,7 @@
           <button class="managelink" onclick={openManageFolders} type="button" use:tooltip={'Create, rename or delete folders'}>Manage…</button>
         </div>
         {#if folders.length === 0}
-          <p class="tree-empty">No folders yet — create one in Manage…</p>
+          <p class="tree-empty">No folders yet. Create one in Manage…</p>
         {:else}
           {#each folders as f (f.id)}
             <button

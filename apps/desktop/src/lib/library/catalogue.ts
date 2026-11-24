@@ -29,6 +29,6 @@ export function skippedSentence(skipped: Record<string, number>): string {
 export function nothingToAdd(skipped: Record<string, number>): string {
   const reasons = skippedSentence(skipped)
   return reasons
-    ? `Nothing to add from that library — ${reasons}.`
+    ? `Nothing to add from that library: ${reasons}.`
     : 'That Zotero library has no documents in it yet.'
 }

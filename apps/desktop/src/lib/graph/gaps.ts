@@ -23,7 +23,7 @@ export const GAP_META: Record<GapKind, GapMeta> = {
     rank: 0,
     tone: 'danger',
     label: 'Single source',
-    blurb: 'Appears in only one document — no independent corroboration.',
+    blurb: 'Appears in only one document, so no second source backs it.',
   },
   unsourced_claim: {
     rank: 1,
@@ -73,7 +73,7 @@ export const GAP_META: Record<GapKind, GapMeta> = {
     tone: 'warn',
     label: 'Under-connected',
     blurb:
-      'Low graph degree — noisy at a small vocabulary; grows more meaningful as the graph fills in.',
+      'Few links to other concepts. With a small vocabulary this is noisy; it means more as the graph fills in.',
     hiddenByDefault: true,
   },
 }
@@ -202,5 +202,5 @@ export function graphCoverage(s: {
   const concepts = s.n_concepts_in_skeleton
   const which =
     concepts === 1 ? 'the one concept on your graph' : `one of the ${concepts} concepts on your graph`
-  return `Covers ${covered} of your ${total} documents — a document appears once it mentions ${which}.`
+  return `Covers ${covered} of your ${total} documents. A document counts once it mentions ${which}.`
 }

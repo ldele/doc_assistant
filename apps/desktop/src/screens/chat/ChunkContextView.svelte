@@ -83,7 +83,7 @@
       <!-- Honest, and rare: 3 chunks in 39,000 on the reference corpus. The span was never
            resolvable at ingest, so there is no position to show and none is invented. -->
       <p class="note">
-        This passage can’t be placed in the source text — its position wasn’t resolvable when the
+        This passage can’t be placed in the source text: its position could not be found when the
         document was indexed.
       </p>
     {:else}

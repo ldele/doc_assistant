@@ -207,7 +207,7 @@ const cov = (over: Record<string, number> = {}) =>
 test('coverage states the fraction and the rule that produces it', () => {
   assert.equal(
     cov(),
-    'Covers 30 of your 98 documents — a document appears once it mentions one of the 13 concepts on your graph.',
+    'Covers 30 of your 98 documents. A document counts once it mentions one of the 13 concepts on your graph.',
   )
 })
 

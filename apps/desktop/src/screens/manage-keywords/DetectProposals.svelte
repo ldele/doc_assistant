@@ -26,8 +26,8 @@
 <section class="block">
   <h3>Detect proposals</h3>
   <p class="hint">
-    Zero-LLM, on request — checks keyword spelling (morphology) and meaning (bge embedding)
-    for near-duplicates. Nothing is written until you accept a proposal below.
+    On request, checks keywords for near-duplicates by spelling and by meaning, with no model
+    call. Nothing is written until you accept a proposal below.
   </p>
   <button class="secondary" onclick={onDetect} disabled={detecting} type="button" use:tooltip={'Look for keywords spelled alike or meaning the same; nothing is written'}>
     {detecting ? 'Detecting…' : 'Detect'}
@@ -63,7 +63,7 @@
       {/each}
     </div>
   {:else if !detecting && !detectError}
-    <p class="hint">No proposals yet — run Detect to check for near-duplicate keywords.</p>
+    <p class="hint">No proposals yet. Run Detect to check for near-duplicate keywords.</p>
   {/if}
 </section>
 

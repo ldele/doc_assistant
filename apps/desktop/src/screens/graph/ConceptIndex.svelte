@@ -121,7 +121,7 @@
   {:else if graphError}
     <p class="railstate muted">Couldn’t load the concept graph.</p>
   {:else if !built}
-    <p class="railstate muted">No concept graph yet — build it from the main panel.</p>
+    <p class="railstate muted">No concept graph yet. Build it from the main panel.</p>
   {:else if nodes.length === 0}
     <!-- Built and empty. Without this the rail renders its filter box over an empty list and says
          "No concepts match", blaming a query the user never typed. The main panel carries the
@@ -189,7 +189,7 @@
       {#if offGraph.length > 0}
         <!-- ADR-054: a row nobody has taken on is a term, not a concept. Named as what it is, so
              the panel that opens (usage, no definition to choose) is not a surprise. -->
-        <p class="offhead muted">Terms — not concepts yet</p>
+        <p class="offhead muted">Terms (not concepts yet)</p>
         {#each offGraph as m (m.id)}
           <button
             class="crow off"

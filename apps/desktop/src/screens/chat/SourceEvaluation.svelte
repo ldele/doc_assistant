@@ -53,7 +53,7 @@
           <span class="cov cov-none">not assessed</span>
         {/if}
         {#if s.evaluation?.superseded}
-          <span class="sup" title="Newer sources dispute this — a superseded trend.">superseded</span>
+          <span class="sup" title="Newer sources dispute this; the trend may be superseded.">superseded</span>
         {/if}
         -->
         <span class="cov cov-none" title="Per-source epistemic assessment is withheld pending a rebuild of the stance extractor (KI-33).">assessment withheld</span>
@@ -72,7 +72,7 @@
 
   <p class="foot" title={`Concept-graph build: ${summary.graph_version ?? 'none'}`}>
     {#if summary.stale}
-      Assessed from an earlier graph ({shortVersion}) — rebuild the concept graph to refresh.
+      Assessed from an earlier graph ({shortVersion}). Rebuild the concept graph to refresh it.
     {:else}
       Assessed as of graph {shortVersion}.
     {/if}

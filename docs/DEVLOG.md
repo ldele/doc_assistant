@@ -44,6 +44,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-24 — The app's wording, first pass for AI-writing tells (T-014)
+
+**What changed.** 63 strings in 33 files reworded: em-dash asides in hints, empty states, tooltips
+and confirmations became plain sentences, colons or semicolons; the chat's provenance lines lost
+their emoji section markers (🔍 🔎 🧪 📊 🖥 📡 🧑 📄), keeping ⚠ where it marks a warning; a few
+phrases lost jargon ("Zero-LLM … (bge embedding)", "Low graph degree"). Five tests that pinned the
+old text follow.
+
+**Why.** The owner still found AI-written tells in the app (T-014), to fix before 0.8.0's tag.
+
+**Measured.** $0. A read-only sweep of `apps/desktop/src` (attributes, text nodes, script strings),
+`apps/api` and the engine modules whose sentences reach the window found 193 hits; most were
+comments or markup. After: none in visible text but the kept ⚠. Touched tests 215 passed; npm test
+457; svelte-check clean.
+
+**Rejected.** Dropping ⚠ too (it carries meaning, not decoration); rewording command-line-only
+messages (`--doc`'s prefix error).
+
+**What it opens.** The sweep reads one line at a time, so text split across template lines and
+engine sentences outside the listed modules were read by eye only in part. `.claude/NORTH_STAR.md`
+is still the unfilled template, so there is no written register to check against. Raw exception
+text still reaches the chat in four messages (`Edit failed: {e}` and three like it).
+
 ## 2026-11-23 (10) — The Rust tree is audited in CI, and Tauri is 2.12 (S-16)
 
 **What changed.** `scripts/cargo_audit_gate.py` runs `cargo audit --json` over

@@ -33,6 +33,6 @@ test('an empty library and a fully filtered one say different things', () => {
   assert.equal(nothingToAdd({}), 'That Zotero library has no documents in it yet.')
   assert.equal(
     nothingToAdd({ 'a web-page snapshot': 12 }),
-    'Nothing to add from that library — 12 a web-page snapshot.',
+    'Nothing to add from that library: 12 a web-page snapshot.',
   )
 })

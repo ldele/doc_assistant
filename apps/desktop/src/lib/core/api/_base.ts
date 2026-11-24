@@ -30,7 +30,7 @@ export async function errorDetail(r: Response, what: string): Promise<string> {
         const parts = Object.entries(d.offenders)
           .filter(([, v]) => v.length)
           .map(([k, v]) => `${k}: ${v.join(', ')}`)
-        return `${d.error ?? 'invalid selection'} — ${parts.join('; ')}`
+        return `${d.error ?? 'invalid selection'}: ${parts.join('; ')}`
       }
       return JSON.stringify(detail)
     }

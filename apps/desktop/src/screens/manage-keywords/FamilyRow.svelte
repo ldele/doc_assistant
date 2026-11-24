@@ -112,7 +112,7 @@
            bare "1 doc" beside a concept the graph shows in eleven reads as a fault. -->
       <span
         class="doccount"
-        title="Documents whose keywords carry this name or one of its forms — the library filter's count. The graph counts mentions in the text instead."
+        title="Documents whose keywords carry this name or one of its forms, as the library filter counts them. The graph counts mentions in the text instead."
       >
         {f.doc_count} doc{f.doc_count === 1 ? '' : 's'}
       </span>
@@ -125,8 +125,8 @@
           ? `Take ${name} off the concept graph`
           : `Take ${name} on as a concept`}
         use:tooltip={f.graph_include
-          ? 'A concept, on the graph — click to make it a term again'
-          : 'A term — click to take it on as a concept'}
+          ? 'A concept, on the graph. Click to make it a term again'
+          : 'A term. Click to take it on as a concept'}
         type="button"
       >
         <Icon name="waypoints" size={14} />
@@ -231,8 +231,8 @@
     {:else}
       <span class="nomembers">
         {f.graph_include
-          ? 'No other forms yet — just the name.'
-          : 'No member keywords yet — just the name.'}
+          ? 'No other forms yet, only the name.'
+          : 'No member keywords yet, only the name.'}
       </span>
     {/each}
   </div>
@@ -242,8 +242,8 @@
       list="mk-unassigned"
       bind:value={addValue}
       placeholder={f.graph_include
-        ? 'Add a form — type to search the keywords, or type a new one'
-        : 'Add a keyword — type to search'}
+        ? 'Add a form: search the keywords, or type a new one'
+        : 'Add a keyword: type to search'}
       aria-label={f.graph_include ? `Add a form to ${name}` : `Add a keyword to ${name}`}
       onkeydown={(e) => {
         if (e.key === 'Enter') submitAdd()

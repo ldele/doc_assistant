@@ -126,7 +126,7 @@
    */
   function reason(f: FileVerdict): string {
     if (f.verdict === 'duplicate') {
-      const of = f.duplicate_of ? ` — matches ${sourceKeyName(f.duplicate_of)}` : ''
+      const of = f.duplicate_of ? `: it matches ${sourceKeyName(f.duplicate_of)}` : ''
       return `${f.advisory ?? 'Already in your library.'}${of}`
     }
     if (f.advisory) return f.advisory
@@ -293,7 +293,7 @@
              "all done", which is why undo was reachable mid-run. The status bar carries the
              position; this line only has to stop the sheet from claiming otherwise. -->
         {#if indexing}
-          <p class="muted">Still indexing — progress is in the status bar.</p>
+          <p class="muted">Still indexing. Progress is in the status bar.</p>
         {/if}
       </div>
     {:else}

@@ -35,7 +35,7 @@
   </p>
   {#if terms.length === 0}
     <p class="hint">
-      No terms yet — keywords arrive with your documents, or create a family above.
+      No terms yet. Keywords arrive with your documents, or create a family above.
     </p>
   {:else}
     <div class="poolhead">
@@ -56,7 +56,7 @@
         {@render familyRow(f)}
       {:else}
         {#if famQuery.trim() === ''}
-          <p class="hint">Every term here is unused — show them with the toggle above.</p>
+          <p class="hint">Every term here is unused. Show them with the toggle above.</p>
         {:else}
           <p class="hint">No term matches “{famQuery.trim()}”.</p>
         {/if}

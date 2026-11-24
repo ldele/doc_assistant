@@ -30,8 +30,8 @@
   // and the tooltip has to say which, because a warning triangle beside a citation does not
   // read as "exploratory" on its own. The rebuild is ADR-041.
   const MARKER_TOOLTIP =
-    'Experimental. A hint from your corpus’s concept graph that this topic may be disputed — ' +
-    'it is not a measurement, and it can be wrong. Treat it as a prompt to check the sources ' +
+    'Experimental. A hint from your corpus’s concept graph that this topic may be disputed. ' +
+    'It is not a measurement, and it can be wrong. Treat it as a prompt to check the sources ' +
     'yourself, never as a verdict on them.'
 
   // A2 (docs/security.md S5). A pattern check, the same on every model: the passage has text

@@ -64,7 +64,7 @@ export function describeIndex(facts: CorpusFacts): {
     const size = bytes === null ? '' : `, ${formatBytes(bytes)}`
     return {
       label: `on disk${size}${ago ? `, built ${ago}` : ''}`,
-      memory: 'Memory does not grow with your library — both search indexes live on disk.',
+      memory: 'Both search indexes live on disk, so memory does not grow with your library.',
       rebuildable: true,
       degraded: false,
     }
@@ -73,7 +73,7 @@ export function describeIndex(facts: CorpusFacts): {
     return {
       label: 'unavailable',
       memory:
-        'Keyword search is off — answers are using meaning-based search only, so exact terms ' +
+        'Keyword search is off. Answers use meaning-based search only, so exact terms ' +
         'may be missed. Rebuild to restore it.',
       // Rebuildable precisely *because* it is broken: this is the recovery action (ADR-038).
       rebuildable: true,

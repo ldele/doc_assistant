@@ -86,7 +86,7 @@
       onchange={(e) =>
         (overrides.epistemics_markers_enabled = (e.target as HTMLInputElement).checked)}
     />
-    Show experimental contested/superseded chips — not a corpus measurement
+    Show experimental contested/superseded chips (not a corpus measurement)
   </label>
 
   <label for="reviewer-chars"

@@ -222,7 +222,7 @@ def format_cites_out(filename: str, edges: list[CitationEdge]) -> str:
 
     cap = 30
     if external:
-        lines.append(f"### 📄 External ({len(external)})")
+        lines.append(f"### External ({len(external)})")
         lines.append("")
         for e in external[:cap]:
             lines.append(_ref_one_line(e))

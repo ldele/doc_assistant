@@ -23,7 +23,7 @@ export function describeUpdate(status: UpdateStatus): UpdateSentence {
   if (status.state === 'update_available' && status.latest_version) {
     return {
       headline: `Version ${status.latest_version} is available`,
-      detail: `You're running ${status.current_version}. Download and install it yourself — Provenote never installs anything for you.`,
+      detail: `You're running ${status.current_version}. Download and install it yourself; Provenote never installs anything for you.`,
       showLink: true,
       tone: 'info',
     }

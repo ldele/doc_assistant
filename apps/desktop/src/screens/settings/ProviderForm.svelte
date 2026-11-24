@@ -264,7 +264,7 @@
         sel?.removeAllRanges()
         sel?.addRange(range)
       }
-      say(card, 'warn', 'Could not reach the clipboard — the text is selected, press Ctrl+C.')
+      say(card, 'warn', 'Could not reach the clipboard. The text is selected: press Ctrl+C.')
     }
   }
 </script>

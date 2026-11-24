@@ -99,7 +99,7 @@
             <span class="page">p{fig.page}</span>
             {#if fig.kind}<span class="kind">{fig.kind}</span>{/if}
             {#if fig.retrievable}
-              <span class="badge ok" title="This figure is searchable — the assistant can find and cite it">searchable</span>
+              <span class="badge ok" title="This figure is searchable: the assistant can find and cite it">searchable</span>
             {:else}
               <span class="badge off" title={fig.not_retrievable_reason ?? ''}>not searchable</span>
             {/if}

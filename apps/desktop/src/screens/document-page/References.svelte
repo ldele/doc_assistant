@@ -95,7 +95,7 @@
       <p class="quiet capnote">Showing the first {data.shown} of {data.total}.</p>
     {/if}
     <p class="quiet ordernote">
-      Extracted from the document's reference section, newest first — the paper's own numbering
+      Extracted from the document's reference section, newest first. The paper's own numbering
       isn't recorded.
     </p>
   {/if}

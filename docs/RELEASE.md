@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-24 (§3: the chat release baseline and the stage benchmark, H6); 2026-11-23 (§2, §3: `mypy src apps`, as CI); 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
+<!-- status: active · updated: 2026-11-24 (§4: a window-only change still re-freezes for preflight); 2026-11-24 (§3: the chat release baseline and the stage benchmark, H6); 2026-11-23 (§2, §3: `mypy src apps`, as CI); 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -178,8 +178,12 @@ Write for someone deciding whether to install it, not for the commit log:
 | What you changed | Re-freeze sidecar (~11-14 min) | Re-bundle installer (~10 min) |
 |---|---|---|
 | `src/`, `apps/api/` (Python) | **yes** | yes |
-| `apps/desktop/src/` (Svelte/CSS/TS) | no | **yes** |
+| `apps/desktop/src/` (Svelte/CSS/TS) | not by need, **yes for preflight** ¹ | **yes** |
 | docs, tests only | no | no — but then you have nothing to release |
+
+¹ The engine does not change with the window, but `preflight`'s `artifact_fresh` asks that the
+frozen backend *and* the installer each be newer than the newest shipped change, whichever tree it
+touched. So a window-only change before a tag still re-freezes (found 2026-11-24, at 0.8.0).
 
 Two traps:
 - **CPU torch only** (KI-3). `build_sidecar` refuses to freeze a `+cu*` torch — the `cu130` wheel

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-04 (trap 6: never open the run's log from the host while it runs; bind Ollama to the switch address, not 0.0.0.0; 2026-10-27: the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-11-24 (Notes: the NSIS template is CLI 2.12.6's, re-taken with S-16); 2026-11-04 (trap 6: never open the run's log from the host while it runs; bind Ollama to the switch address, not 0.0.0.0; 2026-10-27: the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -324,7 +324,8 @@ the symptom is a healthy server with `chunk_count: 0` / "empty (vector-only) ind
   (28.9 s on the first launch after a build, while Windows scans the new files). Preflight's
   `backend_contents` checks the folder by path for what KI-34 lost, plus a size floor.
 - **The installer uses the project's NSIS template** (`src-tauri/nsis/installer.nsi`): Tauri
-  CLI 2.11.4's own, taken verbatim from the CLI binary, with one line changed — `SetCompressor`
+  CLI 2.12.6's own (re-taken 2026-11-24 with S-16; 2.11.4's before), taken verbatim from its source at
+  the CLI's release tag, with one line changed — `SetCompressor`
   without `/SOLID`. SOLID makes the 32-bit makensis gather all 2.5 GB uncompressed in one block
   and fail ("error mmapping datablock") with LZMA and zlib alike; an installer hook cannot
   override it (the compressor is fixed once the header changes). File-by-file zlib gives a

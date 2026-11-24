@@ -9,6 +9,8 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-24
+
 The chat does more with your library. It answers questions about the library from its own records,
 asks within the folders or the concept you choose, answers in one of two modes,
 keeps a long conversation in view, and shows which sentences of an answer rest on which passage.

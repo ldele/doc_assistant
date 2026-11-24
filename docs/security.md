@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-23 · class: living -->
+<!-- status: active · updated: 2026-11-24 (0.8.0 refresh: §2 re-read against the diff since v0.7.3, a line for chat modes, A7) · class: living -->
 
 # Security
 
@@ -119,6 +119,11 @@ Each line is a control as it stands, with the test that pins it where one exists
   A passage id carries its text's version, and an older one finds nothing (S19). The call log keeps
   the tool, a count and a time, never the arguments. `test_api_mcp.py`,
   `test_read_surface_evidence.py`.
+- **A person's own chat mode cannot open the fence** (A7). Its framing text goes into the answer
+  prompt ahead of a frozen citing block; a framing holding `{context}`, `{question}`, `{history}` or
+  `<source` is refused, any other brace is escaped, and a framing that asks not to cite or to use
+  outside knowledge is saved with a warning that the frozen rules still apply. The mode is the
+  person's own text, not a document's (T1 is unchanged). `test_chat_modes.py`.
 
 **Secrets**
 

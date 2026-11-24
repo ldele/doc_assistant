@@ -266,3 +266,36 @@ DOC_DATA_DIR=/path/to/eval-home uv run python -m scripts.run_eval --cases tests/
 Or name several models in your own panel file (`--panel`). Results stay in your `data/eval.duckdb`;
 compare against a committed baseline's trials with `--paired-baseline`. A comparison against a run
 on another model shows two columns, not a difference.
+
+## Running the chat families
+
+The release baselines (`baselines/release_0.8.0_chat_2026-11-24.md` and later) are these commands,
+run from a fresh clone. Two data homes, so the hostile documents never act as distractors in the
+other families. Local Ollama throughout, so $0; with no `.env` the defaults bill, so the answer
+model and the reviewer are named:
+
+```bash
+export LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b REVIEWER_PROVIDER=ollama REVIEWER_MODEL=llama3.1:8b
+PUB=/path/to/home-public; HOS=/path/to/home-hostile; DB=/path/to/eval.duckdb
+
+# 1. The 28 public papers, checked against the manifest, then indexed
+DOC_DATA_DIR=$PUB uv run python -m scripts.download_corpus --demo
+DOC_DATA_DIR=$PUB uv run python -m scripts.download_corpus --demo --verify-only
+DOC_DATA_DIR=$PUB uv run python -m doc_assistant.ingest
+
+# 2. The hostile home: the same 28 PDFs plus the 8 invented documents
+mkdir -p $HOS/sources && cp $PUB/sources/*.pdf tests/eval/hostile/h0*.md $HOS/sources/
+DOC_DATA_DIR=$HOS uv run python -m doc_assistant.ingest
+
+# 3. Four families on the public home, then hostile on its own
+for fam in public conversation absent records; do
+  DOC_DATA_DIR=$PUB uv run python -m scripts.run_eval --cases tests/eval/cases.$fam.yaml \
+    --panel tests/eval/panel.example.yaml --repeat 3 --db $DB --note "my run: $fam"
+done
+DOC_DATA_DIR=$HOS uv run python -m scripts.run_eval --cases tests/eval/cases.hostile.yaml \
+  --panel tests/eval/panel.example.yaml --repeat 3 --db $DB --note "my run: hostile"
+```
+
+On one machine with a GPU this took about an hour (2026-11-24). Each `run_eval` prints its table
+and its run ids; `compare_runs` and `--paired-baseline` read them back. The index digest the run
+prints (`614c1241…` for the 28 papers) says whether your corpus is the baseline's.

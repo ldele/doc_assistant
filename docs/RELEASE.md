@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-23 (§2, §3: `mypy src apps`, as CI); 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
+<!-- status: active · updated: 2026-11-24 (§3: the chat release baseline and the stage benchmark, H6); 2026-11-23 (§2, §3: `mypy src apps`, as CI); 2026-11-19 (§6, §7, §7b: the maintainer runs `git tag`, `git push` and `gh release create`, the agent prepares them; 2026-11-04: §5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -166,6 +166,8 @@ Write for someone deciding whether to install it, not for the commit log:
 | Docker image | the `Docker — Headless API image` job of the CI run on the release commit: `gh run view <id>` | read it green, do not assume it. If the CHANGELOG's block names a new dependency, environment variable, port or data path, re-read `Dockerfile`, `docker-compose.yml` and `docs/setup.md` (Docker) against it before the tag |
 | Security floor | `uv run --no-sync python -m scripts.pip_audit_gate` · `uv run --no-sync python -m scripts.secret_scan_gate` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; the advisory gate blocks in CI since 2026-09-30 (S-8), and a new advisory is reviewed into `pip-audit-ignore.toml` or fixed, never waved through; the secret scan fails on a secret `.secrets.baseline` does not record (S-13, 2026-10-01) |
 | UX/UI walkthrough | `docs/release-ux-checklist.md` | §5b — a person drives every surface in the **installed** build |
+| Chat quality, release baseline | `tests/eval/TESTING.md` § Running the chat families, from a fresh clone | $0 on local Ollama, about an hour; record `tests/eval/baselines/release_X.Y.Z_chat_<date>.md` paired against the previous release's, and write `evals/README.md` § The chat benchmark from it. A drop beyond its interval is explained before the tag |
+| Stage benchmark | `DOC_DATA_DIR=<public home> uv run --no-sync python -m scripts.profile_stages -r 3` | on the 28 public papers; compare with this machine's reference (`tests/eval/baselines/stage_profile_public_2026-11-24.md`); a stage over twice its reference is explained before the tag. A new machine records its own reference first |
 
 > **`pre-commit` can eat your commit.** `ruff-format` **modifies files**, and a hook that modifies a
 > file *aborts the commit* while leaving everything staged — which looks exactly like success. If

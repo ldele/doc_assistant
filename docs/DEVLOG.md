@@ -44,6 +44,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-24 (2) — The 0.8.0 chat baseline, reproduced from a fresh clone (H6)
+
+**What changed.** `tests/eval/baselines/release_0.8.0_chat_2026-11-24.md`: five families, two
+local models, three trials, on `7d29dd6`, paired against 391ea0e. `TESTING.md` gains § Running the
+chat families, the commands the clone ran; `evals/README.md` § The chat benchmark (0.8.0); the
+README's results and `OVERVIEW.md` §4 from it; `RELEASE.md` §3 gains the chat baseline and the
+stage benchmark, with this machine's reference in `stage_profile_public_2026-11-24.md`. KI-96 filed.
+
+**Why.** H6: a stranger rebuilds the public numbers, and every README number has a baseline file.
+
+**Measured.** $0, 62 min clone to last run; index digest `614c1241…`, 391ea0e's. Records 3 to 8 of
+8 by rule on both models; citation coverage there falls to 0 by design. Llama's absent
+`contains_all` −0.267 [−0.467, −0.067] on n=5 is a one-word check matched by guessing answers
+before; `no_invention` 6 to 8 held. Nothing else moved beyond its interval.
+
+**Rejected.** Running the walkthrough's models through the LLM judge (H5: none passed); copying the
+dev checkout's data homes (not a stranger's run).
+
+**What it opens.** KI-96. The README's August Haiku numbers stay, labelled as the older single-turn
+run; no billed model ran on the chat families.
+
 ## 2026-11-24 — The app's wording, first pass for AI-writing tells (T-014)
 
 **What changed.** 63 strings in 33 files reworded: em-dash asides in hints, empty states, tooltips

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-09 (§4: the knowledge-layer row cites docs/limitations.md; 2026-11-01: §5: 0.7.1 published, the next moves; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
+<!-- status: active · updated: 2026-11-24 (§4: the 0.8.0 chat benchmark row, the judge's check, rank scoring, H6); 2026-11-09 (§4: the knowledge-layer row cites docs/limitations.md; 2026-11-01: §5: 0.7.1 published, the next moves; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
 
 # Provenote — project overview
 
@@ -66,15 +66,19 @@ the same version number.
 
 ## 4. Measured results, each with its size and conditions
 
-Two question sets, both small and hand-written: **10 public cases** on 10 arXiv papers pinned by
-SHA-256 (every case's reference answer checked against the paper), and **35 private cases** on the
-author's own 97-document library (mostly copyrighted, so not citable by others; most references
-not author-verified). The two sets are never compared with each other. **The judge has not been
-calibrated against human grades.** Baselines are in [`tests/eval/baselines/`](../tests/eval/baselines/).
+Three question sets, all small and hand-written: **50 public chat cases** in five families on 28
+arXiv papers and 8 invented documents (since 0.8.0), the older **10 public single-turn cases** on 10
+of those papers, both pinned by SHA-256 with every reference answer checked against its source, and
+**35 private cases** on the author's own 97-document library (mostly copyrighted, so not citable by
+others; most references not author-verified). Private and public results are never compared with
+each other. **The LLM judge was checked against one person's grades on 30 answers (2026-11-16) and
+no judge passed**, so no judge score decides anything. Baselines are in
+[`tests/eval/baselines/`](../tests/eval/baselines/).
 
 | What was measured | Result | Size and conditions | Source |
 |---|---|---|---|
-| Public benchmark | `citation_overlap` 1.000 ± 0.000 · `contains_all` 0.932 ± 0.014 · `llm_judge` 3.694 / 5 ± 0.258 | 10 cases, 5 trials, Haiku 4.5 generator and judge, 2026-08-01. `citation_overlap` is saturated on 10 papers: it shows no regression, it cannot rank. The judge band means only changes above ~±0.5 would show. 49 of 50 judge calls scored. | [public_eval_2026-08-01](../tests/eval/baselines/public_eval_2026-08-01.md) |
+| Chat benchmark, 0.8.0 | `llama3.1:8b` / `qwen2.5:7b`: single `cited_answer` 1.000 / 0.963, `contains_all` 0.880 / 0.901 · absent `no_invention` 1.000 / 0.958 · hostile `hostile_hold` 0.792 / 0.833 · records answered by rule 8 of 8 on both | 50 cases in 5 families, 3 trials, local Ollama, $0, from a fresh clone, 2026-11-24. Indicative: the two models are never ranked against each other; against the previous baseline nothing moved beyond its interval but records (3 to 8 of 8) | [release_0.8.0_chat](../tests/eval/baselines/release_0.8.0_chat_2026-11-24.md) |
+| Public benchmark (single-turn) | `citation_overlap` 1.000 ± 0.000 · `contains_all` 0.932 ± 0.014 · `llm_judge` 3.694 / 5 ± 0.258 | 10 cases, 5 trials, Haiku 4.5 generator and judge, 2026-08-01. `citation_overlap` is saturated on 10 papers: it shows no regression, it cannot rank. The judge band means only changes above ~±0.5 would show. 49 of 50 judge calls scored. | [public_eval_2026-08-01](../tests/eval/baselines/public_eval_2026-08-01.md) |
 | Embedder | `bge-base` over `specter2`: 1.000 vs 0.900 · 0.927 vs 0.800 · 3.738 vs 3.447 | public 10, 5 trials, 2026-06-04 | [bge_vs_specter2](../tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md) |
 | Chunk sizes | Six parent/child geometries swept; **nothing beat the control (2000/200 · 400/50) beyond its variance, so it was kept.** On the private set `citation_overlap` spans 0.877–0.946: a smaller child (256/32) retrieves best (0.946 vs 0.936) but answers worse through the local model (`contains_all` 0.734–0.740 vs 0.777). One small-child setting used 45% fewer input tokens. | private 35 on 97 documents, `llama3.1:8b`, 3 trials; and public 10 on Haiku; 2026-08-08. Open: the small-child penalty may come from the weak local generator; a re-run on a strong one would settle it (not done, cost). | [private](../tests/eval/baselines/chunking_sweep_private_2026-08-08.md), [public](../tests/eval/baselines/chunking_sweep_public_2026-08-08.md) |
 | BM25 / vector mix | **Post-rerank recall flat across weights 0.0–1.0; 0.4/0.6 kept.** The reranker re-scores the whole pool from both arms, so the weight cannot change the final top 10. Pre-rerank recall did move (0.936 → 0.882 at @5), so the instrument works. | 35 private cases, retrieval only, no generation, 2026-07-03 | [bm25_weight_sweep](../tests/eval/baselines/bm25_weight_sweep_2026-07-03.md) |
@@ -86,9 +90,10 @@ calibrated against human grades.** Baselines are in [`tests/eval/baselines/`](..
 | Indexing cost | ~15 s for a 30-page text PDF, ~90% of it PDF extraction; 2 extraction workers 1.47× faster than 1; backend memory flat at ~2 GB | 97-document library (2,859 pages), 28-core desktop with GPU; validated at ~100 documents, not thousands | [README](../README.md), [performance](performance.md) |
 | Knowledge layer | A definition graded *strong* was right 8 times in 13 (95% interval 36–82%); 97% of extracted keywords occur in a single document, which is why the map is built from concepts the user picks | development library, 2026-10 | [limitations](limitations.md), [knowledge layer](knowledge-layer.md) |
 
-What the record does **not** have: a judge checked against human grades; retrieval scored by rank
-(it is scored by presence, no MRR or nDCG); any significance test (10 cases discriminate between
-settings, they do not prove a ranking); a measured effect of the reranker; a strong-generator run
+What the record does **not** have: a judge that passes its check against a person (H5 checked
+three, none passed); a significance test across models (the chat harness gives a paired bootstrap
+interval within one model across releases, not a ranking between models; retrieval has been
+scored by rank, MRR and nDCG@10, since H2); a measured effect of the reranker; a strong-generator run
 of the chunk-size grid on the private set.
 
 ## 5. State

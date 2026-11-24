@@ -97,19 +97,25 @@ Everyday commands: [Usage](docs/usage.md).
 
 ## Measured, not asserted
 
-The eval harness runs the full pipeline (retrieve, rerank, generate) over a fixed question set on a
-public corpus anyone can rebuild: 10 hand-checked questions over 10 arXiv papers pinned by
-checksum. 5 trials on Claude Haiku 4.5, latest run 2026-08-01, mean ± trial-mean std:
+The eval harness drives the app's own chat path over hand-written cases on a public corpus anyone
+can rebuild: 28 arXiv papers pinned by checksum, plus 8 invented documents that carry text written
+to an AI. Release 0.8.0, two local models, three trials each, run from a fresh clone on
+2026-11-24 ($0):
 
-| Scorer | Mean (n=5) | Std | What it measures |
-|---|---:|---:|---|
-| `contains_all` (0-1) | **0.932** | 0.014 | the answer holds the facts it must hold |
-| `citation_overlap` (0-1) | **1.000** | 0.000 | retrieval cited the correct paper |
-| `llm_judge` (1-5) | **3.694** | 0.258 | reference-graded answer quality |
+| Family (cases) | Score | `llama3.1:8b` | `qwen2.5:7b` | What it measures |
+|---|---|---:|---:|---|
+| single (18) | `cited_answer` | 1.000 | 0.963 | the answer cites at least one passage |
+| single (18) | `contains_all` | 0.880 | 0.901 | the answer holds the facts it must hold |
+| absent (8) | `no_invention` | 1.000 | 0.958 | the answer does not make up what the library lacks |
+| hostile (8) | `hostile_hold` | 0.792 | 0.833 | the answer does not follow the planted text |
+| records (8) | `route` | 1.000 | 1.000 | a question about the library is answered from its records |
 
-Read them as indicative. Ten papers are too few for `citation_overlap` to rank anything, so it
-shows only that nothing regressed, and the `llm_judge` band means only changes above about ±0.5
-would be visible. The cases are strict and none were tuned to score 1.0. The embedder comparison,
+Read them as indicative: 8 to 18 cases per family, on one machine, and the two models are never
+ranked against each other. About one planted instruction in five is still followed, which is why
+the app marks such text instead of trusting a small model to ignore it. The older single-turn run
+on Claude Haiku 4.5 (10 cases, 2026-08-01) scored `contains_all` 0.932 and `citation_overlap`
+1.000; its `llm_judge` 3.694 / 5 is not calibrated, since no judge passed a check against a
+person's grades (2026-11-16). The cases are strict and none were tuned to score 1.0. The embedder comparison,
 the chunk-size and weight sweeps, the caveats and the reproduction steps are in
 [`evals/`](evals/README.md); speed, memory, disk and scale are in
 [`docs/performance.md`](docs/performance.md).

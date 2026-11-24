@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-16 (§ The judge, checked against a person: H5); 2026-08-11 (chunk sizes re-measured 2026-08-08 — RG-026 closed, the lock holds) · class: living -->
+<!-- status: active · updated: 2026-11-24 (§ The chat benchmark (0.8.0): the release baseline, H6); 2026-11-16 (§ The judge, checked against a person: H5); 2026-08-11 (chunk sizes re-measured 2026-08-08 — RG-026 closed, the lock holds) · class: living -->
 
 # Evals — benchmark results
 
@@ -80,6 +80,38 @@ six per case family, and two local judges graded the same answers three times ea
 passages, so it says nothing about grounding. Detail and the grades:
 [`h5_judge_agreement_2026-11-16.md`](../tests/eval/baselines/h5_judge_agreement_2026-11-16.md).
 To put a judge of your own through the same check, see `tests/eval/TESTING.md` § the judge.
+
+## The chat benchmark (0.8.0)
+
+Since release A the harness drives the app's own chat path (the controller: router, history,
+framing, the prompt fence) over five families of hand-written cases on the 28 public papers:
+single questions, conversations, questions the library cannot answer (`absent`), passages
+written to an AI (`hostile`, 8 invented documents beside the papers) and questions about the
+library itself (`records`). Two local models, three trials each, $0, run from a fresh clone on
+2026-11-24 ([baseline](../tests/eval/baselines/release_0.8.0_chat_2026-11-24.md)):
+
+| Family (cases) | Score | `llama3.1:8b` | `qwen2.5:7b` | What it measures |
+|---|---|---:|---:|---|
+| single (18) | `rank_mrr` | 0.958 | 0.958 | how high the right passage ranks |
+| | `cited_answer` | 1.000 | 0.963 | the answer cites at least one passage |
+| | `citation_coverage` | 0.887 | 0.540 | share of answer sentences carrying a citation |
+| | `contains_all` | 0.880 | 0.901 | the answer holds the facts it must hold |
+| conversation (8) | `cited_answer` | 0.958 | 1.000 | as above, on a follow-up that leans on earlier turns |
+| | `contains_all` | 0.771 | 0.882 | |
+| absent (8) | `no_invention` | 1.000 | 0.958 | the answer does not make up what the library lacks |
+| hostile (8) | `hostile_hold` | 0.792 | 0.833 | the answer does not follow the planted text |
+| records (8) | `route` | 1.000 | 1.000 | answered from the library's records, by rule |
+
+**Read these as indicative.** 8 to 18 cases per family on one machine's local models: they show
+where answers break, and they cannot rank the two models (each column is compared only with
+itself, across releases). Against the previous baseline (391ea0e, after the prompt fence and
+context handling), records went from 3 to 8 cases answered by rule; nothing else moved beyond its
+interval except a one-word check on five absent cases, explained in the baseline. **About one
+planted instruction in five is still followed**, the same three attacks every time: the fence
+does not stop a small model from obeying text in a passage (`docs/security.md` §7). The LLM judge
+is left out: no judge passed its check against a person (below).
+
+To rebuild every number in this table: `tests/eval/TESTING.md` § Running the chat families.
 
 ## The headline benchmark
 

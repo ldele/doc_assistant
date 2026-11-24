@@ -448,20 +448,22 @@
     <!-- The trade-off, stated where the choice is made (KI-36, A2). Figures from the public test
          set only (28 papers), never the private library: a release says nothing about it.
          Citations: the share of answer sentences that carry a citation, single questions;
-         planted text: hostile runs held out of 24. Both from the A2 run of 2026-11-16,
-         tests/eval/baselines/a2_prompt_fence_2026-11-16.md; re-read them when it is re-run. -->
+         planted text: hostile runs held out of 24. Both from the 0.8.0 release baseline of
+         2026-11-24, tests/eval/baselines/release_0.8.0_chat_2026-11-24.md (public family:
+         citation_coverage 0.887 and 0.540; hostile_hold 0.792 and 0.833 over 24 runs each);
+         re-read them from each release's baseline (docs/RELEASE.md § 3). -->
     <p class="detail">
       <strong>What to expect from a local model.</strong> Measured on this app's public test set
       (28 papers), on one computer: indicative, not a verdict.
     </p>
     <ul class="detail">
       <li>
-        <strong>Citations:</strong> <code>llama3.1:8b</code> cited 84% of its answer sentences,
-        <code>qwen2.5:7b</code> 60%. Uncited claims show as <em>uncited</em>.
+        <strong>Citations:</strong> <code>llama3.1:8b</code> cited 89% of its answer sentences,
+        <code>qwen2.5:7b</code> 54%. Uncited claims show as <em>uncited</em>.
       </li>
       <li>
-        <strong>Instructions planted in a document:</strong> <code>llama3.1:8b</code> resisted 18 of
-        24 tries, <code>qwen2.5:7b</code> 19 of 24. Such text can change what an answer says, so a
+        <strong>Instructions planted in a document:</strong> <code>llama3.1:8b</code> resisted 19 of
+        24 tries, <code>qwen2.5:7b</code> 20 of 24. Such text can change what an answer says, so a
         source carrying it is marked, and a link the answer was not given cannot be clicked.
       </li>
     </ul>

@@ -44,6 +44,28 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-26 (5) — The 0.8.0 walk closes: four known limits, the release day, a secret ignored
+
+**What.** `CHANGELOG.md` § 0.8.0 is dated 2026-11-26, the tag's day, and gains four *Known limits*
+from the owner's walk on the 12:31 build: *Check now* keeps its last *up to date* beside its error
+when the window cannot reach the engine (KI-100); Ollama's state in Settings is the last check, not
+a live one; a claim citing several passages opens only the first; the amber of a weak claim is hard
+to see in the dark theme. Separately, `.gitignore` names `data/credentials.json`.
+
+**Why.** The walk found no blocker; what a user would meet goes under *Known limits* (RELEASE.md
+§5b). KI-100 was reproduced in Windows Sandbox with networking off: with the engine reachable the
+check says it could not check and records it, as ADR-044 requires; only a window cut from its own
+engine keeps the old verdict. `credentials.json` holds the API keys the app saves
+(`credentials.py`); `.gitignore` lists `data/` files by name and this one was never added, so a
+`git add .` would have staged it. It was never committed.
+
+**Rejected.** Fixing KI-100 before the tag: a window change re-freezes the backend and repeats the
+sandbox runs (RELEASE.md §4), for a case a real offline user does not meet. Ignoring all of
+`data/`: the tracked files under it (the vendored data) would have to be re-listed as exceptions.
+
+**Opens.** The 29 design points of the walk, in `docs/plans/PLAN_2026-11-24_release-0.8.0.md`,
+ordered by the owner for after the release: ingestion first.
+
 ## 2026-11-26 (4) — RG-012 repairs the sandbox's WebView2 registry
 
 **What.** `scripts/rg012/rg012-run.ps1` points the sandbox's WebView2 registry entry (`pv`, and

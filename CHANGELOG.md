@@ -9,7 +9,7 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
-## [0.8.0] — 2026-11-24
+## [0.8.0] — 2026-11-26
 
 The chat does more with your library. It answers questions about the library from its own records,
 asks within the folders or the concept you choose, answers in one of two modes,
@@ -110,7 +110,16 @@ listed as *changed* one last time (see *Known limits*).
   *0 tokens* under the answer.
 - **The installed engine keeps no log**, so an error it hit once cannot be read afterwards.
 - **If the engine stops while the window is open, panels still say *Failed to fetch***, and the
-  status bar stays green until you restart the app.
+  status bar stays green until you restart the app. In the same case, *Check now* in
+  Settings > General keeps its last *up to date* beside its red error. With no internet and the
+  engine running, it says it could not check.
+- **Ollama's state in Settings is the last check, not a live one.** Ollama closed while the app
+  runs still reads as ready until Settings is opened again; a question then says Ollama is not
+  answering.
+- **A claim that cites several passages opens only the first** when you click it; the citation
+  numbers in the sentence open each one.
+- **In the dark theme, a weakly supported claim is hard to see**: its amber is close to the
+  background.
 - **Everything under *Known limits* for 0.7.3, 0.7.2, 0.7.1 and 0.7.0 still applies**, except the
   PDF line above, which replaces 0.7.3's.
 

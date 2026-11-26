@@ -378,3 +378,10 @@ accepted; *Manage keywords* closed over the Graph tab after a write (the graph s
 concept behind); a *Text & chunks* re-run to the end (the list and the engine health re-read).
 Not driven: deleting the file with the document, *Reveal in file explorer*, and the chat scope
 resetting when its folder is deleted.
+
+## Amendments
+
+- **2026-11-26 · the test's path, written by Code at the update to cpc 1.26.1.** `Enforced by`
+  names `src/layout.test.ts`, relative to the desktop app; the test was built and is at
+  `apps/desktop/src/layout.test.ts`. Found by cpc's `[enforced-path]` check (cpc ADR-109). No
+  decision moves.

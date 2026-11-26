@@ -44,6 +44,24 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-26 (3) — cpc re-vendored, 1.22.1 to 1.26.1
+
+**What.** 2026-11-26 — re-vendored cpc 1.22.1 -> 1.26.1 (tools/conventions/cpc/, 83 modules), from a
+worktree of the `v1.26.1` tag, on Lucas's "update Provenote"; nothing laid. `cpc-verdict-diff --base
+v1.22.1 --head v1.26.1` named one new warning: ADR-064's `Enforced by` names `src/layout.test.ts`,
+which is at `apps/desktop/src/layout.test.ts`; an amendment gives the path. The cpc gates and
+`init_check --strict` pass. CONTEXT.md and the `conventions.toml` header name 1.26.1.
+
+**Why.** cpc 1.26.1 carries T-100, reported from here: the security template now has the shape
+`docs/security.md` took on 2026-11-23, so nothing changes in that file. And sprint-close stops and
+asks for `/house-skills:sprint-review` and `/house-skills:deep-review`, which the agent cannot start.
+
+**Rejected.** `cpc-rotate --split` on the five archives over `archive_max_tokens` (a NOTE each,
+nothing required), and the ADR-101 NOTEs on the plan's lettered headings: both left as they are.
+
+**Opens.** The 8 deny rules `--add deny-rules` would add, and `## Resolved index`, the
+`docs/KNOWN_ISSUES.md` heading `cpc-drift` says a cpc tool reads: each on Lucas's yes.
+
 ## 2026-11-26 (2) — virtualenv 21.15.13 for an advisory
 
 **What.** `uv lock --upgrade-package virtualenv`: 21.14.12 → 21.15.13, nothing else re-resolved.

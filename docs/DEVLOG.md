@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-23 · class: append-only -->
+<!-- status: active · updated: 2026-11-26 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -43,6 +43,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-26 — The window's saved lists are tied to the app version (KI-99)
+
+**What.** `apps/desktop/src/lib/core/lastSession.ts` stamps each saved list (documents, folders,
+chats, graph) with the app version and reads back only a copy from the same version. Vite sets
+`__APP_VERSION__` from `package.json` (`vite.config.ts`, declared in `vite-env.d.ts`); `npm test`
+sees `dev`. Two tests in `lastSession.test.ts`: another version is ignored both ways, and a copy
+shaped like 0.7.3's chat list (format 1, no stamp, rows without `labels`) is not drawn.
+
+**Why.** The owner's walk on the 18:40 0.8.0 build: installed over 0.7.3 on the real machine, the
+window stayed blank on every launch while the engine was healthy. Read through a WebView2 debug
+port: `TypeError … reading 'folders'` in the chat list's label line (`lib/chat/setup.ts`
+`labelLine`). 0.8.0 drew 0.7.3's saved chat list before the engine answered; its rows lack the
+fields A7b/A8a added, the first row threw at mount, and the fresh fetch that would replace the copy
+never ran. The format number had stayed 1 since the copies landed, and nothing asks anyone to bump
+it when a list's shape changes. Every sandbox run started from a fresh window profile, so none
+saw it. A blocker: a data loss or a lie blocks the tag, and this left the app unusable.
+
+**Rejected.** Bumping `SNAPSHOT_VERSION` to 2: fixes this release, leaves the next one to the same
+memory. Guarding `labelLine` against a missing field: fixes one reader of four lists. A per-type
+hash pinned in a test: catches the change but makes every type edit a ritual. The cost of the
+chosen fix: the first launch after an upgrade shows the start screen until the engine answers, as
+before 0.7.x kept copies.
+
+**Opens.** Any error at mount still blanks the whole window (no boundary at the root); KI-99 keeps
+that half open. The fix goes back through sessions 2 to 3 of the 0.8.0 plan: a new build, RG-012,
+and an upgrade from 0.7.3 whose window has saved lists; then the owner's walk again from step 1.
 
 ## 2026-11-24 (2) — The 0.8.0 chat baseline, reproduced from a fresh clone (H6)
 

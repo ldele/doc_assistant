@@ -57,3 +57,33 @@ test('no storage, a refused write, or an unreadable copy never throws', () => {
   store.map.set(storageKey('graph'), JSON.stringify({ v: 999, savedAt: 'x', data: {} }))
   assert.equal(loadSnapshot(store, 'graph'), null) // another format version
 })
+
+test('a copy written by another app version is never read back (KI-99)', () => {
+  const store = memory()
+  saveSnapshot(store, 'documents', [{ id: 'a' }], new Date('2026-11-26T10:00:00Z'), '0.8.0')
+  assert.deepEqual(loadSnapshot(store, 'documents', '0.8.0')?.data, [{ id: 'a' }])
+  assert.equal(loadSnapshot(store, 'documents', '0.8.1'), null) // an upgrade
+  assert.equal(loadSnapshot(store, 'documents', '0.7.3'), null) // a downgrade
+})
+
+test("0.7.3's chat list, which lacks the rows' labels, is not drawn by a later version (KI-99)", () => {
+  // The shape 0.7.3 kept, as found in a real window's storage on the 0.8.0 upgrade: format 1, no
+  // app version, chat rows without `labels`, `mode_name` or `folders`. Drawn, its first row threw
+  // at mount and the window stayed blank on every launch.
+  const store = memory()
+  const row = {
+    session_id: 's1',
+    title: 'A chat',
+    started_at: '2026-11-20T09:00:00Z',
+    last_at: '2026-11-20T09:05:00Z',
+    turn_count: 2,
+    pinned: false,
+    archived: false,
+  }
+  store.map.set(
+    storageKey('conversations'),
+    JSON.stringify({ v: 1, savedAt: '2026-11-25T09:04:00.334Z', data: [row] }),
+  )
+  assert.equal(loadSnapshot(store, 'conversations', '0.8.0'), null)
+  assert.equal(loadSnapshot(store, 'conversations'), null) // the default version too
+})

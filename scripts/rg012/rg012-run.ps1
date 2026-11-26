@@ -32,6 +32,30 @@ L ("run: " + $stamp)
 L ("python on PATH? " + [bool](Get-Command python -ErrorAction SilentlyContinue) + "   (must be False)")
 L ("OS: " + (Get-CimInstance Win32_OperatingSystem).Caption)
 
+# --- 0. WebView2 registry (a sandbox artefact, not the app's) ------------------------------------
+# Windows Sandbox shares the host's program files but keeps its own registry, so after the host's
+# WebView2 updates, the registry names a version folder that is not on disk and the window cannot
+# start: no window, no engine, and the run waits 600 s for a health that never comes (0.8.0's first
+# run, 2026-11-26: registered 157.0.4341.60, on disk 158.0.4370.33). On a real machine the registry
+# and the files are updated together. Point pv at the one version folder really there, and log it.
+$wv = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+try {
+  $reg = Get-ItemProperty $wv -ErrorAction Stop
+  $have = @(Get-ChildItem $reg.location -Directory -ErrorAction Stop |
+            Where-Object { Test-Path (Join-Path $_.FullName 'msedgewebview2.exe') } | ForEach-Object { $_.Name })
+  if ($have -contains $reg.pv) {
+    L ("webview2: registered {0} is on disk" -f $reg.pv)
+  } elseif ($have.Count -eq 1) {
+    Set-ItemProperty $wv -Name pv -Value $have[0] -ErrorAction Stop
+    $cs = $wv.Replace('\Clients\', '\ClientState\')
+    Set-ItemProperty $cs -Name pv -Value $have[0] -ErrorAction Stop
+    Set-ItemProperty $cs -Name EBWebView -Value (Join-Path $reg.location $have[0]) -ErrorAction Stop
+    L ("webview2: registered {0} not on disk; pv set to {1}" -f $reg.pv, $have[0])
+  } else {
+    L ("webview2: registered {0}; on disk: {1}; left alone" -f $reg.pv, ($have -join ', '))
+  }
+} catch { L ("webview2: check failed: " + $_.Exception.Message) }
+
 # --- 1. silent install -------------------------------------------------------
 # The bundle folder still holds the June 0.1.0 artifacts alongside the new ones, so pick the
 # installer EXPLICITLY by product name and newest build - never "the first one found".

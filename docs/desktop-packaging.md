@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-24 (Notes: the NSIS template is CLI 2.12.6's, re-taken with S-16); 2026-11-04 (trap 6: never open the run's log from the host while it runs; bind Ollama to the switch address, not 0.0.0.0; 2026-10-27: the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-11-26 (trap 7: the sandbox registry names a replaced WebView2; the harness repairs it); 2026-11-24 (Notes: the NSIS template is CLI 2.12.6's, re-taken with S-16); 2026-11-04 (trap 6: never open the run's log from the host while it runs; bind Ollama to the switch address, not 0.0.0.0; 2026-10-27: the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -180,7 +180,7 @@ on the host: `python -m scripts.release_preflight` re-reads each `turn-N-result.
 watches the sandbox. `tests/unit/test_rg012_harness.py` pins the text contract between the two —
 the log lines and file names the script writes and the preflight reads — and the ASCII rule below.
 
-**Six traps this harness exists to avoid — every one of them cost a run:**
+**Seven traps this harness exists to avoid — every one of them cost a run:**
 1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
    file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
    historical "LogonCommand never fires" reports actually were. The test suite now byte-checks
@@ -208,6 +208,12 @@ the log lines and file names the script writes and the preflight reads — and t
    in the sandbox failed: the 0.7.2 log stopped at *installer chosen* while the three turns still
    ran and saved their answers (2026-11-04). A run's log is never edited, so the run was repeated.
    Watch by listing the folder (`turn-3-result.json` appears last), then read the log.
+7. **The sandbox's registry can name a WebView2 the host has since replaced.** The sandbox shares
+   the host's program files but keeps its own registry, so after the host's WebView2 updates, the
+   app looks for a version folder that is gone: no window, no engine, and the run waits out its
+   600 s health timeout (0.8.0's first run on 2026-11-26: 157 registered, 158 on disk). The harness
+   now points the registry at the one version folder on disk before it installs, and logs
+   `webview2: …`; a real machine updates both together.
 
 **Tier 2 needs an answer engine the sandbox can reach.** It uses the host's Ollama over the Default
 Switch address (`172.29.224.1` once, `172.27.48.1` on 2026-11-04: read it from

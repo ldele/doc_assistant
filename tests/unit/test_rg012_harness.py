@@ -110,3 +110,15 @@ def test_the_sandbox_runs_the_tracked_script() -> None:
     assert mapping.group(1).replace("\\", "/").lower().endswith("scripts/rg012")
     assert r"-File C:\rg012\script\rg012-run.ps1" in wsb
     assert RUN.is_file()
+
+
+def test_the_harness_repairs_the_sandbox_webview2_registry_before_launching() -> None:
+    """The sandbox keeps its own registry over the host's files: once the host's WebView2 updates,
+    the window cannot start, and the run waits out its health timeout with no engine (2026-11-26,
+    157 registered, 158 on disk). The repair must run, and log, before the app is launched."""
+    script = RUN.read_text(encoding="ascii")
+    key = r"EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    assert key in script
+    assert '"webview2: registered {0} not on disk; pv set to {1}"' in script
+    assert script.index(key) < script.index("Start-Process -FilePath $setup.FullName")
+    assert script.index(key) < script.index("app launched")

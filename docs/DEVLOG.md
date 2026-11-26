@@ -44,6 +44,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-26 (4) — RG-012 repairs the sandbox's WebView2 registry
+
+**What.** `scripts/rg012/rg012-run.ps1` points the sandbox's WebView2 registry entry (`pv`, and
+ClientState's `pv` and `EBWebView`) at the one version folder on disk when the registered one is
+missing, before it installs, and logs `webview2: …`. The repair is `walk080-logon.ps1`'s, in use
+by the walk sandboxes since 2026-10-29. A test pins it ahead of the install and the launch;
+`desktop-packaging.md` §5 gains trap 7.
+
+**Why.** The first RG-012 run on the 12:31 0.8.0 installer (session 3 redone for KI-99) installed
+in 77 s, then waited 600 s for a health that never came: the sandbox registry named WebView2
+157.0.4341.60, the shared files are 158.0.4370.33 since the host updated, so no window and no
+engine. Archived as `out-2026-11-26-v0.8.0-FAIL-webview2-registry`. A sandbox artefact: a real
+machine updates the registry and the files together.
+
+**Rejected.** A logon step in the `.wsb` before the harness: two scripts to keep in step, and the
+gate is meant to run the one tracked file. Waiting for the sandbox image to catch up: it follows
+the host's servicing, not WebView2's own updates.
+
+**Opens.** Nothing; the installer is unchanged, so no rebuild.
+
 ## 2026-11-26 (3) — cpc re-vendored, 1.22.1 to 1.26.1
 
 **What.** 2026-11-26 — re-vendored cpc 1.22.1 -> 1.26.1 (tools/conventions/cpc/, 83 modules), from a

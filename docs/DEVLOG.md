@@ -44,6 +44,20 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-26 (2) — virtualenv 21.15.13 for an advisory
+
+**What.** `uv lock --upgrade-package virtualenv`: 21.14.12 → 21.15.13, nothing else re-resolved.
+The 21.14.5 entry beside it serves Python below 3.11 only and is never installed here.
+
+**Why.** `scripts.pip_audit_gate` failed on PYSEC-2026-4402 (fixed in 21.14.13), published since
+the last run; CI runs the same gate, so the next push would have gone red. Dev only: virtualenv
+comes in through pre-commit (`--extra dev`) and is not in the installer.
+
+**Rejected.** Reviewing it into `pip-audit-ignore.toml`: a fix exists, and the bump is one package.
+Pinning 21.14.13: uv took the newest release; the hooks ran on it.
+
+**Opens.** Nothing.
+
 ## 2026-11-26 — The window's saved lists are tied to the app version (KI-99)
 
 **What.** `apps/desktop/src/lib/core/lastSession.ts` stamps each saved list (documents, folders,

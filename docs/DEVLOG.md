@@ -46,6 +46,28 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-27 (4) — A read-only extraction report, and what it found
+
+**What.** `src/doc_assistant/ingest/extraction_report.py` runs the fast track's passes on one
+document without writing anything (a fresh cache is read, a stale one extracted in memory) and
+flags faults derived from the document itself: running headers and footers, a page repeating the
+one before (KI-57), a title that is a running line (KI-54), an author line read as prose (KI-89),
+line-end hyphen splits, pages naming a table none is extracted from, two-column pages. It times
+each pass. `scripts/extraction_report.py` runs it over the library (opened read-only) and any
+folder, writing JSON lines and a per-set summary. 8 tests in `tests/unit/test_extraction_report.py`
+pin each flag and its near miss. The ranked list is local-only (it names the owner's documents).
+
+**Why.** 0.9.0 session 2: diagnose before fixing, so sessions 4–5 fix the faults that are most
+common and the spike is judged on the ones the fast track cannot fix.
+
+**Rejected.** Reading the stored chunks: they hold text from a stale extractor, so the counts would
+not say what a re-read gives. A fixed header list or page-count threshold: the flags are shares of
+the document's own pages (robustness contract).
+
+**Opens.** The leaders are chart text spliced into passages, figures without a caption and tables
+drawn as text; references are minor. The KI-54 flag fires on correct titles printed as the running
+header, so it needs the first-page heading left out. The report is the seam for session 3's record.
+
 ## 2026-11-27 (3) — S-15: CI installs a named uv, and its token reads only
 
 **What.** `.github/workflows/ci.yml` gains a top-level `permissions: contents: read`, and

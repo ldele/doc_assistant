@@ -46,6 +46,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-27 (5) — The Library summary waits for the engine
+
+**What.** `screens/library/Summary.svelte` counts only once `shell.status` is `ready`, and again
+each time it turns ready. Until then it reads *Counting once the engine has started…* and
+*Count again* is disabled. Driven in the Vite preview: with the status set to `connecting`, no
+request went out; with `ready`, one went out and the counts showed.
+
+**Why.** The owner's walk (2026-11-27): a summary open at launch asked before the engine answered,
+failed once and then waited for *Count again*.
+
+**Rejected.** A retry loop in the component: the readiness gate already knows when the engine is
+up, and every other list waits on it.
+
+**Opens.** No `node:test`: the change is one condition in a component, so the preview is the check.
+**Correction to (4):** references are not minor. 27 documents have none stored: 19 because the pass
+never ran on them, 8 because the parser misses the list (the review's fault 10, corrected).
+
 ## 2026-11-27 (4) — A read-only extraction report, and what it found
 
 **What.** `src/doc_assistant/ingest/extraction_report.py` runs the fast track's passes on one

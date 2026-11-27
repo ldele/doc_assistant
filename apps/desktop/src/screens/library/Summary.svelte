@@ -28,6 +28,7 @@
     type CardRow,
     type SummaryTarget,
   } from '../../lib/library/summary'
+  import { shell } from '../../lib/shell/shell.svelte'
   import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
@@ -66,8 +67,11 @@
     }
   }
 
+  // Counted once the engine answers, and again each time it comes back: a summary opened at launch,
+  // while the engine starts, used to fail once and then wait for *Count again*.
+  const engineReady = $derived(shell.status === 'ready')
   $effect(() => {
-    void load(folderId)
+    if (engineReady) void load(folderId)
   })
 
   async function show(issue: SummaryIssue): Promise<void> {
@@ -168,7 +172,7 @@
         </p>
       {/if}
     </div>
-    <button class="btn btn-quiet" disabled={loading} onclick={() => load(folderId)} type="button" use:tooltip={'Count the library again; nothing in it changes'}>
+    <button class="btn btn-quiet" disabled={loading || !engineReady} onclick={() => load(folderId)} type="button" use:tooltip={'Count the library again; nothing in it changes'}>
       <Icon name="rotate-ccw" size={13} /> Count again
     </button>
   </div>
@@ -178,7 +182,7 @@
   {/if}
 
   {#if summary === null && loading}
-    <p class="muted">Counting…</p>
+    <p class="muted">{engineReady ? 'Counting…' : 'Counting once the engine has started…'}</p>
   {:else if summary}
     {@const s = summary}
     {@const [need, docs] = tiles(s)}

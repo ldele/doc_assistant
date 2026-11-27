@@ -786,6 +786,8 @@ def main(
     # (ADR-049 D3), and this step writes only what is still blank.
     _fill_missing_metadata(indexed - indexed_before)
     _check_document_text(indexed - indexed_before)
+    # Last: the record says what the document has *after* metadata was filled (spec, § the record).
+    _read_whole_documents(indexed - indexed_before, run)
 
     if force_rebuild:
         _sweep_rebuild_rows(rebuild_known_hashes, indexed - indexed_before)
@@ -886,6 +888,32 @@ def _check_document_text(produced: set[str]) -> None:
         check_documents(ids)
     except Exception as e:  # a check must not lose a completed ingest
         log.warning("document_text_check_failed", error=str(e))
+
+
+def _read_whole_documents(produced: set[str], run: RunSink | None = None) -> None:
+    """Run the figure and reference passes on what this run indexed, and record each document.
+
+    0.9.0 (`docs/specs/ingestion-record.md`): indexing used to stop at text and metadata, so a
+    document's figures and references waited for *Re-run…*. The tables were spliced already, at
+    extraction. Same rule as the steps before it: **it must never fail an ingest.**
+    """
+    if not produced:
+        return
+    try:
+        from doc_assistant.ingest.record import run_index_passes
+
+        with session_scope() as session:
+            ids = [
+                str(doc_id)
+                for doc_id, doc_hash in session.execute(
+                    select(DBDocument.id, DBDocument.doc_hash)
+                ).all()
+                if doc_hash in produced
+            ]
+        written = run_index_passes(ids, run.found if run is not None else None)
+        log.info("extraction_records_written", documents=written)
+    except Exception as e:  # a pass must not lose a completed ingest
+        log.warning("index_passes_failed", error=str(e))
 
 
 def _sweep_rebuild_rows(known_before: set[str], reproduced: set[str]) -> None:

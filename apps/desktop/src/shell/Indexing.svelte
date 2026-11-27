@@ -251,11 +251,15 @@
         <span role="columnheader">What happened</span>
       </div>
       {#each rows as f (f.id || f.path)}
-        <div class="row" role="row">
+        <div class="row" class:warn={!!f.warning} role="row">
           <span class="name" role="cell" title={f.kind === 'file' ? f.path : f.name}>{f.name}</span>
           <span role="cell"><span class="pill {f.state}">{FILE_STATE_LABEL[f.state]}</span></span>
           <span class="detail" class:err={f.state === 'failed'} role="cell">
             <span>{f.state === 'reading' && f.kind === 'file' ? READING_DETAIL : (f.detail ?? '')}</span>
+            {#if f.warning}
+              <!-- 0.9.0: the record's first warning, after the counts; the tint never stands alone. -->
+              <span class="warning"><Icon name="triangle-alert" size={12} /> {f.warning}</span>
+            {/if}
             {#if f.state === 'waiting' && running && f.id}
               <button class="btn remove" onclick={() => remove(f)} disabled={acting} use:tooltip={'Take this out of the list before it starts'}>Remove</button>
             {/if}
@@ -437,6 +441,15 @@
   }
   .detail.err {
     color: var(--danger);
+  }
+  /* 0.9.0: a finished document whose extraction record warns (docs/wireframes/extraction-record.md
+     S1). Tinted, and the warning is written out with its icon, so the tint never carries it alone. */
+  .row.warn {
+    background: var(--warn-bg);
+  }
+  .warning {
+    display: block;
+    color: var(--warn-fg);
   }
   .pill {
     display: inline-block;

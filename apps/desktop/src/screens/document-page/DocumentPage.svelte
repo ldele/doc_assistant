@@ -20,6 +20,7 @@
   import References from './References.svelte'
   import LetterSpacing from './LetterSpacing.svelte'
   import TextCheck from './TextCheck.svelte'
+  import WhatIndexingFound from './WhatIndexingFound.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
   import SourceViewer from './SourceViewer.svelte'
   import { clampSplit } from '../../lib/library/sourceviewer'
@@ -118,6 +119,7 @@
   // forgotten in the other. Each id is an anchor below (`doc-metadata` is on DocumentHeader).
   const BLOCKS = [
     { id: 'doc-metadata', label: 'Metadata' },
+    { id: 'doc-found', label: 'What indexing found' },
     { id: 'doc-connections', label: 'Connections' },
     { id: 'doc-chunks', label: 'Chunks' },
     { id: 'doc-figures', label: 'Figures' },
@@ -144,6 +146,11 @@
         viewerPage = page
       }}
     />
+
+    <!-- 0.9.0: the document's extraction record (docs/wireframes/extraction-record.md S2/S3). -->
+    <div class="block" id="doc-found">
+      <WhatIndexingFound {docId} listed={doc} />
+    </div>
 
     <!-- E4 (ADR-027 D1): what this document is *near* + who cites it. What it cites is the
          References block at the foot. Advisory; degrades to one quiet line on failure. -->

@@ -365,6 +365,34 @@ def extraction_fingerprint(suffix: str | None = None) -> str:
         h.update(f"{name}={_stable_repr(_module_attr(extractors, name))}".encode())
     for name in modules:
         h.update(f"{name}={_module_version(name)}".encode())
+    if suffix is None or suffix == ".pdf":
+        # The table splice runs inside `load_or_extract`, outside `extractors`' call graph, yet
+        # its output is part of the cached text (0.9.0, `docs/specs/ingestion-record.md` rule 4).
+        h.update(b"tables:" + _table_fingerprint().encode())
+    return h.hexdigest()[:16]
+
+
+@cache
+def _table_fingerprint() -> str:
+    """Identity of the table splice: `tables` and `regions`, whole-module, plus pdfplumber.
+
+    Whole-module rather than a call-graph walk because both modules serve the splice and nothing
+    else, so over-invalidating here costs nothing a narrower scope would save. Functions by their
+    bytecode, module-level constants by value (``MIN_ROWS`` changes output), the dependency by
+    its version.
+    """
+    from doc_assistant.ingest import regions, tables
+
+    h = hashlib.sha256()
+    for module in (tables, regions):
+        for name, obj in sorted(vars(module).items()):
+            if inspect.isfunction(obj) and obj.__module__ == module.__name__:
+                h.update(f"{module.__name__}.{name}".encode())
+                h.update(obj.__code__.co_code)
+                h.update(_stable_repr(obj.__code__.co_consts).encode())
+            elif name.isupper() and isinstance(obj, int | float | str | tuple | frozenset):
+                h.update(f"{module.__name__}.{name}={_stable_repr(obj)}".encode())
+    h.update(f"pdfplumber={_module_version('pdfplumber')}".encode())
     return h.hexdigest()[:16]
 
 
@@ -491,6 +519,55 @@ def document_fingerprint(original: Path) -> str:
     lines = sorted(keep) + [f"{k}\t{v}" for k, v in sorted(spacing.items())]
     digest = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:8]
     return f"{base}+keep:{digest}"
+
+
+def tables_record_path(cached: Path) -> Path:
+    """Sibling of the cached ``.md`` holding what the table splice found when it was written.
+
+    JSON ``{"version": 1, "extracted", "candidate_pages", "seconds", "error"}``. Written with the
+    text, so the extraction record (`ingest.record`) can say what the splice did after a run in
+    which the text came from a parallel worker. A file apart from the ``.md`` for the reason the
+    fingerprint is: the ``.md``'s bytes are the document's identity."""
+    return cached.with_name(cached.name + ".tables.json")
+
+
+def read_tables_record(cached: Path) -> dict[str, Any] | None:
+    """The splice's facts for this cache, or None when none were written (a cache from before
+    0.9.0, or a format with no tables)."""
+    try:
+        data = json.loads(tables_record_path(cached).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("version") == 1 else None
+
+
+def _splice_tables(original: Path, cached: Path, text: str) -> str:
+    """Splice the PDF's tables into its freshly extracted text, and record what was found.
+
+    The splice `scripts/extract_tables.py` performs, moved to the moment of extraction so the
+    chunks are cut from the spliced text (spec rule 3). **It never fails an extraction:** an error
+    is recorded and the text kept as extracted.
+    """
+    import time
+
+    from doc_assistant.ingest.regions import table_candidate_pages
+    from doc_assistant.ingest.tables import extract_tables_from_pages, splice_tables
+
+    started = time.perf_counter()
+    facts: dict[str, Any] = {"version": 1, "extracted": 0, "candidate_pages": [], "error": None}
+    try:
+        pages = table_candidate_pages(str(original))
+        facts["candidate_pages"] = list(pages)
+        found = extract_tables_from_pages(str(original), list(pages))
+        facts["extracted"] = len(found)
+        if found:
+            text = splice_tables(text, found)
+    except Exception as e:  # a table pass must not lose the document's text
+        log.warning("table_splice_failed", file=original.name, error=str(e))
+        facts["error"] = f"{type(e).__name__}: {e}"
+    facts["seconds"] = round(time.perf_counter() - started, 3)
+    atomic_write_text(tables_record_path(cached), json.dumps(facts))
+    return text
 
 
 def spacing_record_path(cached: Path) -> Path:
@@ -636,6 +713,8 @@ def load_or_extract(original: Path) -> str:
         spacing=spacing,
         record=record,
     )
+    if original.suffix.lower() == ".pdf":
+        text = _splice_tables(original, cached, text)
     write_cache(cached, text, source=original, spacing_record=record)
     return text
 

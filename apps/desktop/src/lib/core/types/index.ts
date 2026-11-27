@@ -31,6 +31,12 @@ export type { DocReferences, DocumentReference } from './references'
 export type { CollectionSummary, SummaryIssue } from './summary'
 export type { DocumentSpacing, IgnoreList, IgnoreListEntry, IgnoreListRemoved, SpacingRow, SpacingState } from './spacing'
 export type { DocumentTextCheck, TextCheckState, TextFinding } from './textChecks'
+export type {
+  DocumentExtractionRecord,
+  ExtractionRecord,
+  PassState,
+  RecordWarning,
+} from './extractionRecord'
 export type { CompareEff, CompareResult, CompareRow, CompareSource } from './compare'
 export type { ConceptCommunity, ConceptGraph, ConceptGraphEdge, ConceptGraphNode, ConceptPresence, Gap, GapKind, GapListItem, GapStatus, GraphRebuildStatus, GraphStaleness } from './concepts'
 export type { CitedAuthor, ConceptDefinitions, ConceptSignals, ConceptUsage, DefinitionCandidate, FormOffer, SignalExample, SignalPlace, SignalPlaceKind, UsageLine, VocabularyMatch } from './definitions'

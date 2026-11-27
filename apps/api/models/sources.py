@@ -62,6 +62,8 @@ class IngestFilePayload(BaseModel):
     #: Stable for the life of the list: what ``DELETE /api/ingest/items/{id}`` takes.
     id: str = ""
     kind: Literal["file", "folder", "rerun"] = "file"
+    #: The first warning of the document's extraction record (0.9.0); tints the row.
+    warning: str | None = None
 
 
 class IngestFilesPayload(BaseModel):

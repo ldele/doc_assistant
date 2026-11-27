@@ -109,6 +109,9 @@ class FileOutcome:
     kind: ItemKind = "file"
     document_id: str | None = None
     parts: tuple[str, ...] = ()
+    #: The first warning of the document's extraction record (0.9.0), shown after the counts and
+    #: tinting the row. ``None`` when the record found nothing to warn of, or there is none.
+    warning: str | None = None
 
 
 def outcome_of(path: str, name: str, done: DocumentResult) -> FileOutcome:
@@ -148,6 +151,7 @@ class RunSink(Protocol):
     def checkpoint(self) -> bool: ...
     def reading(self, index: int) -> None: ...
     def record(self, index: int, done: DocumentResult) -> None: ...
+    def found(self, path: str, line: str, warning: str | None) -> None: ...
     def end(self) -> None: ...
     def stop_requested(self) -> bool: ...
 
@@ -399,6 +403,19 @@ class IngestRun:
             out = outcome_of(row.path, row.name, done)
             self._files[index] = replace(row, state=out.state, detail=out.detail)
 
+    def found(self, path: str, line: str, warning: str | None) -> None:
+        """What the extraction record found in a finished file (0.9.0): appended to its row's
+        passage count, with the record's first warning. The record is written after the loop, so
+        this comes after `record`; a row that is not *added* is left as it is."""
+        from doc_assistant.ingest.registry import pathkey
+
+        key = pathkey(path)
+        with self._lock:
+            for i, row in enumerate(self._files):
+                if row.state == "added" and pathkey(row.path) == key:
+                    detail = " · ".join(p for p in (row.detail, line) if p)
+                    self._files[i] = replace(row, detail=detail or None, warning=warning)
+
     def end(self) -> None:
         """The loop is over. Files a stop left behind become *not started*."""
         with self._lock:
@@ -504,6 +521,9 @@ class BatchView:
             row = self._run.item(item_id)
             out = outcome_of(row.path, row.name, done)
             self._run.mark(item_id, out.state, out.detail)
+
+    def found(self, path: str, line: str, warning: str | None) -> None:
+        self._run.found(path, line, warning)
 
     def end(self) -> None:
         return None

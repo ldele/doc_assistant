@@ -22,7 +22,7 @@ from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.models import Figure
 from doc_assistant.db.session import session_scope
 
-from .cache import doc_hash, load_or_extract, spacing_record_path
+from .cache import doc_hash, load_or_extract, spacing_record_path, tables_record_path
 from .figures import figure_dir
 
 log = structlog.get_logger(__name__)
@@ -177,6 +177,7 @@ def cleanup_orphans_chroma(
             try:
                 cache_path.unlink()
                 spacing_record_path(cache_path).unlink(missing_ok=True)
+                tables_record_path(cache_path).unlink(missing_ok=True)
             except Exception as e:
                 log.warning("cache_delete_failed", file=cache_path.name, error=str(e))
         log.info("removed_orphan_caches", count=len(set(orphan_caches)))

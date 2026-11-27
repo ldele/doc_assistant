@@ -466,9 +466,9 @@ def purge_document_record(
     # library's stored path names the original's file.
     cache_path = confine(source_cache, "cache")
     if cache_path is not None:
-        from doc_assistant.ingest.cache import spacing_record_path
+        from doc_assistant.ingest.cache import spacing_record_path, tables_record_path
 
-        for path in (cache_path, spacing_record_path(cache_path)):
+        for path in (cache_path, spacing_record_path(cache_path), tables_record_path(cache_path)):
             if path.exists():
                 try:
                     path.unlink()

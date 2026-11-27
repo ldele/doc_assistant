@@ -70,12 +70,30 @@ class TextCheckCountsPayload(BaseModel):
     not_checked: int
 
 
+class RecordCountsPayload(BaseModel):
+    """0.9.0: what the newest extraction records say (`library.summary.RecordCounts`)."""
+
+    recorded: int
+    references_listed: int
+    references_heading_only: int
+    references_none: int
+    references_few: int
+    references_not_looked_for: int
+    figures_uncaptioned_documents: int
+    figures_uncaptioned: int
+    tables_extracted: int
+    tables_documents: int
+    tables_missed: int
+    tables_not_looked_for: int
+
+
 class FoundCountsPayload(BaseModel):
     references: OnRecordPayload
     figures: FigureCountsPayload
     letter_spacing: SpacingCountsPayload
     keywords: OnRecordPayload
     text_checks: TextCheckCountsPayload
+    record: RecordCountsPayload
 
 
 class TypeCountPayload(BaseModel):

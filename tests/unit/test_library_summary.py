@@ -215,15 +215,39 @@ def mixed(lib: Path) -> Path:
     _keyword(clean)
     _text_check(clean, marked=1)
     _doc(lib, "scan.pdf", chunk_count=0, extraction_health="broken", page_count=12)
-    _doc(lib, "thin.pdf", extraction_health="marginal")
-    _doc(lib, "wreck.pdf", extraction_health="broken")
-    _doc(lib, "untitled.pdf", title=None, authors="", year=None, doi=None)
+    thin = _doc(lib, "thin.pdf", extraction_health="marginal")
+    wreck = _doc(lib, "wreck.pdf", extraction_health="broken")
+    untitled = _doc(lib, "untitled.pdf", title=None, authors="", year=None, doi=None)
+    _records(lib, thin=thin, wreck=wreck, untitled=untitled)
     _doc(lib, "article.html", format="html", page_count=None)
     _doc(lib, "spaced.pdf")
     _spacing_record(lib, "spaced.pdf", [{"spaced": "A B S", "in_text": True}])
     _doc(lib, "spaced-off.pdf")
     _spacing_record(lib, "spaced-off.pdf", [{"spaced": "X Y", "in_text": False}])
     return lib
+
+
+def _records(lib: Path, *, thin: str, wreck: str, untitled: str) -> None:
+    """0.9.0: extraction records, so every record issue has a document behind it."""
+    from doc_assistant.ingest import record
+    from doc_assistant.ingest.cache import tables_record_path
+
+    cached = lib / "cache" / "untitled.md"
+    cached.write_text("<!-- page:1 -->" + chr(10) + "Table 1: means" + chr(10), encoding="utf-8")
+    tables_record_path(cached).write_text(
+        json.dumps(
+            {"version": 1, "extracted": 0, "candidate_pages": [], "seconds": 0.1, "error": None}
+        ),
+        encoding="utf-8",
+    )
+
+    def refs(entries: int, heading: bool = True) -> tuple[str, dict[str, Any]]:
+        return "ok", {"heading": heading, "entries": entries, "notes": [], "seconds": 0.0}
+
+    figs = ("ok", {"found": 3, "cropped": 3, "with_caption": 1, "caption_only": 0, "seconds": 0.0})
+    record.write_record(thin, "index", {"references": refs(0), "figures": figs})
+    record.write_record(wreck, "index", {"references": refs(0, heading=False)})
+    record.write_record(untitled, "index", {"references": refs(2)})
 
 
 def test_each_count_matches_its_filter(mixed: Path) -> None:
@@ -242,6 +266,12 @@ def test_each_count_matches_its_filter(mixed: Path) -> None:
         "letter_spaced": s.found.letter_spacing.recorded,
         "addressed_to_ai": s.found.text_checks.marked,
         "text_not_checked": s.found.text_checks.not_checked,
+        "references_heading_only": s.found.record.references_heading_only,
+        "references_none": s.found.record.references_none,
+        "references_few": s.found.record.references_few,
+        "references_not_looked_for": s.found.record.references_not_looked_for,
+        "figures_uncaptioned": s.found.record.figures_uncaptioned_documents,
+        "tables_missed": s.found.record.tables_missed,
     }
     assert set(expected) == set(ISSUE_IDS)
     for issue, count in expected.items():

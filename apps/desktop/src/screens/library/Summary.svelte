@@ -20,6 +20,7 @@
     indexingRows,
     meterShare,
     metadataRows,
+    plural,
     tiles,
     typeBars,
     whatLine,
@@ -125,7 +126,29 @@
 {/snippet}
 
 {#snippet cardRow(r: CardRow)}
-  {#if r.kind === 'line'}
+  {#if r.kind === 'count'}
+    {@const issue = r.issue}
+    {#if issue !== null}
+      <button
+        class="count nav"
+        class:sub={r.sub}
+        disabled={opening !== null}
+        onclick={() => show(issue)}
+        use:tooltip={`Open the ${plural(r.count, 'document', 'documents')}`}
+        type="button"
+      >
+        <span class="clabel">{r.label}</span>
+        <span class="mvalue">{plural(r.count, 'document', 'documents')}</span>
+        <span class="chev"><Icon name="chevron-right" size={13} /></span>
+      </button>
+    {:else}
+      <div class="count" class:sub={r.sub}>
+        <span class="clabel">{r.label}</span>
+        <span class="mvalue">{plural(r.count, 'document', 'documents')}</span>
+        <span class="chev"></span>
+      </div>
+    {/if}
+  {:else if r.kind === 'line'}
     <div class="notread">
       <strong>{r.title}</strong>
       <span>{r.detail}</span>
@@ -592,6 +615,43 @@
     height: 100%;
     border-radius: 999px;
     background: var(--accent);
+  }
+  /* 0.9.0: one state of a pass (the extraction record), indented under its pass's meter. */
+  .count {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 14px;
+    /* Named like the meter's, because `.mvalue` carries `grid-area: value` from it. */
+    grid-template-areas: 'label value chev';
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+  }
+  .clabel {
+    grid-area: label;
+  }
+  .count .chev {
+    grid-area: chev;
+  }
+  .count.sub {
+    padding-left: 1.6rem;
+  }
+  .count.nav {
+    cursor: pointer;
+    border-color: var(--border);
+  }
+  .count.nav:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .count:not(.nav) .clabel {
+    color: var(--fg-2);
   }
   .notread {
     display: flex;

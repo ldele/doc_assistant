@@ -67,6 +67,7 @@ __all__ = [
     "IndexingCounts",
     "MetadataCounts",
     "OnRecord",
+    "RecordCounts",
     "SpacingCounts",
     "TextCheckCounts",
     "TypeCount",
@@ -113,6 +114,42 @@ class _Facts:
     letter_spaced: bool | None
     #: The text check (A2b): ``None`` when never checked, else its state and paragraphs marked.
     check: tuple[str, int] | None = None
+    #: The newest extraction record (0.9.0, `ingest.record`): ``None`` when no run recorded one.
+    record: _Rec | None = None
+
+
+@dataclass(frozen=True)
+class _Rec:
+    """What the summary reads from a document's newest extraction record."""
+
+    references: str
+    figures: str
+    tables: str
+    warnings: frozenset[str]
+    uncaptioned: int
+    tables_extracted: int
+
+
+def _rec_of(rec: dict[str, Any]) -> _Rec:
+    fig = rec.get("figures") or {}
+    found, captioned = int(fig.get("found") or 0), int(fig.get("with_caption") or 0)
+    return _Rec(
+        references=rec["states"]["references"],
+        figures=rec["states"]["figures"],
+        tables=rec["states"]["tables"],
+        warnings=frozenset(w["id"] for w in rec["warnings"]),
+        uncaptioned=max(0, found - captioned) if rec["states"]["figures"] == "found" else 0,
+        tables_extracted=int((rec.get("tables") or {}).get("extracted") or 0),
+    )
+
+
+def _refs_not_looked_for(d: _Facts) -> bool:
+    """No run recorded looking for references, and no batch run left any: indexed before 0.9.0."""
+    return d.references == 0 and (d.record is None or d.record.references == "not_run")
+
+
+def _warned(warning: str) -> Callable[[_Facts], bool]:
+    return lambda d: d.record is not None and warning in d.record.warnings
 
 
 def _blank(value: str | None) -> bool:
@@ -149,6 +186,14 @@ ISSUES: dict[str, Callable[[_Facts], bool]] = {
     # never as a finding: its text or its patterns have moved since.
     "addressed_to_ai": lambda d: _checked(d) and d.check is not None and d.check[1] > 0,
     "text_not_checked": lambda d: not _no_text(d) and not _checked(d),
+    # 0.9.0: the extraction record's warnings, one predicate each (`ingest.record.WARNINGS`), and
+    # the documents no recorded run has looked at.
+    "references_heading_only": _warned("references_heading_only"),
+    "references_none": _warned("references_none"),
+    "references_few": _warned("references_few"),
+    "references_not_looked_for": _refs_not_looked_for,
+    "figures_uncaptioned": _warned("figures_uncaptioned"),
+    "tables_missed": _warned("tables_missed"),
 }
 ISSUE_IDS: tuple[str, ...] = tuple(ISSUES)
 
@@ -224,12 +269,34 @@ class TextCheckCounts:
 
 
 @dataclass(frozen=True)
+class RecordCounts:
+    """0.9.0: what the documents' newest extraction records say. ``recorded`` documents have one;
+    the rest were indexed before indexing read figures, references and tables."""
+
+    recorded: int = 0
+    #: A reference list on record: the record's ``found``/``partial``, or rows from a batch run.
+    references_listed: int = 0
+    references_heading_only: int = 0
+    references_none: int = 0
+    references_few: int = 0
+    references_not_looked_for: int = 0
+    figures_uncaptioned_documents: int = 0
+    figures_uncaptioned: int = 0
+    tables_extracted: int = 0
+    tables_documents: int = 0
+    tables_missed: int = 0
+    #: PDFs no recorded run read tables for.
+    tables_not_looked_for: int = 0
+
+
+@dataclass(frozen=True)
 class FoundCounts:
     references: OnRecord
     figures: FigureCounts
     letter_spacing: SpacingCounts
     keywords: OnRecord
     text_checks: TextCheckCounts = field(default_factory=lambda: TextCheckCounts(0, 0, 0))
+    record: RecordCounts = field(default_factory=RecordCounts)
 
 
 @dataclass(frozen=True)
@@ -337,6 +404,9 @@ def _facts(session: Session, document_ids: set[str] | None, *, spacing: bool) ->
     keywords = _per_document(session, document_keywords.c.document_id)
     folders = _per_document(session, document_folders.c.document_id)
     checks = check_states(session)
+    from doc_assistant.ingest.record import latest_records
+
+    records = latest_records(session, {str(d.id) for d in docs})
 
     out: list[_Facts] = []
     for d in docs:
@@ -369,6 +439,7 @@ def _facts(session: Session, document_ids: set[str] | None, *, spacing: bool) ->
                     else (False if spacing else None)
                 ),
                 check=checks.get(doc_id),
+                record=_rec_of(records[doc_id]) if doc_id in records else None,
             )
         )
     return out
@@ -512,6 +583,7 @@ def summarise_collection(folder_id: str | None = None) -> CollectionSummary | No
                 checked=sum(1 for d in facts if _checked(d)),
                 not_checked=_count(facts, "text_not_checked"),
             ),
+            record=_record_counts(facts),
         ),
         types=[
             TypeCount(fmt, n) for fmt, n in sorted(types.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -528,6 +600,33 @@ def summarise_collection(folder_id: str | None = None) -> CollectionSummary | No
             else FolderCounts(also_elsewhere=sum(1 for d in facts if d.folders > 1))
         ),
         added=AddedRange(first=min(added) if added else None, last=max(added) if added else None),
+    )
+
+
+def _record_counts(facts: list[_Facts]) -> RecordCounts:
+    recs = [d.record for d in facts if d.record is not None]
+    return RecordCounts(
+        recorded=len(recs),
+        references_listed=sum(
+            1
+            for d in facts
+            if (d.record is not None and d.record.references in ("found", "partial"))
+            or (d.record is None and d.references > 0)
+        ),
+        references_heading_only=_count(facts, "references_heading_only"),
+        references_none=_count(facts, "references_none"),
+        references_few=_count(facts, "references_few"),
+        references_not_looked_for=_count(facts, "references_not_looked_for"),
+        figures_uncaptioned_documents=_count(facts, "figures_uncaptioned"),
+        figures_uncaptioned=sum(r.uncaptioned for r in recs),
+        tables_extracted=sum(r.tables_extracted for r in recs),
+        tables_documents=sum(1 for r in recs if r.tables_extracted > 0),
+        tables_missed=_count(facts, "tables_missed"),
+        tables_not_looked_for=sum(
+            1
+            for d in facts
+            if d.format == "pdf" and (d.record is None or d.record.tables == "not_run")
+        ),
     )
 
 

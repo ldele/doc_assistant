@@ -16,7 +16,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from apps.api.routers.library import documents, folders, keywords, spacing, summary, text_checks
+from apps.api.routers.library import (
+    documents,
+    extraction_record,
+    folders,
+    keywords,
+    spacing,
+    summary,
+    text_checks,
+)
 
 router = APIRouter()
 router.include_router(documents.router)
@@ -29,5 +37,16 @@ router.include_router(spacing.router)
 router.include_router(summary.router)
 # A2b: the document page's text-check block, under /documents/{id}/text-check.
 router.include_router(text_checks.router)
+# 0.9.0: what indexing found in a document, under /documents/{id}/extraction-record.
+router.include_router(extraction_record.router)
 
-__all__ = ["documents", "folders", "keywords", "router", "spacing", "summary", "text_checks"]
+__all__ = [
+    "documents",
+    "extraction_record",
+    "folders",
+    "keywords",
+    "router",
+    "spacing",
+    "summary",
+    "text_checks",
+]

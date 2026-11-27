@@ -34,6 +34,7 @@ increment; until then a change to per-document metadata logic has two homes.
 from __future__ import annotations
 
 import shutil
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -343,7 +344,7 @@ def _figure_identity(
     return (page, tuple(round(v) for v in bbox))
 
 
-def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
+def _rerun_figures(doc: _DocRow, facts: dict[str, Any] | None = None) -> tuple[str, str]:
     """Detect figure regions again and re-crop them, replacing this document's rows and PNGs.
 
     Detection only — the VLM description pass costs money per figure and is never part of a
@@ -378,6 +379,7 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
     if pdf is None:
         return "skipped", "the source file is not reachable"
 
+    started = time.perf_counter()
     # Read the descriptions *before* detection, so a crash between the two cannot lose them.
     with session_scope() as session:
         prior = {
@@ -438,10 +440,23 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
     finally:
         handle.close()  # type: ignore[no-untyped-call]
 
+    # Counted from the regions, before the write: a committed row is expired, and reading it
+    # outside its session raises (found on the first real index run of this pass).
+    captioned = sum(1 for r in regions if (r.caption or "").strip())
+    caption_only = sum(1 for r in regions if r.extraction_method == "caption_only")
     with session_scope() as session:
         session.execute(delete(Figure).where(Figure.document_id == doc.id))
         for row in rows:
             session.add(row)
+
+    if facts is not None:  # the extraction record (`ingest.record`) reads these
+        facts.update(
+            found=len(rows),
+            cropped=rendered,
+            with_caption=captioned,
+            caption_only=caption_only,
+            seconds=round(time.perf_counter() - started, 3),
+        )
 
     if not rows:
         lost = f", {described_before} description(s) lost with them" if described_before else ""
@@ -523,7 +538,7 @@ def _figure_dpi() -> int:
     return int(config.FIGURE_RENDER_DPI)
 
 
-def _rerun_references(doc: _DocRow) -> tuple[str, str]:
+def _rerun_references(doc: _DocRow, facts: dict[str, Any] | None = None) -> tuple[str, str]:
     """Parse the reference list again and re-match it against the library.
 
     Replaces this document's `Citation` rows wholesale — a re-run that merged would keep whatever
@@ -543,6 +558,7 @@ def _rerun_references(doc: _DocRow) -> tuple[str, str]:
     if text is None:
         return "skipped", "no extracted text cached — re-run Text & chunks first"
 
+    started = time.perf_counter()
     result = extract_from_markdown(doc.id, text)
     candidates = load_library_candidates()
     matched = 0
@@ -565,6 +581,15 @@ def _rerun_references(doc: _DocRow) -> tuple[str, str]:
                     confidence=parsed.confidence,
                 )
             )
+    if facts is not None:  # the extraction record (`ingest.record`) reads these
+        facts.update(
+            heading=result.references_section_found,
+            entries=len(result.citations),
+            without_year=sum(1 for c in result.citations if c.year is None),
+            matched=matched,
+            notes=list(result.notes),
+            seconds=round(time.perf_counter() - started, 3),
+        )
     if not result.citations:
         return "ok", "no reference list found — previous references cleared"
     return "ok", f"{len(result.citations)} reference(s), {matched} matched in your library"
@@ -673,6 +698,26 @@ _RUNNERS: dict[str, Callable[[_DocRow], tuple[str, str]]] = {
 }
 
 
+#: The parts whose findings go into the extraction record (`ingest.record`), called with a dict
+#: they fill with their counts.
+_RECORDED: dict[str, Callable[[_DocRow, dict[str, Any]], tuple[str, str]]] = {
+    "figures": _rerun_figures,
+    "references": _rerun_references,
+}
+
+
+def _record(document_id: str, passes: dict[str, tuple[str, dict[str, Any]]]) -> None:
+    """Write this re-run's extraction record. Any part counts: a *Text & chunks* re-run changes
+    the text (and so the tables and the hash) even when it ran neither recorded pass. Never fails
+    the re-run."""
+    try:
+        from doc_assistant.ingest.record import write_record
+
+        write_record(document_id, "rerun", passes)
+    except Exception as e:
+        log.warning("extraction_record_failed", document_id=document_id, error=str(e))
+
+
 def rerun(
     document_ids: Sequence[str],
     parts: Sequence[str],
@@ -698,14 +743,23 @@ def rerun(
     done = 0
 
     for doc in docs:
+        recorded: dict[str, tuple[str, dict[str, Any]]] = {}
         for part in ordered:
             if on_progress is not None:
                 on_progress(done, total, f"{doc.filename} · {part}")
+            facts: dict[str, Any] = {}
             try:
-                status, detail = _RUNNERS[part](doc)
+                if part in _RECORDED:
+                    status, detail = _RECORDED[part](doc, facts)
+                else:
+                    status, detail = _RUNNERS[part](doc)
             except Exception as e:
                 log.warning("reingest_part_failed", document_id=doc.id, part=part, error=str(e))
                 status, detail = "error", f"{type(e).__name__}: {e}"
+            if part in _RECORDED:
+                if status != "ok":
+                    facts["reason"] = detail
+                recorded[part] = (status, facts)
             if part == "text" and _current_hash(doc.id) not in (None, doc.doc_hash):
                 superseded.append(doc.doc_hash)
             outcomes.append(
@@ -720,5 +774,6 @@ def rerun(
             done += 1
             if on_progress is not None:
                 on_progress(done, total, f"{doc.filename} · {part}")
+        _record(doc.id, recorded)
 
     return ReingestResult(outcomes=tuple(outcomes), superseded=tuple(superseded))

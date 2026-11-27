@@ -36,7 +36,9 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8001',
+        // DOC_API_TARGET points the dev server at another engine, e.g. one on a scratch data
+        // home while the installed app holds 8001 (memory: the installed app takes Vite's proxy).
+        target: process.env.DOC_API_TARGET ?? 'http://127.0.0.1:8001',
         changeOrigin: true,
       },
     },

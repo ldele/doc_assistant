@@ -48,7 +48,19 @@ export interface NotReadLine {
   detail: string
 }
 
-export type CardRow = MeterRow | NotReadLine
+/** One count under a pass (0.9.0, the extraction record): what it names, how many, and the
+ *  documents it opens. A count of 0 opens nothing and is plain text. `sub` indents it under the
+ *  pass it belongs to. */
+export interface CountRow {
+  kind: 'count'
+  key: string
+  label: string
+  count: number
+  issue: SummaryIssue | null
+  sub: boolean
+}
+
+export type CardRow = MeterRow | NotReadLine | CountRow
 
 export interface Bar {
   key: string
@@ -265,29 +277,68 @@ export function metadataRows(s: CollectionSummary): CardRow[] {
 
 /** The *Found in each document* card. A kind with nothing on record anywhere says "not looked for"
  *  once: nothing records that a re-run looked, so its zero is not a finding. */
+function count(key: string, label: string, n: number, issue: SummaryIssue | null, sub = true): CountRow {
+  return { kind: 'count', key, label, count: n, issue: n > 0 ? issue : null, sub }
+}
+
+/** The references, figures and tables rows once any document has an extraction record (0.9.0,
+ *  docs/wireframes/extraction-record.md S4): each pass split by what its record says. */
+function recordedRows(s: CollectionSummary): CardRow[] {
+  const f = s.found
+  const r = f.record
+  const n = s.documents
+  const pdfs = f.figures.pdfs
+  const rows: CardRow[] = [
+    { kind: 'meter', key: 'references', label: 'References', have: r.references_listed, of: n, tail: null, issue: null },
+    count('references_heading_only', 'A references heading, but no entries', r.references_heading_only, 'references_heading_only'),
+    count('references_none', 'No reference list found', r.references_none, 'references_none'),
+    count('references_few', 'Only a few references found', r.references_few, 'references_few'),
+    count('references_not_looked_for', 'Not looked for yet', r.references_not_looked_for, 'references_not_looked_for'),
+  ]
+  if (pdfs > 0) {
+    rows.push(
+      meter('no_figures', 'Figures', f.figures.on_record, pdfs, f.figures.none_on_record, 'none'),
+      count(
+        'figures_uncaptioned',
+        r.figures_uncaptioned > 0 ? `${plural(r.figures_uncaptioned, 'figure', 'figures')} without a caption, in` : 'Figures without a caption',
+        r.figures_uncaptioned_documents,
+        'figures_uncaptioned',
+      ),
+      count('tables', r.tables_extracted > 0 ? `Tables: ${plural(r.tables_extracted, 'table', 'tables')} extracted, in` : 'Tables extracted', r.tables_documents, null, false),
+      count('tables_missed', "Name a table that wasn't extracted", r.tables_missed, 'tables_missed'),
+      count('tables_not_looked_for', 'Tables not looked for yet', r.tables_not_looked_for, null),
+    )
+  }
+  return rows
+}
+
 export function foundRows(s: CollectionSummary): CardRow[] {
   const f = s.found
   const n = s.documents
   const rows: CardRow[] = []
 
-  if (n > 0 && f.references.on_record === 0) {
+  if (f.record.recorded > 0) {
+    rows.push(...recordedRows(s))
+  } else if (n > 0 && f.references.on_record === 0) {
     rows.push({
       kind: 'line',
       key: 'references-not-read',
       title: `References: not looked for in ${plural(n, 'document', 'documents')}`,
-      detail: 'Indexing does not look for them. Re-run… > References does.',
+      detail: 'Indexed before indexing read references. Re-run… > References reads them.',
     })
   } else {
     rows.push(meter('no_references', 'References', f.references.on_record, n, f.references.none_on_record, 'none'))
   }
 
   const pdfs = f.figures.pdfs
-  if (pdfs > 0 && f.figures.on_record === 0) {
+  if (f.record.recorded > 0) {
+    // the figures and tables rows are in `recordedRows`
+  } else if (pdfs > 0 && f.figures.on_record === 0) {
     rows.push({
       kind: 'line',
       key: 'figures-not-read',
       title: `Figures: not looked for in ${plural(pdfs, 'PDF', 'PDFs')}`,
-      detail: 'Indexing does not look for them. Re-run… > Figures does.',
+      detail: 'Indexed before indexing read figures. Re-run… > Figures reads them.',
     })
   } else if (pdfs > 0) {
     rows.push(meter('no_figures', 'Figures', f.figures.on_record, pdfs, f.figures.none_on_record, 'none'))

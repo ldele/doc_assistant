@@ -75,6 +75,8 @@ export interface IngestFile {
   id: string
   /** A file, the library folder before it starts, or a document's re-run. */
   kind: 'file' | 'folder' | 'rerun'
+  /** The first warning of the document's extraction record (0.9.0); tints the row. */
+  warning: string | null
 }
 
 /**

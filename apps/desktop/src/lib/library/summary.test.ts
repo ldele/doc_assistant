@@ -15,6 +15,7 @@ import {
   typeBars,
   whatLine,
   yearBars,
+  type CountRow,
   type MeterRow,
 } from './summary.ts'
 
@@ -55,6 +56,20 @@ function summary(over: Partial<CollectionSummary> = {}): CollectionSummary {
       letter_spacing: { recorded: 0, pdfs: 0 },
       keywords: { on_record: 0, none_on_record: 0, rows: 0 },
       text_checks: { marked: 0, checked: 0, not_checked: 0 },
+      record: {
+        recorded: 0,
+        references_listed: 0,
+        references_heading_only: 0,
+        references_none: 0,
+        references_few: 0,
+        references_not_looked_for: 0,
+        figures_uncaptioned_documents: 0,
+        figures_uncaptioned: 0,
+        tables_extracted: 0,
+        tables_documents: 0,
+        tables_missed: 0,
+        tables_not_looked_for: 0,
+      },
     },
     types: [],
     years: { by_decade: [], no_year: 0, oldest: null, newest: null },
@@ -211,6 +226,7 @@ test('references and figures not looked for are said once; otherwise meters', ()
         letter_spacing: { recorded: 1, pdfs: 3 },
         keywords: { on_record: 5, none_on_record: 0, rows: 0 },
         text_checks: { marked: 0, checked: 0, not_checked: 0 },
+        record: summary().found.record,
       },
     }),
   ) as MeterRow[]
@@ -223,6 +239,55 @@ test('references and figures not looked for are said once; otherwise meters', ()
       ['Keywords', 5, 5, null],
     ],
   )
+})
+
+test('once a document has a record, each pass is split by state and a zero opens nothing', () => {
+  const rows = foundRows(
+    summary({
+      documents: 10,
+      found: {
+        ...summary().found,
+        figures: { on_record: 6, none_on_record: 2, rows: 30, described: 0, pdfs: 8 },
+        record: {
+          ...summary().found.record,
+          recorded: 7,
+          references_listed: 6,
+          references_heading_only: 1,
+          references_not_looked_for: 3,
+          figures_uncaptioned: 12,
+          figures_uncaptioned_documents: 4,
+          tables_extracted: 9,
+          tables_documents: 3,
+          tables_missed: 2,
+          tables_not_looked_for: 1,
+        },
+      },
+    }),
+  )
+  const counts = rows.filter((r): r is CountRow => r.kind === 'count')
+  assert.deepEqual(
+    counts.map((r) => [r.key, r.count, r.issue]),
+    [
+      ['references_heading_only', 1, 'references_heading_only'],
+      ['references_none', 0, null],
+      ['references_few', 0, null],
+      ['references_not_looked_for', 3, 'references_not_looked_for'],
+      ['figures_uncaptioned', 4, 'figures_uncaptioned'],
+      ['tables', 3, null],
+      ['tables_missed', 2, 'tables_missed'],
+      ['tables_not_looked_for', 1, null],
+    ],
+  )
+  assert.equal(counts.find((r) => r.key === 'figures_uncaptioned')?.label, '12 figures without a caption, in')
+  assert.ok(!rows.some((r) => r.key === 'references-not-read'))
+  const none = foundRows(
+    summary({
+      documents: 2,
+      found: { ...summary().found, figures: { on_record: 1, none_on_record: 1, rows: 2, described: 0, pdfs: 2 }, record: { ...summary().found.record, recorded: 2 } },
+    }),
+  ).filter((r): r is CountRow => r.kind === 'count')
+  assert.equal(none.find((r) => r.key === 'figures_uncaptioned')?.label, 'Figures without a caption')
+  assert.equal(none.find((r) => r.key === 'tables')?.label, 'Tables extracted')
 })
 
 test('meter share has no division by zero', () => {

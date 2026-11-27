@@ -1168,6 +1168,36 @@ class DocumentTextCheck(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
+class ExtractionRecord(Base):
+    """What one run found in one document: an index run or a *Re-run…* (0.9.0, spec
+    `docs/specs/ingestion-record.md`). A regenerable sidecar.
+
+    One row **per document per run**; the newest is the current one, and a write keeps at most
+    ``ingest.record.RECORDS_KEPT`` per document, so a fix's before and after stay readable. The
+    three ``*_state`` columns are what the summary counts (one of ``ingest.record.STATES``); the
+    counts and the parsers' reasons are ``detail_json`` (version ``record_version``).
+    ``doc_hash`` is the text the row describes: a row whose hash is not the document's is stale.
+    ``document_type`` is a slot for a later session and is always null for now. Never mutates the
+    chunk store or the document's text; additive, since ``create_all`` makes the table.
+    """
+
+    __tablename__ = "extraction_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_hash: Mapped[str] = mapped_column(String, nullable=False)
+    run_kind: Mapped[str] = mapped_column(String, nullable=False)
+    record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    references_state: Mapped[str] = mapped_column(String, nullable=False)
+    figures_state: Mapped[str] = mapped_column(String, nullable=False)
+    tables_state: Mapped[str] = mapped_column(String, nullable=False)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
 class ExternalMetadata(Base):
     """What an outside catalogue said about a file, recorded when it was imported (ADR-049).
 

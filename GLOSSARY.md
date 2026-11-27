@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-20 (U-008: claim colours, How this answer was made, A8b); 2026-11-20 (U-007: a chat's setup and its controls, A8a); 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
+<!-- status: active · updated: 2026-11-27 (U-009: the extraction record, What indexing found); 2026-11-20 (U-008: claim colours, How this answer was made, A8b); 2026-11-20 (U-007: a chat's setup and its controls, A8a); 2026-11-20 (U-006: chat mode vs synthesis mode) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -323,6 +323,19 @@ the provenance card, the usage line and *What the answer carried*, all read from
 claim` (no check the app runs says so)
 **Authoritative in:** `apps/desktop/src/lib/chat/claims.ts` + `apps/desktop/src/lib/chat/turnDetails.ts`
 + `src/doc_assistant/turn_details.py` + `docs/specs/chat-interface-pass.md`
+
+## U-009 — the extraction record, and what indexing found
+
+**Canonical:** `extraction record` (what one run found in one document) · `What indexing found`
+(the document page's block) · `not looked for yet` (a document no recorded run read for a part)
+**Definition:** One sidecar row per document per run, index or *Re-run…*: a state per pass
+(references, figures, tables), the counts, and the parser's own reasons. A warning is one predicate
+over the newest record, read alike by the document page, the indexing window's finished row and the
+Library summary. *Not looked for yet* is not *none found*: it marks a document indexed before
+indexing read these parts.
+**Forbidden:** `ingestion report` (the record is not a report; `extraction_report` is the
+read-only diagnostic runner of session 2) · `none` for a part never looked for
+**Authoritative in:** `src/doc_assistant/ingest/record.py` + `docs/specs/ingestion-record.md`
 
 ## D-001 — Provenote vs doc_assistant
 

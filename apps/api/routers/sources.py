@@ -192,7 +192,13 @@ def ingest_files(
         offset=offset,
         files=[
             IngestFilePayload(
-                path=f.path, name=f.name, state=f.state, detail=f.detail, id=f.id, kind=f.kind
+                path=f.path,
+                name=f.name,
+                state=f.state,
+                detail=f.detail,
+                id=f.id,
+                kind=f.kind,
+                warning=f.warning,
             )
             for f in rows
             # `page` never lists a removed item; the check says so to the type checker.

@@ -36,6 +36,10 @@ for pkg in (
     "fitz",  # legacy import alias
     "pymupdf",  # the actual package + its layout/onnx data files
     "pymupdf4llm",
+    # 0.9.0: indexing splices tables (`ingest.cache._splice_tables`), so a missing pdfplumber
+    # would fail every PDF's table pass at runtime. Collected by name rather than left to the
+    # import scan of a function body.
+    "pdfplumber",
     "langchain",
     "langchain_core",
     "langchain_community",

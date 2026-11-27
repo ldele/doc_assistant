@@ -46,6 +46,42 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-27 (7) — What indexing found, in three places
+
+**What.** The owner approved `docs/wireframes/extraction-record.md` as drawn, and its three screens
+are built. The indexing window's finished row adds the record's line after the passage count and
+its first warning, tinted with an icon (`FileOutcome.warning`, `RunSink.found`). The document page
+has a *What indexing found* block under the header: warnings with their fix (*Re-run…* with the part
+ticked, or *Edit metadata*), then a line per pass; *Not looked for yet* and a stale record each say
+so. The Library summary splits references, figures and tables by state, each count opening its
+documents (six new issues). Vite's proxy target can now come from `DOC_API_TARGET`.
+
+**Why.** 0.9.0 session 3: the record is only worth writing if a person sees it where they look.
+
+**Rejected.** All warnings on the queue row (the drawing chose one). *Edit details* (the control is
+*Edit metadata* everywhere else).
+
+**Opens.** The installed-build cost for `docs/performance.md`, and the security step.
+
+## 2026-11-27 (6) — Indexing reads figures, references and tables, and records what it found
+
+**What.** PDFs get their tables spliced at extraction (`cache.load_or_extract`), before chunking, so
+the table rows reach the passages; the PDF fingerprint now covers `tables.py`, `regions.py` and
+pdfplumber. After the loop, `_read_whole_documents` runs *Re-run…*'s own figure and reference
+functions on what the run produced, and `ingest/record.py` writes an `ExtractionRecord` per
+document: a state per pass, the counts, the parser's notes, and seven warnings defined once.
+`reingest.rerun` writes one too. `GET /api/library/documents/{id}/extraction-record` serves the
+newest. Spec `docs/specs/ingestion-record.md`; wireframe `docs/wireframes/extraction-record.md`.
+
+**Why.** 0.9.0 session 3: 19 of the 27 documents with no references had simply never been parsed.
+
+**Rejected.** Splicing tables after chunking (the chunks would lag the cache by a run). A row that
+says `not_run` for a pass the run skipped (every reader would have to look back; each row carries
+the pass forward instead).
+
+**Opens.** Every PDF reads as changed on the upgrade. The screens wait for the owner's markup. The
+first real run raised in the figures count (expired rows), now guarded by a test.
+
 ## 2026-11-27 (5) — The Library summary waits for the engine
 
 **What.** `screens/library/Summary.svelte` counts only once `shell.status` is `ready`, and again

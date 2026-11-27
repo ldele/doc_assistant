@@ -35,7 +35,7 @@
     activeCitationN?: number | null
     /** The whole recorded turn (A8b), for its claims, decisions, review, lookup and context. */
     turn?: ConversationTurn | null
-    onClaimClick?: (claimN: number, sourceN: number) => void
+    onClaimClick?: (claimN: number, sourceNs: number[]) => void
     activeClaimN?: number | null
     onOpenRecord?: (kind: 'document' | 'folder' | 'concept', id: string) => void
   } = $props()
@@ -51,7 +51,7 @@
   const showMade = $derived(Boolean(turn && (turn.context || turn.chat_mode)))
   function clickClaim(key: string): void {
     const c = claims.find((x) => String(x.n) === key)
-    if (c && c.sources.length > 0) onClaimClick?.(c.n, c.sources[0])
+    if (c && c.sources.length > 0) onClaimClick?.(c.n, c.sources)
   }
 </script>
 

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { test } from 'node:test'
 
-import { CITED_TOOLTIP, CLAIM_CITE_BODY, WEAK_TOOLTIP, claimKind, claimWords, locateClaims } from './claims.ts'
+import { CITED_TOOLTIP, CLAIM_CITE_BODY, WEAK_TOOLTIP, claimKind, claimWords, locateClaims, passagesFor } from './claims.ts'
 import { CITE_BODY } from './citations.ts'
 
 test('claims read citations exactly as citations.ts does', () => {
@@ -56,4 +56,12 @@ test('a sentence written twice is matched to its own place each time', () => {
 test('an empty claim and an empty answer match nothing', () => {
   assert.deepEqual(locateClaims(flat, ['[1]']), [null])
   assert.deepEqual(locateClaims('', ['Release falls.']), [null])
+})
+
+test('a claim opens every passage it cites, in its own order (walk item 25)', () => {
+  const sources = [{ n: 1 }, { n: 2 }, { n: 3 }]
+  assert.deepEqual(passagesFor(sources, [3, 1]).map((s) => s.n), [3, 1])
+  assert.deepEqual(passagesFor(sources, [2, 2, 1]).map((s) => s.n), [2, 1])
+  assert.deepEqual(passagesFor(sources, [4, 2]).map((s) => s.n), [2])
+  assert.deepEqual(passagesFor(sources, []), [])
 })

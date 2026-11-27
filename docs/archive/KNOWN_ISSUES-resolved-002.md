@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-01 · class: disposable -->
+<!-- status: archived · updated: 2026-11-27 · class: disposable -->
 
 # KNOWN ISSUES — resolved (archive 002)
 
@@ -1020,3 +1020,27 @@ when the run ends.
 
 **Left as found:** the debris earlier runs left in the working `data/` (the developer's to
 remove), and `wiki.sample_chunks`, which creates an empty store when it reads a missing one.
+
+## KI-100 — a *Check now* that cannot reach the engine leaves the last "up to date" on screen — **FIXED 2026-11-27** (filed 2026-11-26)
+
+**What happens.** Settings › General shows "Provenote 0.8.0 is up to date · Checked 32 minutes
+ago." in green. *Check now* is pressed and the window's request never reaches its own engine: the
+green headline stays, and under it, in red, "Update check failed: Failed to fetch". The engine
+records nothing, since no check ran. Reproduced in Windows Sandbox on the 12:31 build with the
+engine stopped (`C:\rg012-host\out-2026-11-26-v0.8.0-offline-update`).
+
+**Where it was seen.** The owner's walk, step 8, in airplane mode: the headline stayed green and
+`data\settings.json` kept the 17:08 check. Why airplane mode cut the window from its engine on
+127.0.0.1 is not known (not reproducible here without cutting this session's network, and the
+installed engine keeps no log, KI-90).
+
+**What does work.** Offline with the engine reachable (the sandbox with networking off), the
+screen reads "Couldn't check for updates · could not reach the update server" and the engine
+records the failed check: ADR-044's three-state rule holds where it is meant to.
+
+**Why it matters.** A green verdict beside a failed press reads as "still up to date". The age
+line keeps it dated, so it is not a lie; it is the same stale-answer shape as the 0.8.0 plan's feedback item 12 (Ollama's state).
+
+**Fix direction.** `General.svelte`'s `runUpdateCheck`: on a transport failure, set the shown
+state to *unknown* ("Couldn't check: the engine did not answer") instead of keeping the last one.
+A pure test in `lib/settings/updates.ts`'s style.

@@ -303,10 +303,10 @@
     background: color-mix(in srgb, var(--accent) 34%, transparent);
   }
   .md :global(.claim.weak) {
-    background: var(--warn-bg);
+    background: var(--mark-bg);
   }
   .md :global(.claim.weak.active) {
-    outline: 1px solid var(--warn-border);
+    outline: 1px solid var(--warn-fg);
   }
   .md :global(.claim:focus-visible) {
     outline: 2px solid var(--accent);

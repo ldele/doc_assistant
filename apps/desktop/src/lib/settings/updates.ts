@@ -73,3 +73,25 @@ export function asOf(checkedAt: string | null, now: Date = new Date()): string {
 export function shouldNotify(status: UpdateStatus): boolean {
   return status.state === 'update_available' && Boolean(status.latest_version)
 }
+
+/** The reason shown when *Check now* never reached the engine (KI-100). */
+export const ENGINE_UNREACHABLE = 'The engine did not answer, so no check ran. Restart Provenote and try again.'
+
+/** The status to show after a check whose request failed before the engine answered.
+ *
+ *  The last verdict must not stay on screen: a green "up to date" above a failed press reads as
+ *  "still up to date" (KI-100). So the shown state becomes 'unknown' with the reason, keeping
+ *  what the previous status knew that is still true (the version, the last completed check's
+ *  stamp, the auto-check setting).
+ */
+export function unreachableStatus(previous: UpdateStatus | null): UpdateStatus {
+  return {
+    state: 'unknown',
+    current_version: previous?.current_version ?? '',
+    latest_version: null,
+    release_url: previous?.release_url ?? '',
+    checked_at: previous?.checked_at ?? null,
+    reason: ENGINE_UNREACHABLE,
+    auto_check_enabled: previous?.auto_check_enabled ?? false,
+  }
+}

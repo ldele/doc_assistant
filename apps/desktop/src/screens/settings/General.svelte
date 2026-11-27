@@ -6,7 +6,7 @@
   // another section shows.
   import type { UpdateStatus } from '../../lib/core/types'
   import { checkForUpdate, exportAllConversations, setAutoUpdateCheck } from '../../lib/core/api'
-  import { describeUpdate } from '../../lib/settings/updates'
+  import { describeUpdate, unreachableStatus } from '../../lib/settings/updates'
   import { getTheme, setTheme, applyTheme, type Theme } from '../../lib/core/theme'
   import { tooltip } from '../../lib/shell/tooltip'
 
@@ -49,15 +49,16 @@
 
   // ADR-044 — the update check. Notification only; nothing here can install anything. A failed
   // *check* is not an error to show in red — it comes back as state 'unknown' with a reason, and
-  // only a transport failure lands in `updateError`.
+  // a request that never reaches the engine replaces the shown verdict with 'unknown', so the
+  // last "up to date" cannot stand above a failed press (KI-100).
   async function runUpdateCheck(): Promise<void> {
     if (updateBusy) return
     updateBusy = true
     updateError = null
     try {
       update = await checkForUpdate()
-    } catch (e) {
-      updateError = `Update check failed: ${e instanceof Error ? e.message : String(e)}`
+    } catch {
+      update = unreachableStatus(update)
     } finally {
       updateBusy = false
     }

@@ -10,6 +10,7 @@
   //
   // This file reads the state and lays out its three parts, each a file beside it: `AnsweringWith`
   // (the card on top), `ProviderList` (the providers) and `ProviderForm` (the open one's form).
+  import { untrack } from 'svelte'
   import type { SetupState } from '../../lib/core/types/setup'
   import { getSetup } from '../../lib/core/api'
   import { shell } from '../../lib/shell/shell.svelte'
@@ -38,6 +39,14 @@
   const groups = $derived(setup ? providerGroups(setup.providers) : [])
 
   void refresh()
+
+  // A probe started elsewhere (the status bar's *Check now*, the window coming back to the front)
+  // writes `shell.setup`; the card follows it, so Settings does not keep an older verdict than the
+  // bar (0.8.0 walk, item 12). Not while this panel's own probe is out: its answer comes next.
+  $effect(() => {
+    const latest = shell.setup
+    if (latest && !untrack(() => probing)) untrack(() => show(latest))
+  })
 
   async function refresh(probe = true): Promise<void> {
     try {

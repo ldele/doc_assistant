@@ -7,7 +7,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { asOf, describeUpdate, shouldNotify } from './updates.ts'
+import { asOf, describeUpdate, shouldNotify, unreachableStatus } from './updates.ts'
 import type { UpdateStatus } from '../core/types/updates.ts'
 
 function status(over: Partial<UpdateStatus> = {}): UpdateStatus {
@@ -87,4 +87,21 @@ test('asOf reads in the units a person would use', () => {
 test('asOf is empty rather than wrong when there is no usable stamp', () => {
   assert.equal(asOf(null), '')
   assert.equal(asOf('not-a-date'), '')
+})
+
+test('a check that never reached the engine replaces the last verdict (KI-100)', () => {
+  const shown = unreachableStatus(status({ state: 'current' }))
+  assert.equal(shown.state, 'unknown')
+  const s = describeUpdate(shown)
+  assert.doesNotMatch(s.headline, /up to date/)
+  assert.match(s.headline, /Couldn't check/)
+  assert.match(s.detail, /engine did not answer/)
+  assert.equal(s.showLink, false)
+  // An available update must not survive a failed press either: its link would be unchecked.
+  assert.equal(describeUpdate(unreachableStatus(status({ state: 'update_available', latest_version: '0.9.0' }))).showLink, false)
+})
+
+test('a failed first check still has a sentence to show', () => {
+  const s = describeUpdate(unreachableStatus(null))
+  assert.match(s.detail, /engine did not answer/)
 })

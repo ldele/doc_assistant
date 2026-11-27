@@ -83,8 +83,8 @@
     chat.activeClaim = null
   }
   // A8b: a coloured claim opens its first cited passage, and is drawn darker while it is open.
-  function claimOpened(turnKey: string, claimN: number, sourceN: number): void {
-    chat.activeCitation = { turnKey, n: sourceN }
+  function claimOpened(turnKey: string, claimN: number, sourceNs: number[]): void {
+    chat.activeCitation = { turnKey, n: sourceNs[0], ns: sourceNs }
     chat.activeClaim = { turnKey, n: claimN }
   }
 
@@ -102,6 +102,7 @@
         onContinueNew={() => onContinueNew(viewedConvo.session_id, viewedConvo.setup)}
         {onOpenChat}
         onCitationClick={citation}
+        onClaimClick={claimOpened}
       />
     {/if}
     <p class="readonly-note">
@@ -118,7 +119,7 @@
         onCitationClick={(n) => citation(t.record_id, n)}
         activeCitationN={chat.activeCitation?.turnKey === t.record_id ? chat.activeCitation.n : null}
         turn={t}
-        onClaimClick={(cn, n) => claimOpened(t.record_id, cn, n)}
+        onClaimClick={(cn, ns) => claimOpened(t.record_id, cn, ns)}
         activeClaimN={chat.activeClaim?.turnKey === t.record_id ? chat.activeClaim.n : null}
         {onOpenRecord}
       />
@@ -132,6 +133,7 @@
         onContinueNew={() => onContinueNew(chat.sessionId, liveLine)}
         {onOpenChat}
         onCitationClick={citation}
+        onClaimClick={claimOpened}
       />
     {/if}
     {#if resumedHistory}
@@ -149,7 +151,7 @@
           onCitationClick={(n) => citation(t.record_id, n)}
           activeCitationN={chat.activeCitation?.turnKey === t.record_id ? chat.activeCitation.n : null}
           turn={t}
-          onClaimClick={(cn, n) => claimOpened(t.record_id, cn, n)}
+          onClaimClick={(cn, ns) => claimOpened(t.record_id, cn, ns)}
           activeClaimN={chat.activeClaim?.turnKey === t.record_id ? chat.activeClaim.n : null}
           {onOpenRecord}
         />
@@ -196,7 +198,7 @@
         error={t.error}
         onCitationClick={(n) => citation(String(t.id), n)}
         activeCitationN={chat.activeCitation?.turnKey === String(t.id) ? chat.activeCitation.n : null}
-        onClaimClick={(cn, n) => claimOpened(String(t.id), cn, n)}
+        onClaimClick={(cn, ns) => claimOpened(String(t.id), cn, ns)}
         activeClaimN={chat.activeClaim?.turnKey === String(t.id) ? chat.activeClaim.n : null}
         {onOpenRecord}
       />

@@ -183,3 +183,24 @@ export function providerStatusLabel(p: ProviderReadiness, probing = false): stri
   if (!p.configured) return 'Needs a key'
   return 'Not ready'
 }
+
+/** The status bar's warning when the engine in use stopped answering, or `null` while it answers
+ *  or nobody has asked it. Read from the last probe's verdict (the provider step's `offline`), so
+ *  it is as live as that probe: at launch, when the window comes back to the front, and on the
+ *  bar's *Check now* (0.8.0 walk, item 12). */
+export function engineDown(state: SetupState | null): string | null {
+  const step = state?.steps.find((s) => s.id === 'provider')
+  if (!state || !step || !step.offline) return null
+  const name = state.active_name || state.active_provider
+  return `${name} is not answering`
+}
+
+/** The shortest wait between two probes started by the window coming to the front. A switch of
+ *  windows every few seconds must not queue a probe each time; a press of *Check now* is not
+ *  held back by it. */
+export const FOCUS_RECHECK_MS = 30_000
+
+/** Whether a focus may start a probe: none started yet, or the last one is at least `gapMs` old. */
+export function recheckDue(lastAt: number | null, now: number, gapMs: number = FOCUS_RECHECK_MS): boolean {
+  return lastAt === null || now - lastAt >= gapMs
+}

@@ -5,6 +5,7 @@
     ConversationDetail,
     KeywordFamilyProposal,
     MemberBreadth,
+    SourceView,
     TurnResult,
   } from './lib/core/types'
   import {
@@ -24,6 +25,8 @@
     resumeChat,
   } from './lib/core/api'
   import { GRAPH_TAB_ENABLED } from './lib/core/features'
+  import { recheckDue } from './lib/settings/setup'
+  import { passagesFor } from './lib/chat/claims'
   import Chat from './screens/chat/Chat.svelte'
   import Settings from './screens/settings/Settings.svelte'
   import SourcePanel from './screens/chat/SourcePanel.svelte'
@@ -373,24 +376,31 @@
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
   // turn's record_id) so a click resolves against the right turn in either mode.
-  const activeSource = $derived.by(() => {
-    if (!chat.activeCitation) return null
+  function resolveSource(turnKey: string, n: number): SourceView | null {
     // Read-only transcripts (a viewed chat, or a resumed chat's history) key by record_id;
     // a resumed chat also has live chat.turns below, so fall through to those if not found here.
     const detail = viewedConvo ?? resumedHistory
     // A8a: a new chat's carried exchanges are read-only turns too, keyed by their record id.
     const readonlyTurns = [...(detail?.turns ?? []), ...(viewedConvo ? [] : setup.carried)]
     if (readonlyTurns.length > 0) {
-      const t = readonlyTurns.find((t) => t.record_id === chat.activeCitation!.turnKey)
-      const s = t?.sources.find((s) => s.n === chat.activeCitation!.n)
+      const t = readonlyTurns.find((t) => t.record_id === turnKey)
+      const s = t?.sources.find((s) => s.n === n)
       // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
       // as a SourceView so SourcePanel/SourceCard render it unchanged.
       if (s) {
         return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null, addressed_to_ai: [] }
       }
     }
-    const t = chat.turns.find((t) => String(t.id) === chat.activeCitation!.turnKey)
-    return t?.result?.sources.find((s) => s.n === chat.activeCitation!.n) ?? null
+    const t = chat.turns.find((t) => String(t.id) === turnKey)
+    return t?.result?.sources.find((s) => s.n === n) ?? null
+  }
+  // A clicked claim opens every passage it cites (0.8.0 walk, item 25); a citation, its one.
+  const activeSources = $derived.by((): SourceView[] => {
+    const a = chat.activeCitation
+    if (!a) return []
+    const ns = a.ns && a.ns.length > 0 ? a.ns : [a.n]
+    const found = ns.flatMap((n) => resolveSource(a.turnKey, n) ?? [])
+    return passagesFor(found, ns)
   })
 
 
@@ -407,9 +417,18 @@
     void refreshSetup()
   }
 
+  // When the window comes back to the front, ask the engines again: Ollama closed while the app
+  // ran must not keep reading as present (0.8.0 walk, item 12). Held to one probe per
+  // FOCUS_RECHECK_MS; the probe asks only servers on this computer.
+  let lastSetupProbe: number | null = null
+  function onWindowFocus(): void {
+    if (shell.status === 'ready' && recheckDue(lastSetupProbe, Date.now())) void refreshSetup()
+  }
+
   // First-run readiness (ADR-034). Failure is silent on purpose: this drives an advisory banner,
   // and a blip must not put a "finish setup" card in front of a working install.
   async function refreshSetup(): Promise<void> {
+    lastSetupProbe = Date.now()
     try {
       shell.setup = await getSetup()
     } catch {
@@ -1089,7 +1108,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onGlobalKey} />
+<svelte:window onkeydown={onGlobalKey} onfocus={onWindowFocus} />
 
 <!-- The chat-mode sidebar rail (Chat history), composed here like the graph rail below: the
      conversation list and its actions are App-owned, and the sidebar frame stays a dumb renderer. -->
@@ -1343,9 +1362,9 @@
   />
 {/if}
 
-{#if chat.activeCitation && activeSource}
+{#if chat.activeCitation && activeSources.length > 0}
   <SourcePanel
-    source={activeSource}
+    sources={activeSources}
     onClose={() => (chat.activeCitation = null)}
     onOpenInDocument={openCitationInDocument}
   />

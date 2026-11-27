@@ -9,6 +9,8 @@ import {
   addressChangeNote,
   answeringWith,
   clockTime,
+  engineDown,
+  recheckDue,
   keyPrecedenceNote,
   keyRefusal,
   modelForProvider,
@@ -289,4 +291,19 @@ test('a fetch time reads as the clock, and nothing when there is none', () => {
   assert.match(clockTime('2026-11-02T13:02:00+00:00'), /^\d\d:\d\d$/)
   assert.equal(clockTime(null), '')
   assert.equal(clockTime('not a date'), '')
+})
+
+test('engineDown names the engine in use once its probe failed (walk item 12)', () => {
+  assert.equal(engineDown(null), null)
+  assert.equal(engineDown(state()), null)
+  const down = state({ steps: [step({ done: false, offline: true, status: 'Engine offline' })] })
+  assert.equal(engineDown(down), 'Ollama is not answering')
+  // A step nobody has done yet is not an engine that stopped answering.
+  assert.equal(engineDown(state({ steps: [step({ done: false, offline: false, status: 'Not set' })] })), null)
+})
+
+test('recheckDue holds focus probes to one per gap', () => {
+  assert.equal(recheckDue(null, 1_000), true)
+  assert.equal(recheckDue(1_000, 1_000 + 29_999), false)
+  assert.equal(recheckDue(1_000, 1_000 + 30_000), true)
 })

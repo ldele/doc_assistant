@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-23 · class: living -->
+<!-- status: archived · updated: 2026-11-27 · class: living -->
 
 # DEVLOG archive index
 
@@ -6,6 +6,21 @@ One line per rotated entry, grouped per archive file, newest file first. Laid by
 `cpc-rotate` at the first rollover (ADR-045). Each later rotation writes the lines it
 owes when `[rotate] write_index` is on, and prints them for a human to place when it
 is off; docs_check rule 17 fails while any archived entry is missing here.
+
+## DEVLOG-archive-011.md
+
+- **2026-11-23** (10) — The Rust tree is audited in CI, and Tauri is 2.12 (S-16)
+- **2026-11-23** (9) — The commit hook type-checks `apps/` as CI does
+- **2026-11-23** (8) — CI's type check on `apps/` fixed after A8″a
+- **2026-11-23** (7) — Every ingestion is one list in the engine (A8″a, T-007, T-010, T-011)
+- **2026-11-23** (6) — No GET route writes or calls out (A8″b, S-17)
+- **2026-11-23** (5) — The letter-spacing block at the foot of the page, folded once ruled (A8″b, T-009)
+- **2026-11-23** (4) — `docs/security.md` rewritten around the questions a reader brings
+- **2026-11-23** (3) — Security controls say when they fire, and GETs are held to no side effects (A8′, S-11)
+- **2026-11-23** (2) — The small security ones: export file, Explorer, pinned models (A8′, S-10)
+- **2026-11-23** (1) — The MCP path and A6's lookups read against T6: six fixes, two logged (A8′)
+- **2026-11-20** (4) — Claims coloured in the answer, and what a turn looked up and carried (A8b)
+- **2026-11-20** (3) — A chat's mode and folders set when it starts, and Continue in a new chat (A8a)
 
 ## DEVLOG-archive-010.md
 

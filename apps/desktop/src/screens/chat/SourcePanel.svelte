@@ -9,11 +9,13 @@
   // Esc and the Tab trap are the frame's; the resize handle is this panel's own.
 
   let {
-    source,
+    sources,
     onClose,
     onOpenInDocument = null,
   }: {
-    source: SourceView
+    /** The passages to show: a citation's one, or every passage a clicked claim cites, in its
+     *  order (0.8.0 walk, item 25). Never empty: App does not open the panel for none. */
+    sources: SourceView[]
     onClose: () => void
     /** Open this citation's page in the Library (ROADMAP 18). Threaded from App, which owns
      *  cross-space navigation; null when the shell cannot offer it. */
@@ -56,6 +58,10 @@
     window.addEventListener('pointerup', onUp)
   }
 
+  const heading = $derived(
+    sources.length === 1 ? `Source [${sources[0].n}]` : `Sources ${sources.map((s) => `[${s.n}]`).join(' ')}`,
+  )
+
   let closeEl = $state<HTMLButtonElement | null>(null)
 
   // No input field here (unlike Settings), so land focus on the close control.
@@ -64,14 +70,17 @@
   })
 </script>
 
-<Dialog shape="side" label={`Source ${source.n}`} width="min({width}px, 92vw)" slide={width} scroll {onClose}>
+<Dialog shape="side" label={heading} width="min({width}px, 92vw)" slide={width} scroll {onClose}>
   <header>
-    <strong>Source [{source.n}]</strong>
+    <strong>{heading}</strong>
     <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close" use:tooltip={'Close the source panel'}>
       <Icon name="x" />
     </button>
   </header>
-  <SourceCard {source} {onOpenInDocument} />
+  {#each sources as source, i (source.n)}
+    {#if i > 0}<hr class="between" />{/if}
+    <SourceCard {source} {onOpenInDocument} />
+  {/each}
   {#snippet edge()}
     <div
       class="resize-handle"
@@ -116,6 +125,12 @@
     padding: 1rem 0 0.6rem;
     border-bottom: 1px solid var(--border);
     margin-bottom: 0.8rem;
+  }
+  /* Between two passages of one claim. */
+  .between {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1rem 0;
   }
   .x {
     font: inherit;

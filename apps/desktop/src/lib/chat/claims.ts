@@ -65,3 +65,18 @@ export function locateClaims(flat: string, claims: string[]): ({ start: number; 
     return { start: m.index, end: from }
   })
 }
+
+/** The passages a clicked claim opens, in the order the claim cites them (0.8.0 walk, item 25:
+ *  opening only the first hid the rest). A number cited twice opens once; one the turn does not
+ *  hold (a degraded past turn) is left out rather than drawn empty. */
+export function passagesFor<T extends { n: number }>(available: readonly T[], cited: readonly number[]): T[] {
+  const seen = new Set<number>()
+  const out: T[] = []
+  for (const n of cited) {
+    if (seen.has(n)) continue
+    seen.add(n)
+    const hit = available.find((s) => s.n === n)
+    if (hit) out.push(hit)
+  }
+  return out
+}

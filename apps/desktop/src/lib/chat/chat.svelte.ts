@@ -43,8 +43,9 @@ export const chat = $state({
   comparing: false,
 
   /** Which citation panel is open — keyed by a turn *key* (a live turn's id as a string, or a
-   *  past turn's record_id) so a click resolves against the right turn in either mode. */
-  activeCitation: null as { turnKey: string; n: number } | null,
+   *  past turn's record_id) so a click resolves against the right turn in either mode. `ns`, when
+   *  a claim was clicked, is every passage it cites, in its order; `n` is the first of them. */
+  activeCitation: null as { turnKey: string; n: number; ns?: number[] } | null,
   /** The claim whose passage is open (A8b): drawn darker. Same turn keys as `activeCitation`. */
   activeClaim: null as { turnKey: string; n: number } | null,
 

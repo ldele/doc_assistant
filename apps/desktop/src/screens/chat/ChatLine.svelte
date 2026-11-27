@@ -19,6 +19,7 @@
     onContinueNew,
     onOpenChat,
     onCitationClick,
+    onClaimClick,
   }: {
     setup: ChatSetup
     /** The exchanges this chat carried, as answered (read from the old chat's records). */
@@ -27,6 +28,8 @@
     onContinueNew: () => void
     onOpenChat: (sessionId: string) => void
     onCitationClick: (turnKey: string, n: number) => void
+    /** A coloured claim in a carried exchange was clicked: open every passage it cites. */
+    onClaimClick: (turnKey: string, claimN: number, sourceNs: number[]) => void
   } = $props()
 
   let open = $state(false)
@@ -79,7 +82,7 @@
             onCitationClick={(n) => onCitationClick(t.record_id, n)}
             activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
             turn={t}
-            onClaimClick={(_cn, n) => onCitationClick(t.record_id, n)}
+            onClaimClick={(cn, ns) => onClaimClick(t.record_id, cn, ns)}
           />
         {/each}
       </div>

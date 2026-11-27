@@ -52,3 +52,39 @@ def test_dependabot_keeps_the_action_pins_current() -> None:
     config = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))
     ecosystems = {update["package-ecosystem"] for update in config["updates"]}
     assert "github-actions" in ecosystems
+
+
+def _workflows() -> list[tuple[str, dict]]:
+    return [
+        (w.name, yaml.safe_load(w.read_text(encoding="utf-8")))
+        for w in sorted(WORKFLOWS.glob("*.y*ml"))
+    ]
+
+
+def test_setup_uv_installs_a_named_release() -> None:
+    # S-15: the action is pinned, but `version: "latest"` (or none) still lets a new uv change
+    # what CI resolves on the day it ships.
+    steps = [
+        (name, step)
+        for name, workflow in _workflows()
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
+    ]
+    assert steps, "no setup-uv step found: the guard would pass over nothing"
+    loose = [
+        name
+        for name, step in steps
+        if not re.fullmatch(r"\d+\.\d+\.\d+", str((step.get("with") or {}).get("version", "")))
+    ]
+    assert not loose, f"setup-uv without an exact `version:` in {loose}"
+
+
+def test_every_workflow_token_reads_only() -> None:
+    # S-15: without `permissions:`, the token takes the repository's default, which may write.
+    loose = [
+        name
+        for name, workflow in _workflows()
+        if workflow.get("permissions") != {"contents": "read"}
+    ]
+    assert not loose, f"set top-level `permissions: contents: read` in {loose}"

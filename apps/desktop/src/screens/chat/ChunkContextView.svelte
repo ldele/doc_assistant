@@ -153,7 +153,7 @@
     color: var(--fg-2);
   }
   mark {
-    background: var(--warn-bg, color-mix(in srgb, var(--accent) 22%, transparent));
+    background: var(--mark-bg);
     color: inherit;
     border-radius: 3px;
     padding: 0.05rem 0.1rem;

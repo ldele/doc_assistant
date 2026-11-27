@@ -30,8 +30,8 @@
     error?: string | null
     onCitationClick?: (n: number) => void
     activeCitationN?: number | null
-    /** A8b: a coloured claim was clicked: open its first cited passage. */
-    onClaimClick?: (claimN: number, sourceN: number) => void
+    /** A8b: a coloured claim was clicked: open every passage it cites. */
+    onClaimClick?: (claimN: number, sourceNs: number[]) => void
     activeClaimN?: number | null
     onOpenRecord?: (kind: 'document' | 'folder' | 'concept', id: string) => void
   } = $props()
@@ -45,7 +45,7 @@
   )
   function clickClaim(key: string): void {
     const c = result?.claims?.find((x) => String(x.n) === key)
-    if (c && c.sources.length > 0) onClaimClick?.(c.n, c.sources[0])
+    if (c && c.sources.length > 0) onClaimClick?.(c.n, c.sources)
   }
 
   // Glanceable turn cost — the same numbers the Provenance panel spells out, surfaced up front

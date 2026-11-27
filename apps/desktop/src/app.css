@@ -34,6 +34,11 @@
   --lavender: #6f62c9;
   --warn-fg: #8a5300;
   --warn-bg: #fbeecb;
+  /* A highlight under text: a weak claim, the cited passage in its context (0.8.0 walk, item 6).
+     Its own token because --warn-bg is a note's panel, where a faint fill is right. Pinned by
+     src/theme-contrast.test.ts: text on it stays at 7:1 or more in both themes, and in the dark
+     one it stands 1.8:1 off the page (--warn-bg's 1.2:1 there was the walk's "hard to see"). */
+  --mark-bg: #fbeecb;
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
@@ -142,6 +147,7 @@
   --lavender: #b0a4ff;
   --warn-fg: #efc06a;
   --warn-bg: #2f2712;
+  --mark-bg: #54421a;
   --warn-border: #5a4a22;
   --ok-fg: #79c98d;
   --ok-border: #345f3f;
@@ -184,6 +190,7 @@
   --lavender: #6f62c9;
   --warn-fg: #8a5300;
   --warn-bg: #fbeecb;
+  --mark-bg: #fbeecb;
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
@@ -230,6 +237,7 @@
     --lavender: #b0a4ff;
     --warn-fg: #efc06a;
     --warn-bg: #2f2712;
+    --mark-bg: #54421a;
     --warn-border: #5a4a22;
     --ok-fg: #79c98d;
     --ok-border: #345f3f;

@@ -4,9 +4,31 @@
   //
   // Zero props by design — it renders `shell.status` / `shell.health`, which the readiness gate in
   // App.svelte writes. Ambient status, not navigation.
+  //
+  // One action of its own: when the engine in use stopped answering at the last probe, the bar
+  // says so beside the model, with *Check now* to ask again (0.8.0 walk, items 11 and 12). The
+  // probe asks only servers on this computer; App re-runs it when the window comes to the front.
   import { shell } from '../lib/shell/shell.svelte'
+  import { getSetup } from '../lib/core/api'
+  import { engineDown } from '../lib/settings/setup'
+  import { tooltip } from '../lib/shell/tooltip'
   import IngestChip from './IngestChip.svelte'
   import PendingAddChip from './PendingAddChip.svelte'
+
+  const down = $derived(engineDown(shell.setup))
+  let checking = $state(false)
+
+  async function checkNow(): Promise<void> {
+    if (checking) return
+    checking = true
+    try {
+      shell.setup = await getSetup()
+    } catch {
+      // The engine itself did not answer: the dot and the line beside it already say so.
+    } finally {
+      checking = false
+    }
+  }
 </script>
 
 <div class="statusbar" role="status" aria-live="polite">
@@ -26,6 +48,12 @@
     <span class="status-meta">
       {shell.health.chunk_count.toLocaleString()} chunks · {shell.health.model} · {shell.health.embedding_model}
     </span>
+    {#if down}
+      <span class="status-meta err">{down}</span>
+      <button class="btn check" onclick={checkNow} disabled={checking} type="button" use:tooltip={'Ask the engine again whether it answers'}>
+        {checking ? 'Checking…' : 'Check now'}
+      </button>
+    {/if}
   {:else if shell.startupPhase === 'connecting'}
     <span class="status-meta">starting the engine…</span>
   {:else if shell.startupPhase === 'slow'}
@@ -86,5 +114,10 @@
   }
   .status-meta.err {
     color: var(--warn-fg);
+  }
+  /* The bar is one thin line, so its one button is sized to the line's text. */
+  .check {
+    font-size: var(--text-meta);
+    padding: 0 var(--space-2);
   }
 </style>

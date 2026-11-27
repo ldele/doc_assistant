@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-24 (0.8.0 refresh: §2 re-read against the diff since v0.7.3, a line for chat modes, A7) · class: living -->
+<!-- status: active · updated: 2026-11-27 (S-15 done: CI's uv pinned to 0.11.14, the workflow token reads only; S17 closed); 2026-11-24 (0.8.0 refresh: §2 re-read against the diff since v0.7.3, a line for chat modes, A7) · class: living -->
 
 # Security
 
@@ -9,12 +9,12 @@ record: who can attack it (§1), what holds (§2), what is open (§3), the order
 the checks that run without a person (§5), the periodic full check (§6), what is not done on
 purpose (§7), and what was fixed (§8).
 
-## 0 · At a glance (2026-11-23)
+## 0 · At a glance (2026-11-27)
 
-- **Open: 5 findings** (§3). Supply chain: S17, S25 (T5). Low: S23, S24 (T6, T1). By design:
+- **Open: 4 findings** (§3). Supply chain: S25 (T5). Low: S23, S24 (T6, T1). By design:
   S10 (T3, T4). Nothing reachable from a web page is open since S-17 (2026-11-23).
-- **Current step:** none placed. S-16 landed on 2026-11-23 (the Rust tree and the packaging extra
-  audited in CI, Tauri 2.12); its installed build is driven at A9. Not yet placed: S-15.
+- **Current step:** none placed. S-15 landed on 2026-11-27 (CI installs uv 0.11.14, not
+  `latest`, and the workflow token reads only); S-16 on 2026-11-23.
 - **Due:** the first periodic full check (§6). Its precondition, S-11, landed on 2026-11-23.
 - **Last looked at:** §2 re-checked for 0.7.3 on 2026-11-11; the MCP path and A6's lookups on
   2026-11-23 (a narrow review, logged in `.claude/REVIEWS.md` on the dev machine).
@@ -171,14 +171,11 @@ Each line is a control as it stands, with the test that pins it where one exists
 
 | # | Finding | Threat | Step | Placed |
 |---|---------|--------|------|--------|
-| S17 | CI installs the latest uv, and the workflow has no `permissions:` | T5 | S-15 | not placed |
 | S25 | `scripts/` is not type-checked or scanned by bandit | T5 | none yet | not placed |
 | S23 | Titles and authors reach a client's model without the text check | T6 | none yet | release B, with B2 |
 | S24 | A record answer renders document metadata as Markdown, unescaped | T1 | none yet | release B, with B2 |
 | S10 | The key, the conversations and the extraction cache are plaintext on disk | T3, T4 | ROADMAP 64 | by design (§7) |
 
-- **S17** (2026-11-02). `setup-uv` is pinned to a commit but installs `version: "latest"`; the
-  Docker image pins its uv.
 - **S25** (2026-11-02, given a number 2026-11-23). 297 mypy errors and one Medium bandit finding in
   `scripts/` that day. The scripts run on the dev machine and in CI, not in the installer.
 - **S23** (2026-11-23). Captions, reference lines and excerpts carry the check since A8′. Titles and
@@ -195,7 +192,6 @@ Each step is one session's security slot; its `Done when` is the test that lands
 | Step | What | Done when | Rides in |
 |------|------|-----------|----------|
 | Full | The periodic full check (§6), the first since S-1 to S-11 | a dated entry in `.claude/REVIEWS.md` row 7 | due, not placed |
-| S-15 | Pin CI's uv and its permissions (S17): a `version:` under `setup-uv`; `permissions: contents: read` | `test_ci_actions_pinned.py` fails on `latest` or a missing `version:` | not placed |
 
 ## 5 · The floor: checks that run without a person
 
@@ -319,3 +315,4 @@ One line per finding; the account is the DEVLOG entry of that date.
 | S20 | Two documents with the same file name merged in an answer's passages | A8′ | 2026-11-23 |
 | S21 | A chunk's stored cache path was read outside the library | A8′ | 2026-11-23 |
 | S22 | MCP answered a wrongly typed argument with a server error | A8′ | 2026-11-23 |
+| S17 | CI installed the latest uv, and the workflow had no `permissions:` | S-15 | 2026-11-27 |

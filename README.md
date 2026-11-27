@@ -182,16 +182,18 @@ The short list. Each of these, with counts and what to do about it, is in
 
 ## Status
 
-**v0.7.3 (2026-11-11): your library tells you what it holds and what needs a look.** A new
-document's title, authors, year and DOI are filled from its own text as it is indexed; the Library's
-summary counts what is there and what is missing, and each count opens exactly those documents;
-both lists select a range with Shift-click; and on Windows the app has its own title bar. At that
-release: 3,233 Python tests and 416 desktop tests, ruff / mypy / bandit clean, and an installer
-built from the tag and installed on a clean machine before it was published.
+**v0.8.0 (2026-11-27): the chat does more with your library.** Questions about the library are
+answered from its own records; a chat can search only the folders or the concept you choose; two
+answering modes; each claim of an answer shows the passage it rests on; another AI program on your
+computer can read your library through MCP, if you turn that on; and every add and re-run goes
+through one list that keeps working while it runs. At that release: 3,741 Python tests and 459
+desktop tests, ruff / mypy / bandit clean, and an installer built from the tested source and
+installed on a clean machine, and over the previous release, before it was published.
 
-Next: the chat and MCP. An MCP server, and a chat that does more with your library (lookups,
-modes, context handled deliberately), each change measured on a reinforced eval harness. Release
-notes: [`CHANGELOG.md`](CHANGELOG.md). Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Next: extraction. Figures, tables and reference lists read reliably, a slower in-depth mode for
+the documents the fast one gets wrong, and a way to correct what extraction missed. Then the shape
+of answers, then a concept curation workflow. Release notes: [`CHANGELOG.md`](CHANGELOG.md).
+Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation
 

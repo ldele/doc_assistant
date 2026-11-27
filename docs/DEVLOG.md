@@ -44,6 +44,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-27 — 0.8.0 published; the front docs say so
+
+**What.** The README's *Status*, `docs/OVERVIEW.md` §5 and the ROADMAP's *Where the product
+stands* and *Releases* move to v0.8.0, published 2026-11-27 (tag on `979ce4b`, installer built
+2026-11-26 12:31 from `ed3316b`, its SHA-256 on the release page). Their *Next* lines carry the
+user's order from the release walk: extraction first (an in-depth mode, and an assisted one where
+the user corrects what extraction got wrong), then the shape of answers, then concept curation.
+
+**Why.** RELEASE.md's after-release steps; OVERVIEW §5 still named 0.7.1 as the latest release.
+The README counts the tag's suites: 3,741 Python tests collected, 459 desktop tests passing.
+
+**Rejected.** Listing the walk's 29 design points in the ROADMAP: they are planned locally
+(`docs/plans/PLAN_2026-11-24_release-0.8.0.md`), and the PR table gains rows when the next
+release is planned.
+
+**Opens.** Planning the next release from that order.
+
 ## 2026-11-26 (5) — The 0.8.0 walk closes: four known limits, the release day, a secret ignored
 
 **What.** `CHANGELOG.md` § 0.8.0 is dated 2026-11-26, the tag's day, and gains four *Known limits*

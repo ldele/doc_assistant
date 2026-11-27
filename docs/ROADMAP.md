@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-23 (row 60: S-16 done, Tauri 2.12); 2026-11-23 (row 60: S-17 done with A8″, S-16 next); 2026-11-23 (row 60: S-10 and S-11 done with A8′, S-17 next); 2026-11-20 (rows 103, 42, 44: built, A8b); 2026-11-20 (row 103: A8a built, A8b left; row 44: the memory half); 2026-11-20 (row 102: the scoped question built, A7b; row 65: MCP turns gain `scope`); 2026-11-20 (rows 37 and 40: built, A7); 2026-11-19 (rows 37 and 40: spec accepted, A7); 2026-11-19 (row 102: built, A6); 2026-11-19 (row 102: spec accepted); 2026-11-17 (row 101: built, A5); 2026-11-17 (row 101: spec drafted); 2026-11-17 (row 65: built, A3 + A4); 2026-11-16 (row 60: S-9 done, A2); 2026-11-16 (row 113: H5, the judge checked); 2026-11-15 (row 113: H4, the baseline; row 69 done); 2026-11-15 (row 113: H3, the cases); 2026-11-14 (row 113: H2 built); 2026-11-13 (row 113 ready: its spec `docs/specs/eval-harness-chat.md` accepted; rows 65, 102 and 37 ready: ADR-066 accepted); 2026-11-12 (rows 65, 102 and 37 point at ADR-066, proposed; row 100 ready: ADR-062 accepted); 2026-11-11 (state lines at v0.7.3; row 60's current step is S-9); 2026-11-10 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-27 (0.8.0 published; the user's order after it); 2026-11-23 (row 60: S-16 done, Tauri 2.12); 2026-11-23 (row 60: S-17 done with A8″, S-16 next); 2026-11-23 (row 60: S-10 and S-11 done with A8′, S-17 next); 2026-11-20 (rows 103, 42, 44: built, A8b); 2026-11-20 (row 103: A8a built, A8b left; row 44: the memory half); 2026-11-20 (row 102: the scoped question built, A7b; row 65: MCP turns gain `scope`); 2026-11-20 (rows 37 and 40: built, A7); 2026-11-19 (rows 37 and 40: spec accepted, A7); 2026-11-19 (row 102: built, A6); 2026-11-19 (row 102: spec accepted); 2026-11-17 (row 101: built, A5); 2026-11-17 (row 101: spec drafted); 2026-11-17 (row 65: built, A3 + A4); 2026-11-16 (row 60: S-9 done, A2); 2026-11-16 (row 113: H5, the judge checked); 2026-11-15 (row 113: H4, the baseline; row 69 done); 2026-11-15 (row 113: H3, the cases); 2026-11-14 (row 113: H2 built); 2026-11-13 (row 113 ready: its spec `docs/specs/eval-harness-chat.md` accepted; rows 65, 102 and 37 ready: ADR-066 accepted); 2026-11-12 (rows 65, 102 and 37 point at ADR-066, proposed; row 100 ready: ADR-062 accepted); 2026-11-11 (state lines at v0.7.3; row 60's current step is S-9); 2026-11-10 (row 113 added: the eval harness reinforced for the chat work); 2026-11-06 (row 110 (d) built: one dialog frame, no literal colours, the shared stylesheet; row 110 (c) built: hover text on every button; row 110 (b) built: the roles across the app and the confirms; row 110 cut in four pieces, (a) built: the fill pair, the tooltip, the checks; row 110 ready: ADR-063 accepted; row 110 widened: hover text, styling in one place, three checks, ADR-063 choices 6 to 8); 2026-11-05 (the user's UI batch: rows 78 and 80 built with ADR-063 proposed; rows 110 to 112 added); 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -24,9 +24,9 @@ and `AGENTS.md` / `.claude/CONTEXT.md` point at both. Evaluation strategy: `test
 > (AGENTS.md build protocol). A row's *why* lives in its spec/ADR/DEVLOG, linked in `Spec` — do not
 > restate it here.
 
-## Where the product stands (2026-11-11)
+## Where the product stands (2026-11-27)
 
-**v0.7.3 is published** (2026-11-11). Shipped and measured: hybrid RAG with page-level citations,
+**v0.8.0 is published** (2026-11-27): the chat and MCP (item 2 below) shipped. Before it, shipped and measured: hybrid RAG with page-level citations,
 the integrity layer (provenance, evidence vs interpretation, reviewer), figures, concepts the user
 curates with exact and broad forms, definitions chosen from sentences quoted from the user's
 documents, the gap list and taxonomy substrate, folders with retrieval scope, add-documents (copy or
@@ -54,12 +54,18 @@ layer's signals are worth: `docs/knowledge-layer.md`.
 4. **Later.** The acquisition half (**KL2**), LLM-assisted ingestion (**25**, with 56 riding on it),
    the graph re-pass (**75**), then the Project ADR (**47**) and the rest of F4.
 
+**The user's order after 0.8.0 (2026-11-26, the release walk):** item 3 is now, extraction first,
+with an in-depth ingestion mode and an assisted one where the user corrects what extraction got
+wrong; then the shape of answers in the chat prompt, measured; then a concept and keyword curation
+workflow; then quality of life.
+
 *(Session planning is kept local-only. The PR table below is the open work, and `docs/security.md`
 §4 is the order of the security steps.)*
 
 ## Releases
 
-Published so far, each with its notes in `CHANGELOG.md` and its tag: **v0.7.3** (2026-11-11),
+Published so far, each with its notes in `CHANGELOG.md` and its tag: **v0.8.0** (2026-11-27),
+**v0.7.3** (2026-11-11),
 **v0.7.2** (2026-11-04),
 **v0.7.1** (2026-10-31), **v0.7.0** (2026-10-30), **v0.6.0** (2026-09-04). The runbook for
 cutting one is `docs/RELEASE.md`.

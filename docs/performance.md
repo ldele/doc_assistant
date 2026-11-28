@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-05 (the library summary and the document list at 10,000 documents, measured on an invented library; 2026-11-01: ADR-056 moves every format's fingerprint once; 2026-09-10: scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
+<!-- status: active · updated: 2026-11-28 (the 0.9.0 indexing passes on the installed build; 2026-11-05: the library summary and the document list at 10,000 documents, measured on an invented library; 2026-11-01: ADR-056 moves every format's fingerprint once; 2026-09-10: scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
 
 # Performance, cost and scale — the measured record
 
@@ -84,6 +84,17 @@ measured ~35 s against ~2.4 s warm. That is the file cache, not the code.
 | Embed | **3.8 ms/chunk** (GPU) · 31.6 ms/chunk (CPU) | ~4.0 child chunks per 1,000 characters |
 | ⇒ **embed ≈ 15 ms per 1,000 characters of text** | | file size in MB is the **wrong** predictor; characters is the right one |
 | Full re-embed of the corpus | **~2.1 min** (GPU) · ~17 min (CPU) | forced by any change to stored chunk text |
+| Indexing's whole-document passes (0.9.0): figures + table splice + references | **0.2-0.7 s** per paper, installed build · 1.5-2 s dev venv | PDF only; see below |
+
+**The 0.9.0 passes, measured 2026-11-28** (`docs/specs/ingestion-record.md`). The frozen build on
+torch 2.14.1+cpu, a new data home, the three public RG-012 papers (5-11 pages): figures 0.03-0.11 s,
+the table splice 0.16-0.56 s, references 0.01 s per paper; the whole run of three took 39 s. The
+dev venv on three other public papers (2026-11-27): figures 0.35-0.53 s, splice 0.75-1.60 s,
+references 0.02-0.06 s. **Six papers, all short**, so this bounds the cost and does not average it.
+The splice scales with the pages that name a table, figures with the pages that carry one. At
+10,000 papers, 0.2-2 s each adds roughly 0.5-5.5 hours next to the text extraction above (14.7 s
+mean, about 41 hours), against session 2's estimate of 5 s per document (about 14 hours). A book
+with hundreds of pages was not measured.
 
 ### What each stage costs, as a share — the portable version
 

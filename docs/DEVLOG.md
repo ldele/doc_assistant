@@ -46,6 +46,24 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-28 — The installer on torch 2.14.1, and what indexing costs in it
+
+**What.** Re-froze the sidecar on torch 2.14.1+cpu (about 9 min, 18,198 files, 2.5 GB) and rebuilt
+the installer (`Provenote_0.8.0_x64-setup.exe`, 1,647,005,591 bytes, +3.9 MB on the shipped 0.8.0).
+The frozen engine, on its own over a new data home: health in 8 s, three public papers indexed in
+39 s, every record complete, 325 chunks embedded. The passes cost 0.2-0.7 s per paper there;
+`docs/performance.md` § Ingest and the spec's *As built* record it.
+
+**Why.** 0.9.0 session 3's last item: the cost on the installed build, after the torch upgrade
+left the frozen build untested.
+
+**Rejected.** Overwriting the shipped 0.8.0 installer unkept: the version still reads 0.8.0, so the
+build writes over it; the shipped `.exe` and `.msi` are copied to `C:\Projects\provenote-0.8.0-shipped`
+first (RELEASE.md §8 keeps the tagged artifact).
+
+**Opens.** No cited answer was asked of the frozen engine (a paid call); the RG-012 gate at the
+release asks three. This artifact is not a release one: 0.9.0 rebuilds from its release commit.
+
 ## 2026-11-27 (8) — torch 2.14.1, and setuptools with it
 
 **What.** Both torch extras now ask for `torch>=2.14.1` (was `>=2.12`), and the lock moved torch

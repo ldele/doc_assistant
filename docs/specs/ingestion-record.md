@@ -1,4 +1,4 @@
-<!-- status: built · updated: 2026-11-27 (built in 0.9.0 session 3: the backend, then the three screens after the wireframe was approved as drawn; the installed-build cost is still owed) · class: living -->
+<!-- status: built · updated: 2026-11-28 (built in 0.9.0 session 3: the backend, then the three screens after the wireframe was approved as drawn; the installed-build cost measured 2026-11-28) · class: living -->
 
 # Spec: indexing reads the whole document, and says what it found
 
@@ -27,7 +27,9 @@
 - **Measured on three public papers in a new data home** (2026-11-27, this machine, CPU): figures
   0.35–0.53 s, the table splice 0.75–1.60 s, references 0.02–0.06 s per document, so about 1.5–2 s
   per paper next to tens of seconds of text extraction. The table rows reach both vector stores.
-  The installed build's measurement is still owed (Cost, below).
+  **On the installed build** (2026-11-28, the frozen engine on torch 2.14.1+cpu, the three
+  public RG-012 papers): 0.2-0.7 s per paper for the three passes, every record complete, the queue
+  rows carrying the record line and its first warning. Recorded in `docs/performance.md` § Ingest.
 - **A table block sits after the last page** (`splice_tables` appends), so its passages carry the
   last page's number. Placing each table on its page is a later fix.
 

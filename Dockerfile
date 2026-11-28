@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install with **uv**, not pip, and this is load-bearing rather than a preference.
 # `[tool.uv.sources]` routes torch to the `pytorch-cpu` index under the `cpu` extra, and that
-# routing is uv-only configuration. `pip install ".[cpu]"` sees nothing but `torch>=2.12` and
+# routing is uv-only configuration. `pip install ".[cpu]"` sees nothing but `torch>=2.14.1` and
 # resolves it from PyPI — whose default Linux wheel bundles CUDA, pulling several GB of nvidia-*
 # packages into an image that has no GPU. This is the same trap `.github/workflows/ci.yml`
 # documents at length. Using uv also honours `uv.lock`, which pip ignores entirely.

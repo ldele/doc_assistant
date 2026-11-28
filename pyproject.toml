@@ -108,8 +108,8 @@ packaging = [
 #   CPU-only box + CI:    uv sync --extra cpu    <- safe default; the +cu130 wheel
 #                                                   SEGFAULTS (exit 139) on a box with
 #                                                   no usable GPU.
-cpu = ["torch>=2.12"]
-cu130 = ["torch>=2.12"]
+cpu = ["torch>=2.14.1"]
+cu130 = ["torch>=2.14.1"]
 
 [project.scripts]
 doc-cli = "apps.cli:main"

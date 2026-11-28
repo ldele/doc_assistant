@@ -46,6 +46,25 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-27 (8) — torch 2.14.1, and setuptools with it
+
+**What.** Both torch extras now ask for `torch>=2.14.1` (was `>=2.12`), and the lock moved torch
+2.12.0 → 2.14.1 (`+cpu`, `+cu130` and the PyPI wheel), with setuptools 81.0.0 → 84.2.1, triton
+3.8.0 and the CUDA 13 runtime packages. The two setuptools ignores in `pip-audit-ignore.toml` are
+deleted: the gate reported them stale.
+
+**Why.** CI's pip-audit failed on torch 2.12.0 (PYSEC-2025-194 / CVE-2025-3000, memory corruption
+in `torch.jit.script`); the owner chose the upgrade over a reviewed ignore. 2.14.1, not 2.13.0:
+torch 2.14 lifts its `setuptools<82` cap, which was the only reason the two setuptools advisories
+were ignored. Not 2.15.0: there is no `cu130` wheel of it yet, and both extras should run one
+version.
+
+**Rejected.** A reviewed ignore for the jit advisory (drafted, not needed). 2.15.0 on CPU only.
+
+**Opens.** The installer must be rebuilt on the new torch before 0.9.0 (the frozen build and its
+size are untested on 2.14.1). Embedding numbers may shift slightly with a new torch; no eval was
+re-run.
+
 ## 2026-11-27 (7) — What indexing found, in three places
 
 **What.** The owner approved `docs/wireframes/extraction-record.md` as drawn, and its three screens

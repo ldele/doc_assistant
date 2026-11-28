@@ -86,7 +86,9 @@ def test_a_stop_ends_the_run_after_the_document_in_flight(library: Path) -> None
     counts = run.counts()
     assert (counts["added"], counts["not_started"]) == (1, 2)
     rows, _ = run.page(group="finished")
-    assert rows[0].detail is not None and rows[0].detail.endswith("passages")
+    # "N passages", then (since 0.9.0) the extraction record's line after a " · ".
+    assert rows[0].detail is not None
+    assert rows[0].detail.split(" · ")[0].endswith("passages")
 
     # Index the remaining: exactly the two a stop left.
     follow_up = IngestRun()
